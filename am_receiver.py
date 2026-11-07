@@ -81,7 +81,8 @@ class AMReceiver(gr.top_block):
     AM_AUDIO_GAIN    = 1.4          # 100% modulation -> about the FM side's level
     SEEK_MIN_DB      = 22.0         # seek stops on a carrier this far above the noise
     TUNE_SETTLE_S    = 0.25
-    STALL_S          = 2.0
+    STALL_S          = 2.0          # no samples for this long = dongle gone (the GUI reconnects)
+    START_S          = 8.0          # first samples may take this long after start()
     TONE_BASS_HZ, TONE_TREBLE_HZ, TONE_RANGE_DB = 120.0, 4000.0, 12.0
     TONE_SAFETY_DB   = 1.0
     IF_TAPS          = 97           # IF and audio filters: fixed length, fixed delay
@@ -327,6 +328,8 @@ class AMReceiver(gr.top_block):
         self._tune_cnr = []
         self._blank_until = time.monotonic() + self.TUNE_SETTLE_S
         self._wb_seen = time.monotonic()
+        self._got_samples = False       # any samples since start()
+        self._n_in = 0                  # samples taken from the dongle, at last look
         self._t_last = time.monotonic()
         self._bw_cur = self.bw
         fr = np.fft.fftshift(np.fft.fftfreq(self.CH_N, 1 / self.ch_rate))
@@ -569,6 +572,30 @@ class AMReceiver(gr.top_block):
                 f"Clip     {self.clip_pct:6.3f} %   source: {src}")
 
     # ---------------------------------------------------------------- update
+    def _samples_in(self):
+        """Samples taken from the dongle so far (by the first filter), or None."""
+        try:
+            return int(self.xlate.nitems_read(0))
+        except Exception:
+            return None
+
+    def _flow(self):
+        """Samples moved so far from the dongle and to the sound card, for stall reports."""
+        try:
+            return (f"from dongle {self.xlate.nitems_read(0)} samples, "
+                    f"to sound card {self.audio_sink.nitems_read(0)} samples")
+        except Exception as e:
+            return f"counters unavailable ({e})"
+
+    def start(self, *args, **kwargs):
+        """Start the flowgraph; the stall watchdog counts from here, not from construction
+        (opening the dongle can take seconds, longer on Linux than on Windows)."""
+        gr.top_block.start(self, *args, **kwargs)
+        with self._lock:
+            self._wb_seen = time.monotonic()
+            self._got_samples = False
+            self._n_in = 0
+
     def update_blend(self):
         """Called every ~20 ms by the GUI: measurements, IF bandwidth, stereo."""
         now = time.monotonic()
@@ -582,6 +609,7 @@ class AMReceiver(gr.top_block):
                 if self._last_wb is None or wb[0] != self._last_wb:
                     self._last_wb = wb[0]
                     self._wb_seen = now
+                    self._got_samples = True
                     x = np.asarray(wb)
                     P = np.abs(np.fft.fftshift(np.fft.fft(x * self._wbw))) ** 2 / self._wbw_wp
                     k = self.WB_N // 10
@@ -592,8 +620,17 @@ class AMReceiver(gr.top_block):
                         self._n0_hz = n0 if self._n0_hz is None else 0.8 * self._n0_hz + 0.2 * n0
                     self.composite_dbfs = 10 * math.log10(max(float(np.mean(np.abs(x) ** 2)), 1e-12))
                     self.clip_pct = 100.0 * float(np.mean((np.abs(x.real) > 0.98) | (np.abs(x.imag) > 0.98)))
-            if now - self._wb_seen > self.STALL_S:
-                raise RuntimeError(f"no samples from the dongle for {now - self._wb_seen:.1f} s")
+            # alive while samples keep coming in, counted, so a steady signal (or the
+            # 8-bit Q branch sitting on one value) can't look stalled
+            n_in = self._samples_in()
+            if n_in is not None and n_in != self._n_in:
+                self._n_in = n_in
+                self._wb_seen = now
+                self._got_samples = True
+            limit = self.STALL_S if self._got_samples else self.START_S
+            if now - self._wb_seen > limit:
+                raise RuntimeError(f"no samples from the dongle for {now - self._wb_seen:.1f} s; "
+                                   f"{self._flow()}")
 
             try:
                 self._measure(now)
