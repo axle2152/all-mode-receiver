@@ -1,0 +1,4 @@
+# Keep Unix line endings in the scripts on every machine, Windows included, so
+# "./quartz_tuner_ui.py" keeps working on Linux after an edit or upload from Windows.
+*.py text eol=lf
+*.md text eol=lf

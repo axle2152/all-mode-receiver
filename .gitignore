@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# The tuner's own settings, saved beside it
+quartz_tuner_settings.json
+
+# Recordings: large, and they may hold real program audio
+*.cfile
+*.iq
+*.raw
+*.wav

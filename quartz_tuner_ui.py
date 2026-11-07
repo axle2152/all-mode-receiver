@@ -73,6 +73,7 @@ are saved per element ("colors"); delete an entry to go back to its default.
 """
 
 import argparse
+import gc
 import json
 import math
 import os
@@ -391,18 +392,21 @@ THEME = dict(tints={None: ('#f2f2f2', '#a4a4a4'), 'green': ('#cdf3da', '#4f9f6a'
 _FONT_DIRS = [os.path.join(os.environ.get('WINDIR', r'C:\Windows'), 'Fonts'),
               os.path.expanduser('~/AppData/Local/Microsoft/Windows/Fonts'),
               '/usr/share/fonts', '/usr/local/share/fonts', os.path.expanduser('~/.fonts'),
+              os.path.expanduser('~/.local/share/fonts'),
               '/Library/Fonts', '/System/Library/Fonts']
 _font_index = None
 
-FONT_ROLES = {
+FONT_ROLES = {                           # Windows first, then Linux (DejaVu, Liberation)
     'label':  [('bahnschrift.ttf', 'Regular'), ('segoeui.ttf', None), ('arial.ttf', None),
-               ('DejaVuSans.ttf', None)],
+               ('LiberationSans-Regular.ttf', None), ('DejaVuSans.ttf', None)],
     'badge':  [('bahnschrift.ttf', 'SemiBold'), ('segoeuib.ttf', None), ('arialbd.ttf', None),
-               ('DejaVuSans-Bold.ttf', None)],
+               ('LiberationSans-Bold.ttf', None), ('DejaVuSans-Bold.ttf', None)],
     'key':    [('bahnschrift.ttf', 'SemiBold'), ('segoeuisb.ttf', None), ('arialbd.ttf', None),
-               ('DejaVuSans-Bold.ttf', None)],
+               ('LiberationSans-Bold.ttf', None), ('DejaVuSans-Bold.ttf', None)],
     'vfd':    [('bahnschrift.ttf', 'SemiBold SemiCondensed'), ('ARIALNB.TTF', None),
-               ('arialbd.ttf', None), ('DejaVuSansCondensed-Bold.ttf', None)],
+               ('arialbd.ttf', None), ('LiberationSansNarrow-Bold.ttf', None),
+               ('DejaVuSansCondensed-Bold.ttf', None), ('LiberationSans-Bold.ttf', None),
+               ('DejaVuSans-Bold.ttf', None)],
 }
 _font_cache = {}
 
@@ -499,7 +503,17 @@ def font(role, px):
             break
         except OSError:
             f = None
-    if f is None:
+    if f is None:                        # none of the named fonts: any sans font installed
+        _find_font('-')
+        names = sorted(_font_index, key=lambda n: ('sans' not in n, 'bold' not in n, n))
+        for name in names:
+            if name.endswith(('.ttf', '.otf')) and 'mono' not in name:
+                try:
+                    f = ImageFont.truetype(_font_index[name], px)
+                    break
+                except OSError:
+                    f = None
+    if f is None:                        # last resort: Pillow's own font
         try:
             f = ImageFont.load_default(size=px)
         except TypeError:
@@ -508,8 +522,23 @@ def font(role, px):
     return f
 
 
+def _glyph_w(f, c):
+    """Advance width of one character. Pillow's built-in bitmap font has no getlength
+    before Pillow 9.2 (Ubuntu 22.04 ships 9.0)."""
+    if hasattr(f, 'getlength'):
+        return f.getlength(c)
+    return f.getsize(c)[0]
+
+
+def _glyph_h(f):
+    """Cap height of the bitmap font, for placing it without anchors (getsize went in Pillow 10)."""
+    if hasattr(f, 'getbbox'):
+        return f.getbbox('A')[3]
+    return f.getsize('A')[1]
+
+
 def text_width(s, f, tracking=0.0):
-    return sum(f.getlength(c) for c in s) + tracking * max(0, len(s) - 1)
+    return sum(_glyph_w(f, c) for c in s) + tracking * max(0, len(s) - 1)
 
 
 def draw_text(d, x, y, s, f, fill, tracking=0.0, align='l', vanchor='s'):
@@ -519,12 +548,16 @@ def draw_text(d, x, y, s, f, fill, tracking=0.0, align='l', vanchor='s'):
         x -= w / 2
     elif align == 'r':
         x -= w
+    kw = {'anchor': 'l' + vanchor}
+    if not isinstance(f, ImageFont.FreeTypeFont):    # bitmap font: no anchors, top-left only
+        kw = {}
+        y -= {'s': _glyph_h(f), 'm': _glyph_h(f) / 2}.get(vanchor, 0)
     if tracking == 0.0:
-        d.text((x, y), s, font=f, fill=fill, anchor='l' + vanchor)
+        d.text((x, y), s, font=f, fill=fill, **kw)
         return
     for c in s:
-        d.text((x, y), c, font=f, fill=fill, anchor='l' + vanchor)
-        x += f.getlength(c) + tracking
+        d.text((x, y), c, font=f, fill=fill, **kw)
+        x += _glyph_w(f, c) + tracking
 
 
 # ---------------------------------------------------------------------------
@@ -633,7 +666,7 @@ def render_key(w, h, s, legend, pressed, icon=None, size=13.0):
         d.polygon([(x, cy), (x + tri, cy - tri * 0.62), (x + tri, cy + tri * 0.62)], fill=KEY_TEXT)
         x += tri + gap
     if legend:
-        d.text((x, cy), legend, font=f, fill=KEY_TEXT, anchor='lm')
+        draw_text(d, x, cy, legend, f, KEY_TEXT, vanchor='m')
         x += tw + gap
     if icon == 'right':
         d.polygon([(x + tri, cy), (x, cy - tri * 0.62), (x, cy + tri * 0.62)], fill=KEY_TEXT)
@@ -2039,7 +2072,8 @@ class MonitorLogic:
 
 class TunerApp:
     def __init__(self, root, scale=1.0, freq=None, rf_gain=None, agc=None, lmr_gain=1.0,
-                 log_path=None, record_iq=None, am_source=None, upconverter_hz=None):
+                 log_path=None, record_iq=None, am_source=None, upconverter_hz=None,
+                 audio_device=''):
         self.root, self.s = root, scale
         self.override = False
         saved = self._load_settings()                   # sets self.override first
@@ -2057,6 +2091,7 @@ class TunerApp:
         if AMReceiver is None:
             self.band = 'FM'
         self.am_source, self.upconverter_hz = am_source or 'direct_q', upconverter_hz
+        self.audio_device = audio_device or ''         # GNU Radio sound output; '' = system default
         self.fm_freq = self._fit('FM', self.fm_freq)
         self.am_freq = self._fit('AM', self.am_freq)
         self.freq = self.am_freq if self.band == 'AM' else self.fm_freq
@@ -2354,10 +2389,12 @@ class TunerApp:
                 self._run_mode = (self.band, am_src, fm_args)
                 if self.band == 'AM':
                     self.tb = AMReceiver(freq=self.freq, rf_gain=self.rf_gain, agc=self.agc_on,
-                                         am_source=am_src, upconverter_hz=self.upconverter_hz)
+                                         am_source=am_src, upconverter_hz=self.upconverter_hz,
+                                         audio_device=self.audio_device)
                 else:
                     self.tb = FMStereoReceiver(freq=self.freq, rf_gain=self.rf_gain, agc=self.agc_on,
-                                               device_args=fm_args, **self._backend_args)
+                                               device_args=fm_args, audio_device=self.audio_device,
+                                               **self._backend_args)
                 tb = self.tb
                 g = 10 ** (self.output_db / 20)
                 tb.set_output_gain(g, g)
@@ -2384,6 +2421,8 @@ class TunerApp:
                         tb.close()
                     except Exception:
                         pass
+                tb = None                        # drop the last reference so the dongle is
+                gc.collect()                     # released before the next attempt opens it
             if not self.running:
                 break
             if not self._radio_run:
@@ -2402,9 +2441,12 @@ class TunerApp:
             try:
                 self.tb.update_blend()
                 self._error_count = 0
-            except Exception:
+            except Exception as e:
                 self._error_count += 1
                 if self._error_count >= self._MAX_ERRORS:
+                    print(f'Receiver stopped: {type(e).__name__}: {e}')   # why, in the terminal
+                    if not isinstance(e, RuntimeError):
+                        traceback.print_exc()
                     return
             time.sleep(0.02)
 
@@ -4728,6 +4770,8 @@ def main():
     ap.add_argument('--record-iq', default=None, help='raw IQ recording, int8 at 2.4 Msps')
     ap.add_argument('--am-source', default='direct_q', choices=('direct_q', 'native', 'upconverter'))
     ap.add_argument('--upconverter-hz', type=float, default=125e6)
+    ap.add_argument('--audio-device', default='',
+                    help='sound output for GNU Radio, e.g. pulse or plughw:0,0 on Linux (default: system default)')
     a = ap.parse_args()
 
     root = tk.Tk()
@@ -4738,7 +4782,8 @@ def main():
     TunerApp(root, scale=scale, freq=a.freq, rf_gain=a.gain,
              agc=False if a.no_agc else None, lmr_gain=a.lmr_gain,
              log_path=a.log, record_iq=a.record_iq,
-             am_source=a.am_source, upconverter_hz=a.upconverter_hz)
+             am_source=a.am_source, upconverter_hz=a.upconverter_hz,
+             audio_device=a.audio_device)
     root.mainloop()
 
 
