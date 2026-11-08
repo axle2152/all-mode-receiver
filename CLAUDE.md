@@ -90,6 +90,29 @@ setting and connection is unchanged. For the window, compare screenshots of the 
 - New to git and GitHub. Explain git steps plainly and give exact commands.
 - Machines: Windows (radioconda) and a Linux laptop (Ubuntu). Both update with `git pull`.
 - Hardware is on the owner's bench, not in the cloud session: RTL-SDR receivers (a Nooelec
-  NESDR among them), a HackRF transmitter. Bench and listening results come from there, and
-  the owner has IQ recordings to share.
+  NESDR among them), a HackRF transmitter. Bench and listening results come from there. No
+  usable IQ recordings so far.
+- Merges pull requests on GitHub. After each merge, give the update commands for both
+  machines (`git checkout main`, `git pull`; and in the pmds folder, the `pip install -e`
+  again when its add-on changed).
+- Wants a traditional-looking radio (no waterfall), with meters and visuals for casual
+  listeners, broadcast people, and hams and shortwave listeners.
 - README is written in plain language for a general reader; keep that tone.
+
+## Testing in a cloud session
+
+The cloud container is Ubuntu 24.04. What worked:
+- Real GNU Radio for `tests/test_gnuradio.py` and the private repository's
+  `tests/test_addon.py`: `apt-get install -y --no-install-recommends gnuradio gr-osmosdr`
+  (GNU Radio 3.10.9, system Python 3.12). Python blocks in a hier block must stay referenced
+  from Python, or the flowgraph segfaults on start.
+- The window: `apt-get install -y python3-tk python3-pil python3-pil.imagetk xvfb` and run under
+  `xvfb-run -a`; `fonts-urw-base35` adds Nimbus Sans.
+- Ubuntu 22.04's versions: `uv venv -p 3.10.12` with `pillow==9.0.1` and `numpy==1.21.5` for
+  the tests that need no window (that Python's built-in Tk crashes under Xvfb). For the window
+  with Pillow 9.0.1: a venv on the system Python 3.12 with Pillow 9.0.1 built from source
+  (`uv pip install --no-build-isolation --no-binary pillow pillow==9.0.1`, after
+  `apt-get install libjpeg-dev zlib1g-dev libfreetype-dev`). Limit fonts to Ubuntu's basic set
+  with `tests/test_window.py --fonts /usr/share/fonts/truetype/dejavu`.
+- Screenshots for before/after comparisons: Pillow's `ImageGrab.grab(bbox=..., xdisplay=...)`
+  on the system Python under Xvfb.

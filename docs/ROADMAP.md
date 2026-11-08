@@ -8,6 +8,8 @@ sound as good as the signal allows, clean up what it can, play at a correct, con
 and have meters and visuals for casual listeners, broadcast people, and hams and shortwave
 listeners alike.
 
+**Next up: Phase 4** (frequency display and S-meter), mock-ups first. Phases 0 to 3 are done.
+
 ## Phase 0: Linux and the README (done)
 
 - [x] Runs on Ubuntu 22.04 and newer as well as Windows: executable scripts, Linux fonts,
@@ -19,6 +21,8 @@ listeners alike.
   9.5 kHz
 - [x] AM receiver takes 960 ksps from the dongle instead of 2.4 Msps: at 2.4 Msps the RTL-SDR
   silently dropped samples on the bench, and about 1 Msps cured it
+- [x] AM C/N reads true (it read 4.5 dB high); every threshold tuned against it moved by the
+  same amount, so the radio behaves as before
 
 ## Phase 1: Safety net
 
@@ -61,8 +65,11 @@ the window's screenshots pixel-identical, with and without Nimbus Sans. Found on
 fixed: Settings' Static cut checkbox couldn't turn static cut off (its variable was reused by
 the blanker row), and clicking Noise reduction switched static cut on.
 
-Afterwards: FM at a lower sample rate too, like AM, once the recordings can show its tuning
-(gain control, quality thresholds) still holds.
+## Smaller items, any time
+
+- [ ] FM at a lower sample rate too, like AM (the RTL-SDR can drop samples at 2.4 Msps). Its gain
+  control and quality thresholds were tuned at 2.4 Msps, so check them on the bench, or with
+  `tests/test_gnuradio.py` and the trace tool, before and after.
 
 ## Phase 3: PMDS as an optional add-on
 
