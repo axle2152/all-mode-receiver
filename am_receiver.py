@@ -5,7 +5,7 @@ am_receiver.py - AM broadcast band (530-1710 kHz) with C-QUAM AM stereo
 The AM half of the head unit. It presents the same interface as
 FMStereoReceiver, so the GUI can drive either one.
 
-Signal chain (2.4 Msps from the RTL -> 48 kHz complex channel)
+Signal chain (960 ksps from the RTL -> 48 kHz complex channel)
   source        Q-branch direct sampling (RTL-SDR Blog V3 and similar),
                 native HF tuning (RTL-SDR Blog V4) or an external upconverter
   channel       two-stage decimating filter, station 20 kHz below the LO so
@@ -27,7 +27,7 @@ Signal chain (2.4 Msps from the RTL -> 48 kHz complex channel)
                 make-up gain, volume / balance and mute as the FM side
 
 Quality figure: carrier-to-noise in 10 kHz (C/N), measured every 20 ms from the
-coherent carrier against the noise floor of the whole 2.4 MHz.
+coherent carrier against the noise floor of the whole 960 kHz.
 """
 
 import math
@@ -54,7 +54,9 @@ class AMReceiver(gr.top_block):
     AM_SOURCE        = 'direct_q'   # 'direct_q' | 'native' | 'upconverter'
     UPCONVERTER_HZ   = 125e6        # Ham It Up and similar
     LO_OFFSET        = 20e3         # tune this far above the station (keeps it off DC)
-    SAMP_RATE        = 2_400_000
+    SAMP_RATE        = 960_000      # 48 kHz x 20. At 2.4 Msps the RTL can silently drop samples
+                                    # (seen on the bench), which costs clicks and carrier lock
+    DECIM1, DECIM2   = 10, 2        # 960 k -> 96 k -> 48 k
     CH_RATE          = 48_000
 
     # ---- bandwidth (one-sided audio bandwidth, Hz) ----
@@ -125,10 +127,14 @@ class AMReceiver(gr.top_block):
             self.src.set_gain(self.gain_db, 0)
 
         # ---------------- channel ----------------
-        t1 = firdes.low_pass(1.0, self.samp_rate, 30e3, 70e3, W)
-        self.xlate = filter.freq_xlating_fir_filter_ccf(10, t1, -self.LO_OFFSET, self.samp_rate)
-        t2 = firdes.low_pass(1.0, 240e3, 14e3, 8e3, W)
-        self.dec2 = filter.fir_filter_ccf(5, t2)
+        # Blackman: about 74 dB of stopband, so nothing that folds back on decimating comes within
+        # 75 dB of the audio band (the older 2.4 Msps chain managed 67 dB)
+        WB = filter.window.WIN_BLACKMAN
+        r1 = self.samp_rate / self.DECIM1
+        t1 = firdes.low_pass(1.0, self.samp_rate, 40e3, 50e3, WB)
+        self.xlate = filter.freq_xlating_fir_filter_ccf(self.DECIM1, t1, -self.LO_OFFSET, self.samp_rate)
+        t2 = firdes.low_pass(1.0, r1, 14e3, 8e3, WB)
+        self.dec2 = filter.fir_filter_ccf(self.DECIM2, t2)
         self.rot = blocks.rotator_cc(0.0)               # coarse carrier correction
         self.bw = self.AM_WIDE_HZ
         self.if_filter = filter.fir_filter_ccf(1, self._lp_taps(self.bw))
@@ -556,7 +562,7 @@ class AMReceiver(gr.top_block):
         try:
             played = self.audio_sink.nitems_read(0)
             tap = self.notch_l.nitems_written(0) * self.audio_rate / self.ch_rate
-            front = self.xlate.nitems_written(0) * self.audio_rate / (self.samp_rate / 10.0)
+            front = self.xlate.nitems_written(0) * self.audio_rate / (self.samp_rate / self.DECIM1)
         except Exception:
             return None
         r = float(self.audio_rate)

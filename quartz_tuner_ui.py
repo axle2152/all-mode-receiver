@@ -1785,8 +1785,10 @@ TIPS = dict(
     sw_nr="Spectral noise reduction on weak stations.",
     sw_static="Trim treble and stereo during brief dropouts, and stereo during multipath bursts.",
     sw_eq="Echo canceller (adaptive equalizer). AUTO uses it only when it measurably helps.",
-    sw_bw="FM filter width. AUTO narrows only on weak stations and never on loud music. "
-          "AM has its own width setting below.",
+    sw_bw="Broadcast FM's filter. AUTO narrows it only on weak stations, and never on loud music; "
+          "WIDE leaves the whole channel open; NARROW holds it at \u00b135 kHz, for a weak station "
+          "beside a strong one. This isn't narrowband FM (ham, NOAA weather), which will be a mode of "
+          "its own. AM has its own width setting below.",
     bars="Overall reception, strength and quality together, like the bars on a phone. "
          "Five bars is a clean, strong station; one bar is barely there.",
     rds_ps="The station's name as it sends it over RDS (some stations scroll it), with the call "
