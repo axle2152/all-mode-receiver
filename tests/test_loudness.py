@@ -4,14 +4,14 @@ test_loudness.py - does the monitor's loudness meter read what the standards say
 
     python3 tests/test_loudness.py
 
-Checks rx_meters.py (K-weighting, 100 ms block energies) and the tuner's Loudness class
+Checks radio/meters.py (K-weighting, 100 ms block energies) and the window's Loudness class
 (momentary, short-term, gated integrated loudness, loudness range) against:
   - the K-weighting coefficients printed in ITU-R BS.1770-4 for 48 kHz
   - the EBU Tech 3341 test signals for integrated loudness (+/-0.1 LU)
   - the EBU Tech 3342 test signals for loudness range (+/-1 LU)
 The test signals are 1 kHz sine waves, which the K-weighting only scales, so the weighted
-signal is worked out exactly from the filter's response. Needs numpy, Pillow and Tk (it loads
-the tuner window's code), but not GNU Radio or a dongle.
+signal is worked out exactly from the filter's response. Needs only numpy: no GNU Radio, no
+dongle, no window.
 """
 import cmath
 import math
@@ -23,8 +23,8 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, 'standin'), os.path.dirname(HERE)]
 
-import rx_meters                                 # noqa: E402
-import quartz_tuner_ui                           # noqa: E402
+from radio import meters as rx_meters            # noqa: E402
+from radio.ui import loudness                    # noqa: E402
 
 FS = 48000
 failed = 0
@@ -52,7 +52,7 @@ def play(segments):
     """Feed (seconds, dBFS) stretches of a 1 kHz stereo sine through the meter; return
     the tuner's Loudness object after it. dBFS is the sine's peak, as EBU Tech 3341 uses."""
     core = rx_meters.AudioMeterCore(FS)
-    loud = quartz_tuner_ui.Loudness()
+    loud = loudness.Loudness()
     gk = math.sqrt(k_gain(1000.0))
     t0 = 0
     for secs, dbfs in segments:

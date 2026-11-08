@@ -19,10 +19,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, 'standin'), os.path.dirname(HERE)]
 
 from gnuradio._sim import SIM, FakeTime          # noqa: E402  (the stand-in, not GNU Radio)
-import am_receiver                               # noqa: E402
+import radio.am                                  # noqa: E402
+import radio.receiver                            # noqa: E402
 
-am_receiver.time = FakeTime()
-R = am_receiver.AMReceiver
+radio.am.time = radio.receiver.time = FakeTime()
+R = radio.am.AMReceiver
 failed = 0
 
 

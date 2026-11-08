@@ -16,10 +16,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, 'standin'), os.path.dirname(HERE)]
 
 from gnuradio._sim import SIM, FakeTime          # noqa: E402  (the stand-in, not GNU Radio)
-import am_receiver                               # noqa: E402
-import fm_stereo                                 # noqa: E402
+import radio.am                                  # noqa: E402
+import radio.fm.receiver                         # noqa: E402
+import radio.receiver                            # noqa: E402
 
-am_receiver.time = fm_stereo.time = FakeTime()
+radio.am.time = radio.fm.receiver.time = radio.receiver.time = FakeTime()
 GIVE_UP = 5                                      # the tuner's _MAX_ERRORS
 STEP = 0.02                                      # the tuner calls update_blend() every 20 ms
 RUN_S = 15.0
@@ -62,8 +63,8 @@ def run(make, open_s=0.0, first=0.0, stop=None, vary=False):
 
 def main():
     failed = 0
-    for band, make in (("AM", lambda: am_receiver.AMReceiver(freq=1080e3)),
-                       ("FM", lambda: fm_stereo.FMStereoReceiver(freq=90.5e6))):
+    for band, make in (("AM", lambda: radio.am.AMReceiver(freq=1080e3)),
+                       ("FM", lambda: radio.fm.receiver.FMStereoReceiver(freq=90.5e6))):
         print(f"{band} receiver")
         for name, kw, window in CASES:
             t = run(make, **kw)

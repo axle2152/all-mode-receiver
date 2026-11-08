@@ -31,19 +31,19 @@ def child(appdir, band, fonts, secs):
     sys.path[:0] = [os.path.join(HERE, 'standin'), appdir]
     import tkinter as tk
     from gnuradio._sim import SIM
-    import quartz_tuner_ui as Q
+    from radio.ui import app as A, fonts as F
     SIM.reset()
     if fonts is not None:
-        Q._FONT_DIRS = [fonts]
+        F._FONT_DIRS = [fonts]
     log = []
     real_print = print
 
     def tee(*a, **k):
         log.append(' '.join(str(x) for x in a))
         real_print(*a, **k)
-    Q.print = tee
+    A.print = tee
     root = tk.Tk()
-    app = Q.TunerApp(root, scale=0.6, freq=1080e3 if band == 'AM' else 90.5e6)
+    app = A.TunerApp(root, scale=0.6, freq=1080e3 if band == 'AM' else 90.5e6)
     states = []
 
     def sample():
@@ -51,7 +51,7 @@ def child(appdir, band, fonts, secs):
         root.after(250, sample)
 
     def finish():
-        path = getattr(Q.font('vfd', 20), 'path', None)
+        path = getattr(F.font('vfd', 20), 'path', None)
         real_print('INFO band', app.band, '| display font:',
                    path if isinstance(path, str) else "Pillow's built-in font")
         seen = [s for i, s in enumerate(states) if i == 0 or s != states[i - 1]]
@@ -69,6 +69,8 @@ def run(band, fonts):
     try:
         for f in glob.glob(os.path.join(REPO, '*.py')):
             shutil.copy(f, tmp)
+        shutil.copytree(os.path.join(REPO, 'radio'), os.path.join(tmp, 'radio'),
+                        ignore=shutil.ignore_patterns('__pycache__'))
         env = dict(os.environ, HOME=tmp, USERPROFILE=tmp)
         cmd = [sys.executable, os.path.abspath(__file__), '--child', band, '--appdir', tmp]
         if fonts is not None:

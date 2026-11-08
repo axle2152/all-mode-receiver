@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 FM Stereo Receiver - GNU Radio 3.10
 ===================================
@@ -43,30 +42,26 @@ Channels
     Channel 87.7 is received on 87.75 MHz (channel 6 TV audio). The mapping
     lives only here, so callers, presets and displays always use 87.7.
 
-Usage:
-    python fm_stereo.py --freq 90.5e6
-    python fm_stereo.py --freq 90.5e6 --no-agc --gain 7.7
-    python fm_stereo.py --freq 90.5e6 --log drive.csv
-    python fm_stereo.py --freq 90.5e6 --record-iq drive.cs8   (4.8 MB/s!)
+Usage (from the folder that holds quartz_tuner_ui.py):
+    python3 -m radio.fm --freq 90.5e6
+    python3 -m radio.fm --freq 90.5e6 --no-agc --gain 7.7
+    python3 -m radio.fm --freq 90.5e6 --log drive.csv
+    python3 -m radio.fm --freq 90.5e6 --record-iq drive.cs8   (4.8 MB/s!)
 """
-
 import argparse
-import datetime
 import math
 import threading
 import time
 from collections import deque
 
 import numpy as np
-from gnuradio import gr, blocks, filter, analog, audio, digital
+from gnuradio import gr, blocks, filter, analog, digital
 from gnuradio.filter import firdes
-import osmosdr
-try:                                     # optional read-only meters for the monitor UI
-    import rx_meters
-    if rx_meters.AudioMeterBlock is None:
-        rx_meters = None
-except ImportError:
-    rx_meters = None
+
+from .. import meters as rx_meters
+from ..receiver import Receiver
+from .blocks import _DipControl, _NoiseReducer
+from .rds import RdsDecoder
 
 
 # R820T / R820T2 / R828D gain steps in dB (used if the driver does not report them)
@@ -75,482 +70,14 @@ R82XX_GAINS = [0.0, 0.9, 1.4, 2.7, 3.7, 7.7, 8.7, 12.5, 14.4, 15.7, 16.6, 19.7,
                42.1, 43.4, 43.9, 44.5, 48.0, 49.6]
 
 
-# ---------------------------------------------------------------------------
-# RDS / RBDS decoder
-# ---------------------------------------------------------------------------
-# Input: complex baseband at 9500 Hz = 8 samples per RDS bit, carrier already
-# tracked (data on the real axis, sign ambiguity allowed).
-#   bit timing : correlate with a biphase template, keep the sample phase
-#                with the most energy (tracks dongle clock drift)
-#   bits       : differential decoding removes the 180 degree ambiguity
-#   blocks     : 26 bits = 16 data + 10 check; checkword XOR CRC = offset word
-#   groups     : 0A/0B -> PS (8 chars), 2A/2B -> RadioText (64/32 chars)
-# ---------------------------------------------------------------------------
-
-def _crc10_table():
-    """Checkword (before the offset word) for every 16-bit info word."""
-    g = 0x5B9                                    # x^10+x^8+x^7+x^5+x^4+x^3+1
-    d = np.arange(65536, dtype=np.uint32) << 10
-    for bit in range(25, 9, -1):
-        d ^= ((d >> bit) & 1) * np.uint32(g << (bit - 10))
-    return (d & 0x3FF).astype(np.uint16)
-
-
-# RDS character table rows 0x80/0x90 folded onto plain letters (the dot-matrix
-# font is ASCII); anything else outside printable ASCII shows as a space.
-_RDS_FOLD = dict(zip(range(0x80, 0xA0),
-                     "aaeeiioouuNCSB!Jaaeeiioouuncsgij"))
-
-
-def _rds_char(c):
-    if 0x20 <= c <= 0x7E:
-        return chr(c)
-    return _RDS_FOLD.get(c, ' ')
-
-
-# RBDS PI code -> US call letters (NRSC-4-A Annex D.6)
-_RBDS_3LETTER = {
-    0x99A5: 'KBW', 0x99A6: 'KCY', 0x9990: 'KDB', 0x99A7: 'KDF', 0x9950: 'KEX', 0x9951: 'KFH',
-    0x9952: 'KFI', 0x9953: 'KGA', 0x9991: 'KGB', 0x9954: 'KGO', 0x9955: 'KGU', 0x9956: 'KGW',
-    0x9957: 'KGY', 0x99AA: 'KHQ', 0x9958: 'KID', 0x9959: 'KIT', 0x995A: 'KJR', 0x995B: 'KLO',
-    0x995C: 'KLZ', 0x995D: 'KMA', 0x995E: 'KMJ', 0x995F: 'KNX', 0x9960: 'KOA', 0x99AB: 'KOB',
-    0x9992: 'KOY', 0x9993: 'KPQ', 0x9964: 'KQV', 0x9994: 'KSD', 0x9965: 'KSL', 0x9966: 'KUJ',
-    0x9995: 'KUT', 0x9967: 'KVI', 0x9968: 'KWG', 0x9996: 'KXL', 0x9997: 'KXO', 0x996B: 'KYW',
-    0x9999: 'WBT', 0x996D: 'WBZ', 0x996E: 'WDZ', 0x996F: 'WEW', 0x999A: 'WGH', 0x9971: 'WGL',
-    0x9972: 'WGN', 0x9973: 'WGR', 0x999B: 'WGY', 0x9975: 'WHA', 0x9976: 'WHB', 0x9977: 'WHK',
-    0x9978: 'WHO', 0x999C: 'WHP', 0x999D: 'WIL', 0x997A: 'WIP', 0x99B3: 'WIS', 0x997B: 'WJR',
-    0x99B4: 'WJW', 0x99B5: 'WJZ', 0x997C: 'WKY', 0x997D: 'WLS', 0x997E: 'WLW', 0x999E: 'WMC',
-    0x999F: 'WMT', 0x9981: 'WOC', 0x99A0: 'WOI', 0x9983: 'WOL', 0x9984: 'WOR', 0x99A1: 'WOW',
-    0x99B9: 'WRC', 0x99A2: 'WRR', 0x99A3: 'WSB', 0x99A4: 'WSM', 0x9988: 'WWJ', 0x9989: 'WWL',
-}
-
-
-def pi_to_callsign(pi):
-    """US call letters from an RBDS PI code, or None (Canada, Mexico, reserved...)."""
-    if pi is None:
-        return None
-    if pi >> 8 == 0xAF:                       # P1 P2 0 0 was sent as A F P1 P2
-        pi = (pi & 0xFF) << 8
-    if pi >> 12 == 0xA:                       # P1 0 P3 P4 was sent as A P1 P3 P4
-        pi = ((pi & 0x0F00) << 4) | (pi & 0xFF)
-    if pi in _RBDS_3LETTER:
-        return _RBDS_3LETTER[pi]
-    if 0x1000 <= pi <= 0x54A7:
-        first, n = 'K', pi - 4096
-    elif 0x54A8 <= pi <= 0x994F:
-        first, n = 'W', pi - 21672
-    elif pi >> 12 == 0xB and (pi & 0xFF) in (0x01, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E):
-        return 'NPR'                          # nationally linked: NPR-1 ... NPR-6
-    else:
-        return None
-    a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
-    return first + a[n // 676] + a[(n // 26) % 26] + a[n % 26]
-
-
-def pi_call_candidates(pi):
-    """Call signs a PI could mean if its first hex digit was replaced, e.g. by
-    an encoder set to international RDS mode (first digit = country code).
-    WUBL should send 899D but sends 199D: same last three digits."""
-    if pi is None:
-        return []
-    std = pi_to_callsign(pi)
-    out = []
-    for nib in range(1, 10):
-        c = pi_to_callsign((nib << 12) | (pi & 0xFFF))
-        if c and c != std and len(c) == 4 and c not in out:
-            out.append(c)
-    return out
-
-
-class RdsDecoder(gr.sync_block):
-
-    SPB = 8                                       # samples per bit at 9500 Hz
-    VLEN = 256                                    # samples per call (about 27 ms), keeps Python overhead low
-    _H = np.array([1, 1, 1, 1, -1, -1, -1, -1], dtype=np.float32)
-    _POS = {0x0FC: 0, 0x198: 1, 0x168: 2, 0x350: 2, 0x1B4: 3}   # A, B, C, C', D
-    _CPRIME = 0x350
-
-    def __init__(self):
-        gr.sync_block.__init__(self, name="rds_decoder",
-                               in_sig=[(np.complex64, self.VLEN)], out_sig=None)
-        self._crc = _crc10_table().tolist()
-        self._reset_req = False
-        self._clear()
-
-    def request_reset(self):
-        """Thread-safe: the decoder clears itself at the next work() call."""
-        self._reset_req = True
-
-    def _clear(self):
-        # published state
-        self.ps = ""
-        self.rt = ""
-        self.pi = None
-        self.call = None
-        self.pty = None
-        self.synced = False
-        self._pi_cand = None
-        self._clear_extras()
-        self._g_times = deque()                    # group arrival times, last 5 s
-        self.blocks_ok = self.blocks_all = 0
-        # timing
-        self._buf = np.zeros(0, np.float32)
-        self._n0 = 0
-        self._next = None
-        self._energy = np.zeros(self.SPB)
-        # bits / blocks
-        self._prev = 0
-        self._reg = 0
-        self._nbits = 0
-        self._sync = False
-        self._last_hit = None
-        self._pos = 0
-        self._cnt = 0
-        self._bad_run = 0
-        self._blocks = [None] * 4
-        self._cprime = False
-        # text
-        self._pi_cur = None
-        self._ps_buf = [' '] * 8
-        self._ps_seen = 0
-        self._rt_buf = [None] * 64
-        self._rt_ab = None
-
-    def work(self, input_items, output_items):
-        nvec = len(input_items[0])
-        x = input_items[0].reshape(-1)
-        if self._reset_req:
-            self._reset_req = False
-            self._clear()
-
-        buf = np.concatenate((self._buf, x.real.astype(np.float32)))
-        if len(buf) < 2 * self.SPB:
-            self._buf = buf
-            return nvec
-
-        y = np.correlate(buf, self._H, 'valid')          # y[i]: a bit starting at n0+i
-        g = self._n0 + np.arange(len(y))
-        e = np.bincount(g % self.SPB, weights=y.astype(np.float64) ** 2, minlength=self.SPB)
-        a = min(1.0, len(y) / 2000.0)                    # about 0.2 s of memory
-        self._energy = (1 - a) * self._energy + a * e / max(len(y) / self.SPB, 1.0)
-        best = int(np.argmax(self._energy))
-
-        start = self._n0 if self._next is None else self._next - self.SPB // 2
-        first = start + ((best - start) % self.SPB)
-        idx = np.arange(first - self._n0, len(y), self.SPB)
-        for v in y[idx]:
-            self._bit(1 if v > 0 else 0)
-        if len(idx):
-            self._next = self._n0 + int(idx[-1]) + self.SPB
-
-        nxt = self._next if self._next is not None else self._n0 + len(y)
-        keep = max(0, nxt - self.SPB - self._n0)
-        self._buf = buf[keep:]
-        self._n0 += keep
-        return nvec
-
-    def _bit(self, b):
-        d = b ^ self._prev
-        self._prev = b
-        reg = ((self._reg << 1) | d) & 0x3FFFFFF
-        self._reg = reg
-        self._nbits += 1
-
-        if not self._sync:
-            pos = self._POS.get((reg & 0x3FF) ^ self._crc[reg >> 10])
-            if pos is None:
-                return
-            if self._last_hit is not None:
-                n_prev, p_prev = self._last_hit
-                dn = self._nbits - n_prev
-                if dn % 26 == 0 and 0 < dn <= 104 and (p_prev + dn // 26) % 4 == pos:
-                    self._sync = self.synced = True
-                    self._pos, self._cnt, self._bad_run = pos, 0, 0
-                    self._blocks = [None] * 4
-                    self._store(pos, reg)
-                    return
-            self._last_hit = (self._nbits, pos)
-            return
-
-        self._cnt += 1
-        if self._cnt < 26:
-            return
-        self._cnt = 0
-        self._pos = (self._pos + 1) % 4
-        if self._pos == 0:
-            self._blocks = [None] * 4
-        off = (reg & 0x3FF) ^ self._crc[reg >> 10]
-        if self._POS.get(off) == self._pos:
-            self._bad_run = 0
-            self._store(self._pos, reg, off)
-        else:
-            self._bad_run += 1
-            if self._bad_run >= 10:                      # lost it (slip or fade): re-acquire
-                self._sync = self.synced = False
-                self._last_hit = None
-                return
-        if self._pos == 3:
-            self._group()
-
-    def _clear_extras(self):
-        """Station details beyond PS / RT (cleared on a new PI)."""
-        self.tp = self.ta = self.ms = None
-        self.af = frozenset()                      # alternative frequencies, MHz
-        self.ct = None                             # station clock (local time), datetime
-        self.ptyn = ''
-        self._ptyn_buf, self._ptyn_ab = [' '] * 8, None
-        self.group_counts = {}
-
-    def _store(self, pos, reg, off=None):
-        self._blocks[pos] = reg >> 10
-        if pos == 2:
-            self._cprime = (off == self._CPRIME)
-
-    def _group(self):
-        A, B, C, D = self._blocks
-        now = time.monotonic()
-        self._g_times.append(now)
-        while now - self._g_times[0] > 5.0:
-            self._g_times.popleft()
-        self.blocks_all += 4
-        self.blocks_ok += sum(b is not None for b in self._blocks)
-        if self.blocks_all > 4000:                 # keep it a recent figure
-            self.blocks_all //= 2
-            self.blocks_ok //= 2
-        if A is not None and A != self._pi_cur:
-            # A new PI must repeat before it is believed (a corrupted block can
-            # occasionally pass the CRC); then it is a new station: start over.
-            if A != self._pi_cand:
-                self._pi_cand = A
-                return
-            self._pi_cur = A
-            self.pi, self.call = A, pi_to_callsign(A)
-            self._ps_buf, self._ps_seen = [' '] * 8, 0
-            self._rt_buf, self._rt_ab = [None] * 64, None
-            self.ps = self.rt = ""
-            self._clear_extras()
-        if self._pi_cur is None or B is None:
-            return
-        gtype, ver = B >> 12, (B >> 11) & 1
-        self.pty = (B >> 5) & 0x1F
-        self.tp = bool((B >> 10) & 1)
-        name = f"{gtype}{'AB'[ver]}"
-        self.group_counts[name] = self.group_counts.get(name, 0) + 1
-
-        if gtype == 0:                                   # TA, music/speech, AF list
-            self.ta, self.ms = bool((B >> 4) & 1), bool((B >> 3) & 1)
-            if ver == 0 and C is not None:
-                new = {round(87.5 + 0.1 * c, 1) for c in (C >> 8, C & 0xFF) if 1 <= c <= 204}
-                if not new <= self.af:
-                    self.af = frozenset(self.af | new)
-        elif gtype == 4 and ver == 0 and C is not None and D is not None:   # clock time
-            mjd = ((B & 3) << 15) | (C >> 1)
-            hh, mm = ((C & 1) << 4) | (D >> 12), (D >> 6) & 0x3F
-            off = 30 * (D & 0x1F) * (-1 if (D >> 5) & 1 else 1)
-            if hh < 24 and mm < 60 and 50000 < mjd < 80000:
-                self.ct = (datetime.datetime(1858, 11, 17)
-                           + datetime.timedelta(days=mjd, hours=hh, minutes=mm + off))
-        elif gtype == 10 and ver == 0:                   # programme type name
-            seg, ab = B & 1, (B >> 4) & 1
-            if ab != self._ptyn_ab:
-                self._ptyn_buf, self._ptyn_ab = [' '] * 8, ab
-            for i, word in ((0, C), (2, D)):
-                if word is not None:
-                    self._ptyn_buf[4 * seg + i] = _rds_char(word >> 8)
-                    self._ptyn_buf[4 * seg + i + 1] = _rds_char(word & 0xFF)
-            self.ptyn = ''.join(self._ptyn_buf).strip()
-
-        if gtype == 0 and D is not None:                 # PS name, 2 chars per group
-            # Commit only a complete in-order run of segments 0,1,2,3, so a
-            # missed group can't stitch two frames of a scrolling PS together.
-            seg = B & 3
-            if seg == 0:
-                self._ps_seen = 0
-            if seg == self._ps_seen:
-                self._ps_buf[2 * seg] = _rds_char(D >> 8)
-                self._ps_buf[2 * seg + 1] = _rds_char(D & 0xFF)
-                self._ps_seen += 1
-                if self._ps_seen == 4:
-                    self.ps = ''.join(self._ps_buf)
-                    self._ps_seen = 0
-            else:
-                self._ps_seen = 0
-
-        elif gtype == 2:                                 # RadioText
-            seg, ab = B & 0xF, (B >> 4) & 1
-            if ab != self._rt_ab:
-                self._rt_buf, self._rt_ab = [None] * 64, ab
-            if ver == 0:
-                if C is not None and not self._cprime:
-                    self._rt_buf[4 * seg], self._rt_buf[4 * seg + 1] = C >> 8, C & 0xFF
-                if D is not None:
-                    self._rt_buf[4 * seg + 2], self._rt_buf[4 * seg + 3] = D >> 8, D & 0xFF
-                length = 64
-            else:
-                if D is not None:
-                    self._rt_buf[2 * seg], self._rt_buf[2 * seg + 1] = D >> 8, D & 0xFF
-                length = 32
-            text = self._rt_buf[:length]
-            end = text.index(0x0D) if 0x0D in text else length
-            if end and all(c is not None for c in text[:end]):
-                self.rt = ''.join(_rds_char(c) for c in text[:end]).strip()
-
-
 def smoothstep(x, lo, hi):
     """0 at or below lo, 1 at or above hi, smooth S-curve between."""
     t = min(max((x - lo) / (hi - lo), 0.0), 1.0)
     return t * t * (3.0 - 2.0 * t)
 
 
-class _DipControl(gr.sync_block):
-    """Static cut at a 2 kHz control rate (a plain loop is cheap).
-    Inputs: the ultrasonic-noise ratio, and fast (2 ms) averages of |z|^2 and |z|^4
-    on the channel being demodulated. Outputs: the top-end cut depth, driven by
-    ultrasonic noise as before, and the stereo pull: twice that, or the fast
-    multipath reading, whichever is more. FM has a constant envelope, so a quick
-    ripple on it is echo or noise whatever the program is doing, and the fast
-    circle CNR catches picket-fence bursts too short for the blend to follow.
-    It only takes away what the blend curve says this instant can't carry beyond
-    what the (slow) blend already removed, so a steady fair station isn't pulled twice."""
 
-    def __init__(self, rate, attack_ms, release_ms, on_db, full_db, stereo_x, mono_db, full_st_db,
-                 margin_db):
-        gr.sync_block.__init__(self, "dip_control", [np.float32] * 3, [np.float32] * 2)
-        self.aa = 1 - math.exp(-1000.0 / (rate * attack_ms))
-        self.ar = 1 - math.exp(-1000.0 / (rate * release_ms))
-        self.on, self.full, self.x = on_db, full_db, stereo_x
-        self.mono_db, self.full_st_db, self.margin = mono_db, full_st_db, margin_db
-        self.enabled, self.multipath = True, True
-        self.blend = 1.0                               # the slow blend, set by update_blend()
-        self.g, self.h = 0.0, 0.0
-        self.activity, self.mp_activity = 0.0, 0.0
-
-    def work(self, input_items, output_items):
-        r, m2, m4 = input_items
-        o, os_ = output_items
-        d = np.clip((10 * np.log10(np.maximum(r, 1e-9)) - self.on) / (self.full - self.on), 0.0, 1.0)
-        if self.multipath:
-            sq = np.sqrt(np.maximum(2 * m2 * m2 - m4, 0.0))
-            q = 10 * np.log10(np.maximum(sq, 1e-15) / np.maximum(m2 - sq, 1e-15)) + self.margin
-            t = np.clip((q - self.mono_db) / (self.full_st_db - self.mono_db), 0.0, 1.0)
-            t = t * t * (3.0 - 2.0 * t)                # the blend curve, this instant
-            b = self.blend
-            e = np.clip(1.0 - t / b, 0.0, 1.0) if b > 0.02 else np.zeros_like(d)
-        else:
-            e = np.zeros_like(d)
-        if not self.enabled:
-            d[:] = 0.0
-            e[:] = 0.0
-        g, h, aa, ar, x = self.g, self.h, self.aa, self.ar, self.x
-        for i in range(len(d)):
-            g += (aa if d[i] > g else ar) * (d[i] - g)
-            h += (aa if e[i] > h else ar) * (e[i] - h)
-            o[i] = g
-            os_[i] = max(min(1.0, x * g), h)
-        self.g, self.h = g, h
-        if len(o):
-            self.activity = 0.9 * self.activity + 0.1 * float(np.mean(os_[:len(o)]))
-            self.mp_activity = 0.9 * self.mp_activity + 0.1 * h
-        return len(o)
-
-
-class _NoiseReducer(gr.sync_block):
-    """Spectral noise reduction for L+R and L-R (inputs: MPX reference, L-R
-    reference, L+R audio, L-R audio; outputs: cleaned L+R, L-R). Per-bin SNR comes
-    from the references, where the MPX gap gives the exact noise level; the gains
-    are dimensionless, so volume, de-emphasis and blend don't matter. Fixed delay
-    of one frame; with depth 0 it is an exact pass-through."""
-
-    # critical bands (Zwicker), up to the top of the L+R audio
-    EDGES = [0, 100, 200, 300, 400, 510, 630, 770, 920, 1080, 1270, 1480, 1720, 2000, 2320,
-             2700, 3150, 3700, 4400, 5300, 6400, 7700, 9500, 12000, 15500]
-
-    def __init__(self, n, rate, alpha=0.98, close_ms=100.0):
-        gr.sync_block.__init__(self, "fm_nr", [np.float32] * 4, [np.float32] * 2)
-        self.n, self.hop, self.alpha = n, n // 4, alpha
-        self.a_close = 1 - math.exp(-(n // 4) / rate * 1000.0 / close_ms)
-        k = np.arange(n)
-        self.w = np.sqrt(0.5 - 0.5 * np.cos(2 * np.pi * k / n))     # sqrt periodic Hann
-        self.f = np.fft.rfftfreq(n, 1.0 / rate)
-        self.gap = (self.f >= 16000) & (self.f < 18500)
-        self.gap2 = (self.f >= 19600) & (self.f < 22000)       # between the pilot and L-R
-        self.f1 = float(np.mean(self.f[self.gap] ** 2))
-        self.f2 = float(np.mean(self.f[self.gap2] ** 2))
-        self.n1 = self.n2 = None
-        self.band = self.f < 15500
-        self.inbuf = np.zeros((4, 0), np.float32)
-        self.ola = np.zeros((2, n))
-        self.fifo = np.zeros((2, n), np.float32)                       # one frame of latency
-        e = np.array(self.EDGES, dtype=float)
-        self.bidx = np.clip(np.searchsorted(e, self.f, side='right') - 1, 0, len(e) - 2)
-        self.nb = len(e) - 1
-        self.centers = (e[:-1] + e[1:]) / 2
-        self.G = np.ones((2, self.nb))           # per band, smoothed in time
-        self.xi = np.ones((2, self.nb))
-        self.flicker_db = 0.0                    # average frame-to-frame gain jump (warble)
-        self.depth_db = 0.0
-        self.reduction_db = 0.0                                        # what it's taking off, on average
-
-    def _gains(self, ch, P, Nf, floor):
-        """Wiener gains per critical band (steadier than per bin, like the ear),
-        opening fast and closing slowly, then interpolated back to the bins."""
-        sel = self.band
-        Pb = np.bincount(self.bidx[sel], weights=P[sel], minlength=self.nb)
-        Nb = np.bincount(self.bidx[sel], weights=Nf[sel], minlength=self.nb)
-        gam = Pb / np.maximum(Nb, 1e-24)
-        xi = self.alpha * self.G[ch] ** 2 * self.xi[ch] + (1 - self.alpha) * np.maximum(gam - 1, 0)
-        g = np.maximum(xi / (1 + xi), floor)
-        prev = self.G[ch]
-        k = np.where(g > prev, 0.6, self.a_close)
-        gs = prev + k * (g - prev)
-        if ch == 0:
-            jump = np.abs(20 * np.log10(np.maximum(gs, 1e-6)) - 20 * np.log10(np.maximum(prev, 1e-6)))
-            self.flicker_db = 0.95 * self.flicker_db + 0.05 * float(np.mean(jump))
-        self.G[ch], self.xi[ch] = gs, gam
-        return np.interp(self.f, self.centers, gs)
-
-    def work(self, input_items, output_items):
-        n_out = len(output_items[0])
-        self.inbuf = np.concatenate([self.inbuf, np.vstack([x[:n_out] for x in input_items])], axis=1)
-        N, H, w = self.n, self.hop, self.w
-        floor = 10 ** (-self.depth_db / 20)
-        produced = []
-        while self.inbuf.shape[1] >= N:
-            fr = self.inbuf[:, :N]
-            if floor >= 0.999:
-                gm = gs = None
-            else:
-                Pm = np.abs(np.fft.rfft(fr[0] * w)) ** 2
-                Ps = np.abs(np.fft.rfft(fr[1] * w)) ** 2
-                # noise = b + a f^2, from two empty stretches of the MPX: flat (threshold
-                # clicks) shows the same level in both, the f^2 rise above threshold doesn't
-                n1, n2 = float(np.mean(Pm[self.gap])), float(np.mean(Pm[self.gap2]))
-                self.n1 = n1 if self.n1 is None else 0.9 * self.n1 + 0.1 * n1
-                self.n2 = n2 if self.n2 is None else 0.9 * self.n2 + 0.1 * n2
-                a = max((self.n2 - self.n1) / (self.f2 - self.f1), 0.0)
-                b = max(self.n1 - a * self.f1, 0.0)
-                Nm = b + a * self.f ** 2                                               # L+R noise
-                Ns = 2 * b + a * ((38e3 + self.f) ** 2 + (38e3 - self.f) ** 2)         # L-R noise
-                gm, gs = self._gains(0, Pm, Nm, floor), self._gains(1, Ps, Ns, floor)
-                self.reduction_db = 0.9 * self.reduction_db + 0.1 * float(-20 * np.log10(np.mean(gm[self.band])))
-            for ch, g in ((0, gm), (1, gs)):
-                X = np.fft.rfft(fr[2 + ch] * w)
-                y = np.fft.irfft(X * g if g is not None else X, N) * w
-                self.ola[ch] += y
-            produced.append(self.ola[:, :H] / 2.0)                    # Hann^2 at 75% overlap sums to 2
-            self.ola = np.concatenate([self.ola[:, H:], np.zeros((2, H))], axis=1)
-            self.inbuf = self.inbuf[:, H:]
-        if floor >= 0.999:
-            self.reduction_db *= 0.9
-        if produced:
-            self.fifo = np.concatenate([self.fifo] + produced, axis=1)
-        output_items[0][:] = self.fifo[0, :n_out]
-        output_items[1][:] = self.fifo[1, :n_out]
-        self.fifo = self.fifo[:, n_out:]
-        return n_out
-
-
-class FMStereoReceiver(gr.top_block):
+class FMStereoReceiver(Receiver):
 
     # ------------------------------------------------------------------
     # Tuning constants. Circle CNR is in dB; see module docstring.
@@ -684,18 +211,7 @@ class FMStereoReceiver(gr.top_block):
                                # its taps drift without the car moving. Measured on the
                                # L+R audio band, so noise on weak signals can't fake it.
 
-    # Tone controls
-    TONE_BASS_HZ      = 120.0  # first-order shelf corners
-    TONE_TREBLE_HZ    = 4000.0
-    TONE_RANGE_DB     = 12.0
-    HEADROOM_DB       = 12.0   # fixed attenuation so a full boost can't clip (TONE_MAKEUP off)
-    TONE_MAKEUP       = True   # attenuate only by the biggest boost (+ TONE_SAFETY_DB):
-                               # flat tone plays at full level, +6 dB bass gives back 6 dB
-    TONE_SAFETY_DB    = 1.0
-
-    STALL_S           = 2.0    # no samples for this long = dongle gone (raises, so a
-                               # GUI can reconnect; e.g. after the laptop sleeps)
-    START_S           = 8.0    # first samples may take this long after start()
+    # Tone controls, headroom and the lost-dongle watchdog: see radio/receiver.py
 
     LO_NUDGE          = 2000.0 # tune the RTL 2 kHz above the station so the DC canceller
                                # can never mistake the station's own carrier for DC
@@ -710,7 +226,7 @@ class FMStereoReceiver(gr.top_block):
                  log_path=None, record_iq=None, **legacy):
         # legacy kwargs (stereo_exp, treble_exp, phase_offset, phase_flip) are
         # accepted so older front ends keep working; they are no longer used.
-        gr.top_block.__init__(self, "FM Stereo Receiver")
+        Receiver.__init__(self, "FM Stereo Receiver")
 
         self.freq        = freq
         self.samp_rate   = 2_400_000
@@ -730,7 +246,7 @@ class FMStereoReceiver(gr.top_block):
         ##################################################
         # RTL-SDR source (tuner AGC always off)
         ##################################################
-        self.src = osmosdr.source(args=device_args)
+        self.src = self._make_source(device_args)
         self.src.set_sample_rate(self.samp_rate)
         self.src.set_center_freq(self.rf_freq(freq) + self.LO_NUDGE)
         self.src.set_freq_corr(0)
@@ -987,20 +503,11 @@ class FMStereoReceiver(gr.top_block):
         audio_taps = firdes.low_pass(1.0, self.mpx_rate, 16000, 2000, W)
         self.audio_decim_l = filter.fir_filter_fff(audio_decim, audio_taps)
         self.audio_decim_r = filter.fir_filter_fff(audio_decim, audio_taps)
-        # Tone controls at the audio rate: x + (gb-1)*LP(x) + (gt-1)*(x - LP'(x))
-        # are exact first-order shelves; only gains change, so no clicks.
-        ab = 1 - math.exp(-2 * math.pi * self.TONE_BASS_HZ / self.audio_rate)
-        at = 1 - math.exp(-2 * math.pi * self.TONE_TREBLE_HZ / self.audio_rate)
+        # Tone controls at the audio rate (radio/receiver.py)
         hr = 10 ** (-self._tone_atten_db(0, 0) / 20)
         for ch in ("l", "r"):
-            setattr(self, f"tone_bass_lp_{ch}", filter.single_pole_iir_filter_ff(ab))
-            setattr(self, f"tone_bass_k_{ch}", blocks.multiply_const_ff(0.0))
-            setattr(self, f"tone_tre_lp_{ch}", filter.single_pole_iir_filter_ff(at))
-            setattr(self, f"tone_tre_hp_{ch}", blocks.sub_ff(1))
-            setattr(self, f"tone_tre_k_{ch}", blocks.multiply_const_ff(0.0))
-            setattr(self, f"tone_sum_{ch}", blocks.add_ff(1))
-            setattr(self, f"headroom_{ch}", blocks.multiply_const_ff(hr))
-        self.audio_sink = audio.sink(self.audio_rate, audio_device, True)
+            self._make_tone(ch, hr)
+        self.audio_sink = self._make_audio_sink(self.audio_rate, audio_device)
 
         ##################################################
         # Monitoring taps (read only, see rx_meters.py): station audio after
@@ -1184,14 +691,7 @@ class FMStereoReceiver(gr.top_block):
             c(stage, (g("dip_out"), 0))
             c(g("dip_hpg"), (g("dip_out"), 1))
         for idx, ch in enumerate(("l", "r")):
-            g = lambda n: getattr(self, f"{n}_{ch}")
-            src = getattr(self, f"dip_out_{ch}")
-            c(src, (g("tone_sum"), 0))
-            c(src, g("tone_bass_lp"), g("tone_bass_k"), (g("tone_sum"), 1))
-            c(src, (g("tone_tre_hp"), 0))
-            c(src, g("tone_tre_lp"), (g("tone_tre_hp"), 1))
-            c(g("tone_tre_hp"), g("tone_tre_k"), (g("tone_sum"), 2))
-            c(g("tone_sum"), g("headroom"), (self.audio_sink, idx))
+            self._connect_tone(getattr(self, f"dip_out_{ch}"), ch, idx)
 
         # Monitoring taps (listen only)
         if self.audio_meter is not None:
@@ -1217,9 +717,6 @@ class FMStereoReceiver(gr.top_block):
         self._last_circ    = None
         self._last_wb      = None
         self._q_hist       = deque(maxlen=self.ATTACK_CONFIRM)
-        self._wb_seen      = now              # last time a fresh wideband window arrived
-        self._got_samples  = False            # any fresh window since start()
-        self._n_in         = 0                # samples taken from the dongle, at last look
         self._q_log        = deque()          # (t, q_raw) for AGC judging
         self._q_ctrl       = 0.0
         self._q_slow       = 0.0
@@ -1491,33 +988,6 @@ class FMStereoReceiver(gr.top_block):
         self._eq_diff, self._eq_bad_since = 0.0, None
         self._prog_gain, self._mp_held = 0.0, 0.0
 
-    def set_tone(self, bass_db, treble_db):
-        """Bass / treble in dB (+/-TONE_RANGE_DB). For a cut the shelf corner
-        moves (bass up by 1/g, treble down by g) so cut mirrors boost exactly;
-        the one-pole filters keep their state, so nothing clicks."""
-        r = self.TONE_RANGE_DB
-        gb = 10 ** (min(max(bass_db, -r), r) / 20)
-        gt = 10 ** (min(max(treble_db, -r), r) / 20)
-        fb = self.TONE_BASS_HZ / (gb if gb < 1 else 1.0)
-        ft = self.TONE_TREBLE_HZ * (gt if gt < 1 else 1.0)
-        ab = 1 - math.exp(-2 * math.pi * fb / self.audio_rate)
-        at = 1 - math.exp(-2 * math.pi * ft / self.audio_rate)
-        hr = 10 ** (-self._tone_atten_db(bass_db, treble_db) / 20)
-        for ch in ("l", "r"):
-            getattr(self, f"tone_bass_lp_{ch}").set_taps(ab)
-            getattr(self, f"tone_bass_k_{ch}").set_k(gb - 1)
-            getattr(self, f"tone_tre_lp_{ch}").set_taps(at)
-            getattr(self, f"tone_tre_k_{ch}").set_k(gt - 1)
-            getattr(self, f"headroom_{ch}").set_k(hr)
-
-    def _tone_atten_db(self, bass_db, treble_db):
-        """Attenuation after the tone controls. With TONE_MAKEUP, just enough
-        for the biggest boost to fit (plus a little), so the level stays put."""
-        if not self.TONE_MAKEUP:
-            return self.HEADROOM_DB
-        r = self.TONE_RANGE_DB
-        return max(0.0, min(bass_db, r), min(treble_db, r)) + self.TONE_SAFETY_DB
-
     def set_agc(self, enabled):
         with self._lock:
             self.agc_enabled = bool(enabled)
@@ -1783,28 +1253,8 @@ class FMStereoReceiver(gr.top_block):
     # ------------------------------------------------------------------
     # Control step: call every ~20 ms (any rate works, timing is measured)
     # ------------------------------------------------------------------
-    def _samples_in(self):
-        """Samples taken from the dongle so far (by the first block after it), or None."""
-        try:
-            return int(self.dc_sub.nitems_read(0))
-        except Exception:
-            return None
-
-    def _flow(self):
-        """Samples moved so far from the dongle and to the sound card, for stall reports."""
-        try:
-            return (f"from dongle {self.dc_sub.nitems_read(0)} samples, "
-                    f"to sound card {self.audio_sink.nitems_read(0)} samples")
-        except Exception as e:
-            return f"counters unavailable ({e})"
-
-    def start(self, *args, **kwargs):
-        """Start the flowgraph; the stall watchdog counts from here, not from construction."""
-        gr.top_block.start(self, *args, **kwargs)
-        with self._lock:
-            self._wb_seen = time.monotonic()
-            self._got_samples = False
-            self._n_in = 0
+    def _dongle_block(self):
+        return self.dc_sub
 
     def update_blend(self):
         with self._lock:
@@ -1815,17 +1265,9 @@ class FMStereoReceiver(gr.top_block):
             # ---- wideband: overload and composite level ----
             wb = self.wb_probe.level()
             new_wb = wb != self._last_wb
-            first = self._last_wb is None
+            fresh = new_wb and self._last_wb is not None
             self._last_wb = wb
-            n_in = self._samples_in()                # counted, so a steady signal can't look stalled
-            if (new_wb and not first) or (n_in is not None and n_in != self._n_in):
-                if n_in is not None:
-                    self._n_in = n_in
-                self._wb_seen = now
-                self._got_samples = True
-            elif now - self._wb_seen > (self.STALL_S if self._got_samples else self.START_S):
-                raise RuntimeError(f"no samples from the dongle for {now - self._wb_seen:.1f} s; "
-                                   f"{self._flow()}")
+            self._watchdog(now, fresh)
             pw = max(wb.real / self._wb_n, 1e-12)
             clip_frac = wb.imag / self._wb_n
             self.composite_dbfs = 10 * math.log10(pw)

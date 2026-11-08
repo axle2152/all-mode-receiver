@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 """
-am_receiver.py - AM broadcast band (530-1710 kHz) with C-QUAM AM stereo
-======================================================================
+radio/am.py - AM broadcast band (530-1710 kHz) with C-QUAM AM stereo
+====================================================================
 The AM half of the head unit. It presents the same interface as
 FMStereoReceiver, so the GUI can drive either one.
 
@@ -33,23 +32,18 @@ coherent carrier against the noise floor of the whole 960 kHz.
 import math
 import threading
 import time
-from collections import deque
 
 import numpy as np
-from gnuradio import gr, blocks, filter, analog, audio
+from gnuradio import gr, blocks, filter, analog
 from gnuradio.filter import firdes
-import osmosdr
-try:                                     # optional read-only meters for the monitor UI
-    import rx_meters
-    if rx_meters.AudioMeterBlock is None:
-        rx_meters = None
-except ImportError:
-    rx_meters = None
+
+from . import meters as rx_meters
+from .receiver import Receiver
 
 W = filter.window.WIN_HAMMING
 
 
-class AMReceiver(gr.top_block):
+class AMReceiver(Receiver):
     # ---- source ----
     AM_SOURCE        = 'direct_q'   # 'direct_q' | 'native' | 'upconverter'
     UPCONVERTER_HZ   = 125e6        # Ham It Up and similar
@@ -87,16 +81,12 @@ class AMReceiver(gr.top_block):
     AM_AUDIO_GAIN    = 1.4          # 100% modulation -> about the FM side's level
     SEEK_MIN_DB      = 22.0         # seek stops on a carrier this far above the noise
     TUNE_SETTLE_S    = 0.25
-    STALL_S          = 2.0          # no samples for this long = dongle gone (the GUI reconnects)
-    START_S          = 8.0          # first samples may take this long after start()
-    TONE_BASS_HZ, TONE_TREBLE_HZ, TONE_RANGE_DB = 120.0, 4000.0, 12.0
-    TONE_SAFETY_DB   = 1.0
     IF_TAPS          = 97           # IF and audio filters: fixed length, fixed delay
     MPX_FULL         = 1.0          # ADV audio spectrum: 1.0 = 100% modulation
 
     def __init__(self, freq=1080e3, rf_gain=0.0, agc=False, audio_device="",
                  device_args="numchan=1 rtl=0", am_source=None, upconverter_hz=None, **_):
-        gr.top_block.__init__(self, "AM Receiver")
+        Receiver.__init__(self, "AM Receiver")
         self._lock = threading.RLock()
         self.am_source = am_source or self.AM_SOURCE
         if upconverter_hz:
@@ -112,7 +102,7 @@ class AMReceiver(gr.top_block):
         args = device_args
         if self.am_source == 'direct_q':
             args = f"{device_args},direct_samp=2"
-        self.src = osmosdr.source(args=args)
+        self.src = self._make_source(args)
         self.src.set_sample_rate(self.samp_rate)
         self.src.set_center_freq(self._lo(freq), 0)
         self.src.set_freq_corr(0, 0)
@@ -234,10 +224,8 @@ class AMReceiver(gr.top_block):
 
         # ---------------- audio back end ----------------
         self._out_gain, self._muted = (1.0, 1.0), False
-        ab = self._a(self.TONE_BASS_HZ)
-        at = self._a(self.TONE_TREBLE_HZ)
         hr = 10 ** (-self._tone_atten_db(0, 0) / 20)
-        self.audio_sink = audio.sink(self.audio_rate, audio_device, True)
+        self.audio_sink = self._make_audio_sink(self.audio_rate, audio_device)
         for idx, (ch, src) in enumerate((("l", self.mat_l), ("r", self.mat_r))):
             lp = filter.fir_filter_fff(1, self._lp_taps(self.bw))
             vol = blocks.multiply_const_ff(0.5 * self.AM_AUDIO_GAIN)
@@ -247,21 +235,9 @@ class AMReceiver(gr.top_block):
             setattr(self, f"nrsc_{ch}", nrsc)
             setattr(self, f"notch_{ch}", notch)
             setattr(self, f"vol_{ch}", vol)
-            setattr(self, f"tone_bass_lp_{ch}", filter.single_pole_iir_filter_ff(ab))
-            setattr(self, f"tone_bass_k_{ch}", blocks.multiply_const_ff(0.0))
-            setattr(self, f"tone_tre_lp_{ch}", filter.single_pole_iir_filter_ff(at))
-            setattr(self, f"tone_tre_hp_{ch}", blocks.sub_ff(1))
-            setattr(self, f"tone_tre_k_{ch}", blocks.multiply_const_ff(0.0))
-            setattr(self, f"tone_sum_{ch}", blocks.add_ff(1))
-            setattr(self, f"headroom_{ch}", blocks.multiply_const_ff(hr))
-            g = lambda n: getattr(self, f"{n}_{ch}")
+            self._make_tone(ch, hr)
             c(src, lp, nrsc, notch, vol)
-            c(vol, (g("tone_sum"), 0))
-            c(vol, g("tone_bass_lp"), g("tone_bass_k"), (g("tone_sum"), 1))
-            c(vol, (g("tone_tre_hp"), 0))
-            c(vol, g("tone_tre_lp"), (g("tone_tre_hp"), 1))
-            c(g("tone_tre_hp"), g("tone_tre_k"), (g("tone_sum"), 2))
-            c(g("tone_sum"), g("headroom"), (self.audio_sink, idx))
+            self._connect_tone(vol, ch, idx)
 
         # ---------------- measurements ----------------
         self._win = self.ch_rate // 50                    # 20 ms
@@ -338,9 +314,6 @@ class AMReceiver(gr.top_block):
         self._cnr_slow = None
         self._tune_cnr = []
         self._blank_until = time.monotonic() + self.TUNE_SETTLE_S
-        self._wb_seen = time.monotonic()
-        self._got_samples = False       # any samples since start()
-        self._n_in = 0                  # samples taken from the dongle, at last look
         self._t_last = time.monotonic()
         self._bw_cur = self.bw
         fr = np.fft.fftshift(np.fft.fftfreq(self.CH_N, 1 / self.ch_rate))
@@ -366,10 +339,6 @@ class AMReceiver(gr.top_block):
         fc = min(hz + 300.0, 0.45 * self.ch_rate) / self.ch_rate
         h = 2 * fc * np.sinc(2 * fc * (np.arange(n) - m)) * np.kaiser(n, 6.0)
         return [float(v) for v in h / np.sum(h)]
-
-    def _tone_atten_db(self, bass_db, treble_db):
-        r = self.TONE_RANGE_DB
-        return max(0.0, min(bass_db, r), min(treble_db, r)) + self.TONE_SAFETY_DB
 
     def _apply_gain(self):
         gl, gr_ = (0.0, 0.0) if self._muted else self._out_gain
@@ -435,20 +404,6 @@ class AMReceiver(gr.top_block):
         with self._lock:
             self._muted = bool(muted)
             self._apply_gain()
-
-    def set_tone(self, bass_db, treble_db):
-        r = self.TONE_RANGE_DB
-        gb = 10 ** (min(max(bass_db, -r), r) / 20)
-        gt = 10 ** (min(max(treble_db, -r), r) / 20)
-        fb = self.TONE_BASS_HZ / (gb if gb < 1 else 1.0)
-        ft = self.TONE_TREBLE_HZ * (gt if gt < 1 else 1.0)
-        hr = 10 ** (-self._tone_atten_db(bass_db, treble_db) / 20)
-        for ch in ("l", "r"):
-            getattr(self, f"tone_bass_lp_{ch}").set_taps(self._a(fb))
-            getattr(self, f"tone_bass_k_{ch}").set_k(gb - 1)
-            getattr(self, f"tone_tre_lp_{ch}").set_taps(self._a(ft))
-            getattr(self, f"tone_tre_k_{ch}").set_k(gt - 1)
-            getattr(self, f"headroom_{ch}").set_k(hr)
 
     def set_wide(self, on):
         """Wide key: the filter fixed at 12 kHz, past anything a US station should send,
@@ -600,29 +555,8 @@ class AMReceiver(gr.top_block):
                 f"Clip     {self.clip_pct:6.3f} %   source: {src}")
 
     # ---------------------------------------------------------------- update
-    def _samples_in(self):
-        """Samples taken from the dongle so far (by the first filter), or None."""
-        try:
-            return int(self.xlate.nitems_read(0))
-        except Exception:
-            return None
-
-    def _flow(self):
-        """Samples moved so far from the dongle and to the sound card, for stall reports."""
-        try:
-            return (f"from dongle {self.xlate.nitems_read(0)} samples, "
-                    f"to sound card {self.audio_sink.nitems_read(0)} samples")
-        except Exception as e:
-            return f"counters unavailable ({e})"
-
-    def start(self, *args, **kwargs):
-        """Start the flowgraph; the stall watchdog counts from here, not from construction
-        (opening the dongle can take seconds, longer on Linux than on Windows)."""
-        gr.top_block.start(self, *args, **kwargs)
-        with self._lock:
-            self._wb_seen = time.monotonic()
-            self._got_samples = False
-            self._n_in = 0
+    def _dongle_block(self):
+        return self.xlate
 
     def update_blend(self):
         """Called every ~20 ms by the GUI: measurements, IF bandwidth, stereo."""
@@ -631,13 +565,13 @@ class AMReceiver(gr.top_block):
             dt = min(now - self._t_last, 0.2)
             self._t_last = now
 
-            # stall watchdog (the GUI reconnects on repeated errors)
+            # wideband snapshot: noise floor, composite level, clipping
             wb = self.snap_wb.level()
+            fresh = False
             if len(wb) == self.WB_N and np.any(np.asarray(wb)):
                 if self._last_wb is None or wb[0] != self._last_wb:
                     self._last_wb = wb[0]
-                    self._wb_seen = now
-                    self._got_samples = True
+                    fresh = True
                     x = np.asarray(wb)
                     P = np.abs(np.fft.fftshift(np.fft.fft(x * self._wbw))) ** 2 / self._wbw_wp
                     k = self.WB_N // 10
@@ -648,17 +582,10 @@ class AMReceiver(gr.top_block):
                         self._n0_hz = n0 if self._n0_hz is None else 0.8 * self._n0_hz + 0.2 * n0
                     self.composite_dbfs = 10 * math.log10(max(float(np.mean(np.abs(x) ** 2)), 1e-12))
                     self.clip_pct = 100.0 * float(np.mean((np.abs(x.real) > 0.98) | (np.abs(x.imag) > 0.98)))
-            # alive while samples keep coming in, counted, so a steady signal (or the
-            # 8-bit Q branch sitting on one value) can't look stalled
-            n_in = self._samples_in()
-            if n_in is not None and n_in != self._n_in:
-                self._n_in = n_in
-                self._wb_seen = now
-                self._got_samples = True
-            limit = self.STALL_S if self._got_samples else self.START_S
-            if now - self._wb_seen > limit:
-                raise RuntimeError(f"no samples from the dongle for {now - self._wb_seen:.1f} s; "
-                                   f"{self._flow()}")
+            # lost-dongle watchdog (the GUI reconnects on repeated errors); samples are
+            # counted, so a steady signal (or the 8-bit Q branch sitting on one value)
+            # can't look stalled
+            self._watchdog(now, fresh)
 
             try:
                 self._measure(now)
