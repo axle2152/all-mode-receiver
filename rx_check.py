@@ -7,7 +7,7 @@ rx_check.py - is the receiver's signal chain moving? No window, no tuner.
     python3 rx_check.py --band fm --freq 90.5e6
     python3 rx_check.py --audio-device pulse
 
-Runs the AM receiver (am_receiver.py) or the FM receiver (fm_stereo.py) twice,
+Runs the AM receiver (radio/am.py) or the FM receiver (radio/fm) twice,
 10 s each:
   1. as the tuner runs it, with sound
   2. with the sound output swapped for a silent one
@@ -38,13 +38,13 @@ def child(band, mode, freq, secs, am_source, audio_device):
     if mode == 'silent':                 # both receivers look up audio.sink when they're built
         audio.sink = lambda *a, **k: blocks.null_sink(gr.sizeof_float)
     if band == 'am':
-        from am_receiver import AMReceiver
+        from radio.am import AMReceiver
         tb = AMReceiver(freq=freq, am_source=am_source, audio_device=audio_device)
         probes = (lambda: tb.xlate.nitems_read(0), lambda: tb.pll.nitems_written(0),
                   lambda: tb.audio_sink.nitems_read(0))
         rates = (tb.samp_rate, tb.ch_rate, tb.audio_rate)
     else:
-        from fm_stereo import FMStereoReceiver
+        from radio.fm import FMStereoReceiver
         tb = FMStereoReceiver(freq=freq, audio_device=audio_device)
         probes = (lambda: tb.dc_sub.nitems_read(0), lambda: tb.fm_demod.nitems_written(0),
                   lambda: tb.audio_sink.nitems_read(0))

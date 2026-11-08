@@ -1,0 +1,90 @@
+"""
+radio/addons.py - optional decoders that aren't part of this repository
+=======================================================================
+An add-on is a separately installed Python package that plugs a decoder into a receiver.
+If none is installed, nothing here does anything and nothing is printed. If one is
+installed but fails to load or to start, the receiver prints one line in the terminal and
+carries on without it. See docs/ADDONS.md for how to write one.
+
+Finding add-ons: an installed package declares itself in its pyproject.toml,
+
+    [project.entry-points."all_mode_receiver.addons"]
+    mydecoder = "my_package.radio_addon:Addon"
+
+and the entry point names the add-on class. The class says which bands it serves
+(BANDS = ('AM',)); a receiver of that band creates it once its own flowgraph is built.
+"""
+from importlib import metadata
+
+GROUP = 'all_mode_receiver.addons'
+
+# Station data an add-on can report from update(), and the receiver attribute each one
+# fills (the same fields RDS fills on FM, so the window shows them the same way).
+STATION_FIELDS = {
+    'ps': 'rds_ps', 'rt': 'rds_rt', 'pi': 'rds_pi', 'call': 'rds_call', 'pty': 'rds_pty',
+    'synced': 'rds_synced', 'tp': 'rds_tp', 'ta': 'rds_ta', 'af': 'rds_af', 'ct': 'rds_ct',
+    'rate': 'rds_rate', 'bler': 'rds_bler',
+}
+
+
+def _entry_points():
+    try:
+        return list(metadata.entry_points(group=GROUP))
+    except Exception:
+        return []
+
+
+def classes_for(band):
+    """(name, class) of every installed add-on that serves this band. Ones that can't be
+    loaded are reported in one line each and skipped."""
+    out = []
+    for ep in _entry_points():
+        try:
+            cls = ep.load()
+        except Exception as e:
+            print(f"Add-on '{ep.name}' not used: {type(e).__name__}: {e}")
+            continue
+        if band in tuple(getattr(cls, 'BANDS', ())):
+            out.append((ep.name, cls))
+    return out
+
+
+class Attached:
+    """One add-on running on one receiver. Errors from the add-on stop the add-on, never
+    the receiver: the first is reported in one line and the add-on is dropped."""
+
+    def __init__(self, name, obj):
+        self.name, self.obj, self.alive = name, obj, True
+
+    def _call(self, method, *args):
+        if not self.alive:
+            return None
+        fn = getattr(self.obj, method, None)
+        if fn is None:
+            return None
+        try:
+            return fn(*args)
+        except Exception as e:
+            self.alive = False
+            print(f"Add-on '{self.name}' stopped: {type(e).__name__}: {e}")
+            return None
+
+    def reset(self):
+        self._call('reset')
+
+    def update(self, now):
+        return self._call('update', now)
+
+    def readout(self):
+        return self._call('readout') or ''
+
+
+def attach(rx):
+    """Create every installed add-on for this receiver's band. Returns the ones that started."""
+    out = []
+    for name, cls in classes_for(rx.BAND):
+        try:
+            out.append(Attached(name, cls(rx)))
+        except Exception as e:
+            print(f"Add-on '{name}' not used: {type(e).__name__}: {e}")
+    return out

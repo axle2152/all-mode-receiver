@@ -1,7 +1,6 @@
-#!/usr/bin/env python3
 """
-rx_meters.py
-============
+radio/meters.py
+===============
 Read-only metering taps for the SDR receivers. They sit beside the audio
 path inside the flowgraph and only listen, so the monitor sees every
 sample: no peak is missed between snapshots, and loudness is measured on
@@ -21,8 +20,6 @@ ModMeterBlock     the demodulated composite (FM, in kHz of deviation) or
                   recurrence", the way the FCC words the limit).
 
 Each block's read() returns what has happened since the previous read().
-The receivers create these only if this file is present; without it they
-run exactly as before.
 """
 
 import math
