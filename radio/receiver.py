@@ -189,6 +189,14 @@ class Receiver(gr.top_block):
         """Start the installed add-ons for this band. Call once the flowgraph is built."""
         if self.addon_tap() is not None:
             self.addons = _addons.attach(self)
+            if self.addons:
+                self._clear_station()
+
+    def _clear_station(self):
+        """Every station data field back to 'nothing decoded'."""
+        self.station = {}
+        for attr, empty in _addons.STATION_DEFAULTS.items():
+            setattr(self, attr, list(empty) if isinstance(empty, list) else empty)
 
     def _reset_addons(self):
         """On a retune: the add-ons start over, and the old station's data is cleared."""
@@ -196,9 +204,7 @@ class Receiver(gr.top_block):
             return
         for a in self.addons:
             a.reset()
-        self.station = {}
-        self.rds_ps, self.rds_rt, self.rds_pi, self.rds_call, self.rds_pty = '', '', None, None, None
-        self.rds_synced = False
+        self._clear_station()
 
     def _update_addons(self, now):
         """From update_blend(): what the add-ons report fills the station data fields."""

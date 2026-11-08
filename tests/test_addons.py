@@ -48,6 +48,7 @@ class EntryPoint:
 
 class Good:
     BANDS = ('AM',)
+    NAME = 'TEST'
 
     def __init__(self, rx):
         self.rx, self.resets, self.n = rx, 0, 0
@@ -63,6 +64,9 @@ class Good:
 
     def readout(self):
         return 'Test add-on: all well'
+
+    def meter(self):
+        return ('Test data', 0.5, 'half')
 
 
 class BrokenStart:
@@ -122,6 +126,12 @@ def main():
     install(EntryPoint('good', Good))
     tb, said = build(AM, freq=1080e3)
     check("started on AM", len(tb.addons) == 1 and said == '', said)
+    check("it listens before the carrier lock (the add-on runs its own)",
+          tb.addon_tap() == (tb.if_filter, 0))
+    check("its name, meter and readout reach the window",
+          tb.addons[0].label == 'TEST' and tb.addons[0].meter() == ('Test data', 0.5, 'half'))
+    check("every station field starts empty",
+          (tb.rds_ps, tb.rds_pi, tb.rds_af, tb.rds_tp, tb.rds_rate, tb.rds_ms) == ('', None, [], None, 0.0, None))
     run(tb)
     check("its station data reaches the receiver",
           (tb.rds_ps, tb.rds_pi, tb.rds_call, tb.rds_synced) == ('TESTING', 0x54A8, 'WAAA', True),
@@ -130,7 +140,8 @@ def main():
     check("its lines are in the Advanced readout", 'Test add-on: all well' in tb.readout())
     tb.set_freq(750e3)
     check("a retune resets it and clears the old station",
-          tb.addons[0].obj.resets == 1 and tb.rds_ps == '' and tb.rds_pi is None and tb.station == {})
+          tb.addons[0].obj.resets == 1 and tb.rds_ps == '' and tb.rds_pi is None and tb.station == {}
+          and tb.rds_synced is False and tb.rds_af == [])
     tb.stop()
     tb, said = build(FM, freq=90.5e6)
     check("not started on FM (it serves AM)", tb.addons == [] and said == '')

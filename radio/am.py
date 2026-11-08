@@ -541,8 +541,10 @@ class AMReceiver(Receiver):
                 f"Clip     {self.clip_pct:6.3f} %   source: {src}" + self._addons_readout())
 
     def addon_tap(self):
-        """Add-ons listen to the 48 kHz channel after the carrier lock."""
-        return (self.pll, 0)
+        """Add-ons listen to the 48 kHz channel, frequency-corrected and filtered, before the
+        carrier lock: one that needs a locked carrier runs its own, as fast or slow as it needs
+        (this receiver's 4 Hz lock is tuned for C-QUAM)."""
+        return (self.if_filter, 0)
 
     # ---------------------------------------------------------------- update
     def _dongle_block(self):

@@ -9,7 +9,9 @@ test_window.py - does the tuner window build and run, on AM and on FM?
 Opens the real tuner window against the GNU Radio stand-in (tests/standin), with a pretend
 dongle sending a steady signal, for 12 seconds on each band, and fails on any error, crash or
 'Dongle lost'. On FM it also clicks Static cut and Noise reduction in Settings and checks each
-one changes only its own setting. --fonts limits the window to the fonts in one folder (for example only
+one changes only its own setting. A third run is AM with a pretend add-on installed: its
+station data must reach the dot matrix and the Advanced window, an alert must blink, and key I
+must open its window. --fonts limits the window to the fonts in one folder (for example only
 Ubuntu's basic DejaVu set, or an empty folder for none at all).
 
 The window runs from a copy of the program in a temporary folder, so it can't touch your
@@ -22,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -34,6 +37,10 @@ def child(appdir, band, fonts, secs):
     from gnuradio._sim import SIM
     from radio.ui import app as A, fonts as F
     SIM.reset()
+    addon = band == 'AM+addon'
+    if addon:
+        install_pretend_addon()
+        band = 'AM'
     if fonts is not None:
         F._FONT_DIRS = [fonts]
     log = []
@@ -93,11 +100,83 @@ def child(appdir, band, fonts, secs):
         bad += problems
         real_print('RESULT', 'FAIL' if bad or app.band != band or 'Ready' not in seen else 'PASS')
         app._on_close()
+    def addon_checks():
+        """The pretend add-on's station data on the dot matrix and in Advanced; alert; key I."""
+        now = time.monotonic()
+        call, ps, rt = app._rds_fields(app.tb, now)
+        if (call.strip(), ps.strip()) != ('WAAA', 'TESTING') or not rt.startswith('Testing one'):
+            problems.append(f'add-on: dot matrix shows {(call, ps, rt)!r}')
+        app._toggle_advanced()
+        root.update()
+        root.after(1500, addon_checks_2)
+
+    def addon_checks_2():
+        if app._ps_var.get() != 'TESTING' or 'Pretend add-on: decoding' not in app._rdsd_var.get():
+            problems.append(f'add-on: Advanced shows {app._ps_var.get()!r} / {app._rdsd_var.get()!r}')
+        app.tb.station['alert'] = 2
+        t0 = float(int(time.monotonic()) + 1)          # a whole second: the first half shows ALERT
+        shown = {app._rds_fields(app.tb, t)[1].strip() for t in (t0, t0 + 0.5)}
+        if shown != {'ALERT', ''}:
+            problems.append(f'add-on: alert blinks {shown!r}')
+        app.tb.station['alert'] = 0
+        app._addon_window()
+        w = PretendAddon.windows
+        if len(w) != 1 or w[0].toggles != 1 or w[0].current() is not app.tb.addons[0].obj:
+            problems.append('add-on: key I did not open its window')
+        app._toggle_advanced()
+        real_print('INFO add-on station data:', 'ok' if not problems else '; '.join(problems))
+
     root.after(250, sample)
     if band == 'FM':
         root.after(2000, settings_clicks)
+    if addon:
+        root.after(5000, addon_checks)
     root.after(int(secs * 1000), finish)
     root.mainloop()
+
+
+class PretendAddon:
+    """Stands in for an installed add-on: steady station data on AM."""
+    BANDS = ('AM',)
+    NAME = 'TEST'
+    windows = []
+
+    def __init__(self, rx):
+        from gnuradio import blocks, gr
+        rx.connect(rx.addon_tap(), blocks.null_sink(gr.sizeof_gr_complex))
+
+    def update(self, now):
+        return {'pi': 0x54A8, 'call': 'WAAA', 'ps': 'TESTING', 'rt': 'Testing one two three',
+                'pty': 3, 'synced': True, 'rate': 11.0, 'bler': 2.0, 'tp': False, 'ta': False}
+
+    def readout(self):
+        return 'Pretend add-on: decoding'
+
+    def meter(self):
+        return ('Test data', 0.8, 'good')
+
+    @classmethod
+    def make_window(cls, parent, current):
+        class Win:
+            toggles = 0
+
+            def toggle(self):
+                self.toggles += 1
+        w = Win()
+        w.current = current
+        cls.windows.append(w)
+        return w
+
+
+def install_pretend_addon():
+    import radio.addons
+
+    class EntryPoint:
+        name = 'pretend'
+
+        def load(self):
+            return PretendAddon
+    radio.addons._entry_points = lambda: [EntryPoint()]
 
 
 def run(band, fonts):
@@ -132,13 +211,13 @@ def run(band, fonts):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument('--fonts', default=None, help='use only the fonts in this folder')
-    ap.add_argument('--child', choices=('AM', 'FM'), help=argparse.SUPPRESS)
+    ap.add_argument('--child', choices=('AM', 'FM', 'AM+addon'), help=argparse.SUPPRESS)
     ap.add_argument('--appdir', help=argparse.SUPPRESS)
     a = ap.parse_args()
     if a.child:
         child(a.appdir, a.child, a.fonts, SECS)
         return 0
-    results = [run(band, a.fonts) for band in ('AM', 'FM')]
+    results = [run(band, a.fonts) for band in ('AM', 'FM', 'AM+addon')]
     print('\nAll passed.' if all(results) else f'\n{results.count(False)} failed.')
     return 0 if all(results) else 1
 

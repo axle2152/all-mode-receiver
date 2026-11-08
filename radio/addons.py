@@ -23,7 +23,13 @@ GROUP = 'all_mode_receiver.addons'
 STATION_FIELDS = {
     'ps': 'rds_ps', 'rt': 'rds_rt', 'pi': 'rds_pi', 'call': 'rds_call', 'pty': 'rds_pty',
     'synced': 'rds_synced', 'tp': 'rds_tp', 'ta': 'rds_ta', 'af': 'rds_af', 'ct': 'rds_ct',
-    'rate': 'rds_rate', 'bler': 'rds_bler',
+    'rate': 'rds_rate', 'bler': 'rds_bler', 'ms': 'rds_ms', 'ptyn': 'rds_ptyn',
+}
+# ...and what each field holds when nothing has been decoded
+STATION_DEFAULTS = {
+    'rds_ps': '', 'rds_rt': '', 'rds_pi': None, 'rds_call': None, 'rds_pty': None,
+    'rds_synced': False, 'rds_tp': None, 'rds_ta': None, 'rds_af': [], 'rds_ct': None,
+    'rds_rate': 0.0, 'rds_bler': 0.0, 'rds_ms': None, 'rds_ptyn': None,
 }
 
 
@@ -55,6 +61,7 @@ class Attached:
 
     def __init__(self, name, obj):
         self.name, self.obj, self.alive = name, obj, True
+        self.label = str(getattr(type(obj), 'NAME', name))     # for lamps and messages
 
     def _call(self, method, *args):
         if not self.alive:
@@ -77,6 +84,14 @@ class Attached:
 
     def readout(self):
         return self._call('readout') or ''
+
+    def meter(self):
+        """(label, 0..1, text) for a meter in the Advanced window, or None."""
+        return self._call('meter')
+
+    def window_maker(self):
+        """The add-on's make_window(parent, current), or None if it has no window."""
+        return getattr(type(self.obj), 'make_window', None)
 
 
 def attach(rx):

@@ -582,7 +582,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         for ch, fn in (('m', self._memory), ('f', lambda: self._band('FM')),
                        ('a', lambda: self._band('AM')), ('o', self._toggle_mono),
                        ('w', self._toggle_wide), ('p', self._toggle_power),
-                       ('d', self._direct_toggle)):
+                       ('d', self._direct_toggle), ('i', self._addon_window)):
             r.bind(ch, lambda e, fn=fn: fn())
             r.bind(ch.upper(), lambda e, fn=fn: fn())
         self._refresh_vfd(force=True)
@@ -1074,7 +1074,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         # hearing was received (Settings > Panel > Sync to audio)
         rx = dict(stereo=tb is not None and not self._moving() and getattr(tb, 'stereo_indicator', False),
                   tuned=self._tuned(tb, now),
-                  rds=(self.band == 'FM' and tb is not None and not self._moving()
+                  rds=(tb is not None and (tb.has('rds') or bool(tb.addons)) and not self._moving()
                        and getattr(tb, 'rds_synced', False)),
                   sig=self._signal_steps(tb, now), text=self._rds_fields(tb, now))
         self._rx_line.push(now, rx)
@@ -1215,7 +1215,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         n_rt = DOT_FIELDS[2][2]
         if tb is None or self._moving() or now - self._tuned_t < TUNED_SETTLE_S:
             return ('', '', '')
-        if self.band == 'AM':
+        if self.band == 'AM' and not (tb.addons and getattr(tb, 'rds_pi', None) is not None):
             if not getattr(tb, 'stereo_indicator', False):
                 return ('', '', '')
             return ('', '', 'KAHN ISB STEREO' if getattr(tb, 'stereo_system', '') == 'kahn' else 'C-QUAM STEREO')
@@ -1223,6 +1223,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             return ('', '', '')
         call = (self._call_for(tb) or '')[:4]
         ps = (tb.rds_ps or '').strip()[:8]
+        alert = tb.station.get('alert', 0)              # an add-on's alert: blink ALERT or TEST
+        if alert:                                       # over the station name
+            ps = ('ALERT' if alert >= 2 else 'TEST') if int(now * 2) % 2 == 0 else ''
         rt = ' '.join((tb.rds_rt or '').split())
         if rt != self._rt_text:
             self._rt_text, self._rt_pos, self._rt_t = rt, 0, now

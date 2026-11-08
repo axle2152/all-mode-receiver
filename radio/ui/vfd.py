@@ -55,8 +55,15 @@ FONT_5X7 = {
     'w': '00 00 11 11 15 15 0A', 'x': '00 00 11 0A 04 0A 11', 'y': '00 00 11 11 0F 01 0E',
     'z': '00 00 1F 02 04 08 1F', '{': '02 04 04 08 04 04 02', '|': '04 04 04 04 04 04 04',
     '}': '08 04 04 02 04 04 08', '~': '00 00 08 15 02 00 00',
+    '\u00b0': '0C 12 12 0C 00 00 00',          # degree sign (temperatures in station text)
 }
 _GLYPHS = {ch: [int(v, 16) for v in rows.split()] for ch, rows in FONT_5X7.items()}
+
+
+def _plain(ch):
+    """The font has no accents: show \u00c9 as E, \u00f1 as n (the Advanced window shows the real text)."""
+    import unicodedata
+    return unicodedata.normalize('NFKD', ch)[:1] or ' '
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +287,7 @@ class TunerVfd(VfdBase):
     def _dot_keys(field, text):
         keys = []
         for c, ch in enumerate(text):
-            rows = _GLYPHS.get(ch, _GLYPHS[' '])
+            rows = _GLYPHS.get(ch) or _GLYPHS.get(_plain(ch), _GLYPHS[' '])
             for r in range(7):
                 bits = rows[r]
                 for k in range(5):

@@ -84,9 +84,10 @@ class AdvancedWindow:
         rt.pack(fill=tk.X, padx=(12, 8), pady=(2, 0))
         tips.bind(rt, TIPS['rds_rt'])
         det = tk.Label(hd, textvariable=self._rdsd_var, font=('Courier', 8), fg='#5f9f95',
-                       bg=DASH_BG, anchor='w', width=104)
+                       bg=DASH_BG, anchor='w', justify=tk.LEFT, width=104)
         det.pack(fill=tk.X, padx=(12, 8), pady=(1, 6))
         tips.bind(det, TIPS['rds_detail'])
+        det.bind('<Button-1>', lambda e: self._addon_window())
 
         r2 = tk.Frame(colL, bg=P)
         r2.pack(padx=10, anchor='w')
@@ -304,6 +305,57 @@ class AdvancedWindow:
                 return cand
         return tb.rds_call or ''
 
+    def _addon_station_show(self, tb, data):
+        """Station data an add-on decodes on AM, laid out the way RDS is on FM."""
+        khz = f"{self.freq / 1e3:.0f} kHz"
+        call = self._call_for(tb)
+        pty = _pty_name(tb.rds_pty) if tb.rds_pty else ''
+        ptyn = tb.rds_ptyn
+        if ptyn and ptyn.lower() != pty.lower():
+            pty = f"{pty} ({ptyn})" if pty else ptyn
+        alert = tb.station.get('alert', 0)
+        self._ps_var.set(tb.rds_ps if tb.rds_ps.strip() else (call or ''))
+        self._id_var.set(f"{call or 'PI ' + format(tb.rds_pi, '04X')}   {khz}\n"
+                         + ({1: 'EMERGENCY TEST', 2: 'EMERGENCY ALERT'}.get(alert) or pty))
+        self._rt_var.set(tb.rds_rt or '')
+        flag = lambda v: '--' if v is None else ('yes' if v else 'no')
+        ct = tb.rds_ct
+        ct = ct.strftime('%I:%M %p').lstrip('0') if hasattr(ct, 'strftime') else (ct or '')
+        af = tb.rds_af or []
+        extra = '   '.join(x for x in (
+            ('AF ' + ', '.join(str(f) for f in af[:5]) + (f" +{len(af) - 5}" if len(af) > 5 else '')) if af else '',
+            f"clock {ct}" if ct else '') if x)
+        first = (f"PI {tb.rds_pi:04X}   TP {flag(tb.rds_tp)}  TA {flag(tb.rds_ta)}   "
+                 f"{tb.rds_rate:4.2f} groups/s   {tb.rds_bler:3.0f}% lost" + (f"   {extra}" if extra else ''))
+        lines = [a.readout() for a in data if a.readout()]
+        self._rdsd_var.set('\n'.join([first] + lines))
+
+    def _addon_window(self):
+        """An add-on's own window (key I, or a click on the station detail line): the first
+        add-on running on this receiver that has one. Pressed again, it hides."""
+        tb = self.tb
+        for a in (tb.addons if tb is not None else []):
+            maker = a.window_maker()
+            if maker is None or not a.alive:
+                continue
+            wins = self.__dict__.setdefault('_addon_wins', {})
+            if a.name not in wins:
+                try:
+                    wins[a.name] = maker(self.root, lambda name=a.name: self._addon_obj(name))
+                except Exception as e:
+                    print(f"Add-on '{a.name}' window not opened: {type(e).__name__}: {e}")
+                    return
+            wins[a.name].toggle()
+            return
+
+    def _addon_obj(self, name):
+        """The add-on of this name on the receiver running now, or None (for its window)."""
+        tb = self.tb
+        for a in (tb.addons if tb is not None else []):
+            if a.name == name and a.alive:
+                return a.obj
+        return None
+
     def _rds_show(self, tb):
         mhz = f"{self.freq / 1e6:.1f} MHz"
         pi = tb.rds_pi
@@ -344,13 +396,20 @@ class AdvancedWindow:
             self._hist_pts.clear()
         if am:
             blank = tb.has('blankers')
+            data = [a for a in tb.addons if a.alive]          # add-ons decoding on this receiver
+            meter = data[0].meter() if data else None
             self._lamps.set_lamps([
                 ('lock', 'LOCKED', SEG_ON['good'], TIPS['lamp_lock']),
                 ('amst', 'AM STEREO', SEG_ON['help'], TIPS['lamp_amst']),
-                ('pilot', 'PILOT', SEG_ON['help'], TIPS['lamp_pilot']),
-                ('agc', 'AGC', SEG_ON['good'], TIPS['lamp_agc'])]
+                ('pilot', 'PILOT', SEG_ON['help'], TIPS['lamp_pilot'])]
+                + ([('data', data[0].label, SEG_ON['help'], TIPS['lamp_data']),
+                    ('alert', 'ALERT', SEG_ON['poor'], TIPS['lamp_alert'])] if data else [])
+                + [('agc', 'AGC', SEG_ON['good'], TIPS['lamp_agc'])]
                 + ([('blank', 'BLANKER', SEG_ON['fair'], TIPS['lamp_blank'])] if blank else [])
                 + [('clip', 'CLIP', SEG_ON['poor'], TIPS['lamp_clip'])])
+            if data:
+                self._lamps.show('data', tb.rds_synced)
+                self._lamps.show('alert', bool(tb.station.get('alert', 0)))
             if blank:
                 ibr, nbp, sgr = tb.blanker_stats()
                 self._lamps.show('blank', ibr + sgr > 1.0 or nbp > 0.05)
@@ -366,6 +425,8 @@ class AdvancedWindow:
                 ('bw', 'Bandwidth', 'help', TIPS['am_bw'], None),
                 ('pil', 'Stereo pilot', 'help', TIPS['am_pilot'], None),
                 ('st', 'Stereo', 'help', TIPS['am_stereo'], None)]
+                + ([('data', meter[0], 'help', TIPS['am_data'], None)] if meter else [])
+                + ([('blk', 'Blocks lost', 'low', TIPS['am_blocks'], None)] if data else [])
                 + ([('ib', 'Impulse blanker', 'low', TIPS['am_ib'], None),
                     ('nb', 'Noise blanker', 'low', TIPS['am_nb'], None)] if blank else []))
             q = tb.cnr_db
@@ -384,17 +445,36 @@ class AdvancedWindow:
                                   f"{ibr + sgr:4.0f}/min" if on_ib else 'off')
                 self._meters.show('nb', min(1.0, nbp / 1.0) if on_nb else 0,
                                   f"{nbp:4.2f}%" if on_nb else 'off')
+            if meter:
+                self._meters.show('data', meter[1], meter[2])
+            if data:
+                has_bler = 'bler' in tb.station
+                self._meters.show('blk', tb.rds_bler / 100 if has_bler else 0,
+                                  f"{tb.rds_bler:3.0f}%" if has_bler else '--')
             self._signal_bars(q, None)
-            self._ps_var.set(f"{self.freq / 1e3:.0f} AM")
-            self._id_var.set((('KAHN ISB AM STEREO' if getattr(tb, 'stereo_system', '') == 'kahn' else 'C-QUAM AM STEREO')
-                              if tb.stereo_indicator else
-                              ('Kahn ISB' if getattr(tb, 'stereo_system', '') == 'kahn' else 'C-QUAM') + ', blended to mono'
-                              if tb.pilot_on else 'AM, mono')
-                             + ('\ncarrier locked' if getattr(tb, 'locked', False) else '\nsearching for carrier'))
-            src = {'direct_q': 'Q-branch direct sampling', 'native': 'quadrature tuner',
-                   'upconverter': f"upconverter +{tb.UPCONVERTER_HZ / 1e6:.0f} MHz"}.get(tb.am_source, '')
-            self._rt_var.set(f"Carrier offset {tb.carrier_hz:+.0f} Hz   level {tb.channel_dbfs:.1f} dBFS")
-            self._rdsd_var.set(f"Source: {src}   No RDS on AM")
+            if data and tb.rds_pi is not None:
+                self._addon_station_show(tb, data)
+            else:
+                self._ps_var.set(f"{self.freq / 1e3:.0f} AM")
+                stereo = (('KAHN ISB AM STEREO' if getattr(tb, 'stereo_system', '') == 'kahn' else 'C-QUAM AM STEREO')
+                          if tb.stereo_indicator else
+                          ('Kahn ISB' if getattr(tb, 'stereo_system', '') == 'kahn' else 'C-QUAM') + ', blended to mono'
+                          if tb.pilot_on else 'AM, mono')
+                if data:
+                    label = data[0].label
+                    self._id_var.set(stereo + (f"\n{label} found, reading..." if tb.rds_synced
+                                               else f"\n{label}: searching"))
+                else:
+                    self._id_var.set(stereo + ('\ncarrier locked' if getattr(tb, 'locked', False)
+                                               else '\nsearching for carrier'))
+                src = {'direct_q': 'Q-branch direct sampling', 'native': 'quadrature tuner',
+                       'upconverter': f"upconverter +{tb.UPCONVERTER_HZ / 1e6:.0f} MHz"}.get(tb.am_source, '')
+                self._rt_var.set(f"Carrier offset {tb.carrier_hz:+.0f} Hz   level {tb.channel_dbfs:.1f} dBFS")
+                if data:
+                    lines = [a.readout() for a in data if a.readout()]
+                    self._rdsd_var.set('\n'.join([f"Source: {src}"] + lines))
+                else:
+                    self._rdsd_var.set(f"Source: {src}   No RDS on AM")
             self._hist_pts.append((q, q, tb.stereo_indicator))
             self._hist_draw(True)
             return

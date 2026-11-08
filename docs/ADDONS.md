@@ -26,6 +26,7 @@ built its own signal chain, it creates the add-on.
 ```python
 class Addon:
     BANDS = ('AM',)                  # the receivers it plugs into
+    NAME = 'MYDATA'                  # short: it labels the lamp and the messages
 
     def __init__(self, rx):
         """Build GNU Radio blocks and connect them to what the receiver offers:
@@ -39,16 +40,39 @@ class Addon:
         Return a dict of station data (see below), or None for nothing new."""
 
     def readout(self):
-        """Lines for the Advanced window, or ''."""
+        """A line for the Advanced window, under the station details, or ''."""
+
+    def meter(self):
+        """(label, 0..1, text) for a meter in the Advanced window, or None."""
+
+    @classmethod
+    def make_window(cls, parent, current):
+        """The add-on's own Tk window, opened with key I or a click on the station detail
+        line. Return an object with toggle() (show / hide). current() gives the add-on
+        running on the receiver now, or None between receivers."""
 ```
 
-`reset`, `update` and `readout` are optional.
+Everything but `BANDS` and `__init__` is optional. `readout`, `meter` and `current()` are
+called from the window's thread, so they should only read.
+
+## What the window shows
+
+When an add-on is running on AM:
+- its lamp (labelled with `NAME`) in the Advanced window, lit while `synced` is true, and an
+  ALERT lamp
+- its meter, if it has one, and a Blocks lost meter from `bler`
+- once a `pi` arrives, the station on the dot matrix (call letters, name, scrolling text) and
+  in the Advanced window, the way RDS shows on FM, with its `readout` line under the details;
+  the RDS legend lights while `synced`
+- an `alert` of 2 blinks ALERT over the station name (1 blinks TEST)
+
+Without an add-on, AM looks exactly as it always has.
 
 ## What the receiver offers
 
 | | |
 |---|---|
-| `rx.addon_tap()` | `(block, port)` to connect to. On AM: the 48 kHz complex channel after the carrier lock. |
+| `rx.addon_tap()` | `(block, port)` to connect to. On AM: the 48 kHz complex channel, frequency-corrected and filtered, before the carrier lock. An add-on that needs a locked carrier runs its own, as fast or slow as it needs. |
 | `rx.connect(...)` | GNU Radio's connect, for wiring the add-on's blocks |
 | `rx.BAND`, `rx.freq`, `rx.ch_rate` | the band, the frequency it's tuned to, the channel sample rate |
 | `rx.station` | everything the add-ons have reported since the last retune |
@@ -69,7 +93,9 @@ shows the way it shows RDS:
 | `tp`, `ta` | `rds_tp`, `rds_ta` | traffic program, traffic announcement |
 | `af` | `rds_af` | other frequencies with the same station |
 | `ct` | `rds_ct` | the station's clock |
-| `rate`, `bler` | `rds_rate`, `rds_bler` | data groups per second, share lost |
+| `rate`, `bler` | `rds_rate`, `rds_bler` | data groups per second, share lost (%) |
+| `ms`, `ptyn` | `rds_ms`, `rds_ptyn` | music or speech, program type name |
+| `alert` | (kept in `rx.station`) | 0 none, 1 test, 2 emergency |
 
 Any other key is kept in `rx.station`. A retune clears all of it.
 
