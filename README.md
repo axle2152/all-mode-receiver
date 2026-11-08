@@ -145,6 +145,19 @@ so `git pull` won't touch your presets.
 | `fm_stereo.py` | The FM stereo receiver the tuner uses on FM; also runs on its own |
 | `rx_meters.py` | Audio and signal metering taps for the monitor |
 | `rx_check.py` | Checks a receiver's signal chain without the window, and says in plain words which part stops |
+| `tests/` | Checks that run without GNU Radio or a dongle (see below) |
+| `docs/ROADMAP.md` | Where the project is going, phase by phase |
+
+## Checks
+
+These run without GNU Radio or a dongle, using a stand-in that pretends a dongle is sending
+samples:
+
+    python3 tests/test_watchdog.py       # tells a lost dongle from a quiet one, AM and FM
+    python3 tests/test_loudness.py       # loudness meter against ITU BS.1770 and EBU Tech 3341/3342
+    python3 tests/test_window.py         # the whole window runs on AM and FM
+
+On Linux without a screen, run the window check as `xvfb-run -a python3 tests/test_window.py`.
 
 ## If the dongle keeps dropping
 
@@ -164,9 +177,13 @@ else running, the kernel's TV-tuner driver has it. Unplug the dongle, run
 
 ## Where it's going
 
-- Shortwave broadcast bands
-- More presets, in pages of 24
-- More modes: SSB and DSB, and where possible DRM and other digital modes
+- A frequency display with enough digits for any frequency, and an S-meter
+- Shortwave and amateur bands, with presets in pages of 24
+- More modes: synchronous AM, SSB, DSB and CW, then narrowband FM and amateur digital modes,
+  with automatic identification of which digital system a signal is using
+- Later, possibly DRM and HD Radio
+
+The details, phase by phase, are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## License
 
