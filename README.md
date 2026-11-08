@@ -54,6 +54,9 @@ It also shows how many data groups arrive each second and how many are lost.
   it's open wide enough to pass the 10 kHz whistle from neighbouring stations, that whistle is
   notched out.
 - **NRSC-1 de-emphasis**, to undo the treble boost many US AM stations transmit.
+- **Station data from add-ons.** With an add-on installed that decodes station data on AM
+  (see `docs/ADDONS.md`), the tuner shows it the way it shows RDS on FM: call letters, name,
+  scrolling text and program type.
 - Carrier lock, carrier-to-noise, adjacent-channel strength and carrier offset readings.
 
 ### The tuner

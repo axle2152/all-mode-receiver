@@ -68,13 +68,14 @@ setting and connection is unchanged. For the window, compare screenshots of the 
   repository until the owner says otherwise. No PMDS code here, and nothing about how PMDS
   works: not in code, comments, docs, tests, commit messages or pull requests. Refer to it
   only as an optional add-on for the AM receiver.
-- The plan (roadmap Phase 3): the AM receiver uses the PMDS add-on if it's installed and stays
-  a plain AM radio, silently, if it isn't. The add-on interface (`radio/addons.py`,
-  `docs/ADDONS.md`) is generic and names no add-on; the add-on lives in the private
-  repository and registers itself through the `all_mode_receiver.addons` entry point.
-- Until then the private repository carries its own copies of this repository's receivers,
-  meters and tuner, so a fix to that shared code may be needed there as well. It already uses
-  this repository's automatic AM filter table, but not its AM width settings or 12 kHz Wide.
+- The AM receiver uses the PMDS add-on if it's installed and stays a plain AM radio, silently,
+  if it isn't. The add-on interface (`radio/addons.py`, `docs/ADDONS.md`) is generic and names
+  no add-on; the add-on lives in the private repository (`pmds_addon.py`, installed with
+  `pip install -e` of that folder) and registers itself through the `all_mode_receiver.addons`
+  entry point. The private repository keeps no copies of this one's tuner or receivers.
+- The private repository's `tests/test_addon.py` runs PMDS through this repository's real AM
+  receiver in GNU Radio. Run it after changing `radio/am.py`, `radio/receiver.py`,
+  `radio/addons.py` or the window's station display; keep the add-on interface stable.
 - Sample rates: AM takes 960 ksps from the dongle (the RTL-SDR silently dropped samples at
   2.4 Msps on the owner's bench); FM still takes 2.4 Msps.
 

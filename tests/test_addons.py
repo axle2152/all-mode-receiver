@@ -81,6 +81,11 @@ class BrokenUpdate(Good):
         raise ZeroDivisionError('oops')
 
 
+class SaysMono(Good):
+    def update(self, now):
+        return {'mono': True}
+
+
 class FmOnly(Good):
     BANDS = ('FM',)
 
@@ -145,6 +150,14 @@ def main():
     tb.stop()
     tb, said = build(FM, freq=90.5e6)
     check("not started on FM (it serves AM)", tb.addons == [] and said == '')
+    tb.stop()
+
+    install(EntryPoint('mono', SaysMono))
+    tb, said = build(AM, freq=1080e3)
+    tb.pilot_on, tb._pil_hits = True, 3                   # as if something passed for a pilot
+    run(tb, 0.1)
+    check("one that says the station is mono: no stereo pilot, whatever it looks like",
+          tb.pilot_on is False and tb._pil_hits == 0)
     tb.stop()
 
     print("\nBroken add-ons")

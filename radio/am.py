@@ -679,6 +679,10 @@ class AMReceiver(Receiver):
             elif self._pil_hits == 0:
                 self.pilot_on = False
 
+        # An add-on knows this station is mono: whatever looks like a pilot isn't one
+        if self.station.get('mono'):
+            self._pil_hits, self.pilot_on = 0, False
+
         # stereo blend: only with the pilot, and as the carrier-to-noise allows
         tb = 0.0
         if self.pilot_on and self._cnr_slow is not None and not self.force_mono:
