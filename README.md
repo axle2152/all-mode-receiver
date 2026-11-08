@@ -170,6 +170,11 @@ samples:
     python3 tests/test_addons.py         # add-ons plug in; a missing or broken one stays harmless
     python3 tests/test_window.py         # the whole window runs on AM and FM
 
+With GNU Radio installed (still no dongle needed), this one runs the real receivers on a
+pretend test station:
+
+    python3 tests/test_gnuradio.py
+
 On Linux without a screen, run the window check as `xvfb-run -a python3 tests/test_window.py`.
 
 ## If the dongle keeps dropping

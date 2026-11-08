@@ -51,6 +51,7 @@ Run before every commit:
     python3 tests/test_am_width.py
     python3 tests/test_addons.py
     python3 tests/test_window.py          # needs a screen; headless Linux: xvfb-run -a ...
+    python3 tests/test_gnuradio.py        # needs GNU Radio (apt install gnuradio gr-osmosdr)
 
 `test_window.py --fonts <folder>` limits the window to one folder of fonts (Ubuntu's basic
 DejaVu set, or an empty folder).
