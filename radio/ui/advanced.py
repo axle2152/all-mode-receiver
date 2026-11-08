@@ -343,15 +343,17 @@ class AdvancedWindow:
             self._hist_key = key
             self._hist_pts.clear()
         if am:
+            blank = tb.has('blankers')
             self._lamps.set_lamps([
                 ('lock', 'LOCKED', SEG_ON['good'], TIPS['lamp_lock']),
                 ('amst', 'AM STEREO', SEG_ON['help'], TIPS['lamp_amst']),
                 ('pilot', 'PILOT', SEG_ON['help'], TIPS['lamp_pilot']),
-                ('agc', 'AGC', SEG_ON['good'], TIPS['lamp_agc']),
-                ('blank', 'BLANKER', SEG_ON['fair'], TIPS['lamp_blank']),
-                ('clip', 'CLIP', SEG_ON['poor'], TIPS['lamp_clip'])])
-            ibr, nbp, sgr = tb.blanker_stats() if hasattr(tb, 'blanker_stats') else (0.0, 0.0, 0.0)
-            self._lamps.show('blank', ibr + sgr > 1.0 or nbp > 0.05)
+                ('agc', 'AGC', SEG_ON['good'], TIPS['lamp_agc'])]
+                + ([('blank', 'BLANKER', SEG_ON['fair'], TIPS['lamp_blank'])] if blank else [])
+                + [('clip', 'CLIP', SEG_ON['poor'], TIPS['lamp_clip'])])
+            if blank:
+                ibr, nbp, sgr = tb.blanker_stats()
+                self._lamps.show('blank', ibr + sgr > 1.0 or nbp > 0.05)
             self._lamps.show('lock', getattr(tb, 'locked', False))
             self._lamps.show('amst', tb.stereo_indicator)
             self._lamps.show('pilot', tb.pilot_on)
@@ -363,9 +365,9 @@ class AdvancedWindow:
                 ('adj', 'Neighbours', 'low', TIPS['am_adj'], None),
                 ('bw', 'Bandwidth', 'help', TIPS['am_bw'], None),
                 ('pil', 'Stereo pilot', 'help', TIPS['am_pilot'], None),
-                ('st', 'Stereo', 'help', TIPS['am_stereo'], None),
-                ('ib', 'Impulse blanker', 'low', TIPS['am_ib'], None),
-                ('nb', 'Noise blanker', 'low', TIPS['am_nb'], None)])
+                ('st', 'Stereo', 'help', TIPS['am_stereo'], None)]
+                + ([('ib', 'Impulse blanker', 'low', TIPS['am_ib'], None),
+                    ('nb', 'Noise blanker', 'low', TIPS['am_nb'], None)] if blank else []))
             q = tb.cnr_db
             self._meters.show('q', q / 40, f"{q:4.1f} dB")
             self._meters.show('lvl', (tb.channel_dbfs + 60) / 60, f"{tb.channel_dbfs:5.1f}")
@@ -376,10 +378,12 @@ class AdvancedWindow:
                               f"{100 * tb.pilot_level:4.1f}%" if tb.pilot_on else 'none')
             self._meters.show('st', tb.current_blend if tb.pilot_on else 0,
                               f"{100 * tb.current_blend:3.0f}%" if tb.pilot_on else 'mono')
-            on_ib, on_nb = getattr(tb, 'ib_on', False), getattr(tb, 'nb_level', 'off') != 'off'
-            self._meters.show('ib', min(1.0, (ibr + sgr) / 60) if on_ib else 0,
-                              f"{ibr + sgr:4.0f}/min" if on_ib else 'off')
-            self._meters.show('nb', min(1.0, nbp / 1.0) if on_nb else 0, f"{nbp:4.2f}%" if on_nb else 'off')
+            if blank:
+                on_ib, on_nb = getattr(tb, 'ib_on', False), getattr(tb, 'nb_level', 'off') != 'off'
+                self._meters.show('ib', min(1.0, (ibr + sgr) / 60) if on_ib else 0,
+                                  f"{ibr + sgr:4.0f}/min" if on_ib else 'off')
+                self._meters.show('nb', min(1.0, nbp / 1.0) if on_nb else 0,
+                                  f"{nbp:4.2f}%" if on_nb else 'off')
             self._signal_bars(q, None)
             self._ps_var.set(f"{self.freq / 1e3:.0f} AM")
             self._id_var.set((('KAHN ISB AM STEREO' if getattr(tb, 'stereo_system', '') == 'kahn' else 'C-QUAM AM STEREO')
@@ -558,7 +562,7 @@ class AdvancedWindow:
         for key, col, wdt in (('pre', HIST_BEFORE, 1), ('post', HIST_AFTER, 2)):
             bx, by = self._bins(xs, -yv(ifs[key][sel]), SPEC_W // 2)
             cv.create_line(*np.column_stack((bx, -by)).ravel().tolist(), fill=col, width=wdt)
-        h, wgt = tb.eq_taps() if hasattr(tb, 'eq_taps') else (None, 0.0)
+        h, wgt = tb.eq_taps() if tb.has('echo') else (None, 0.0)
         if h is not None and len(h) > 1:
             He = np.abs(np.fft.fftshift(np.fft.fft(np.asarray(h, np.complex128), ifs['n'])))
             band = np.abs(f) <= 90

@@ -10,9 +10,11 @@ Receiver is the base of the AM and FM receivers (and the modes still to come):
                  receiver's first block, so a steady signal can't look like a lost dongle.
   tone controls  bass and treble first-order shelves at the audio rate, then just enough
                  headroom that a full boost can't clip
+  add-ons        decoders installed separately (radio/addons.py, docs/ADDONS.md): a
+                 receiver that offers addon_tap() starts them once its flowgraph is built
 
-A receiver says which band it is (BAND) and what it can do (FEATURES); see radio/ui for
-how the window uses that.
+A receiver says which band it is (BAND) and what it can do (FEATURES). The window shows
+the controls for the features a receiver has, and calls nothing else on it.
 """
 import math
 import time
@@ -20,10 +22,26 @@ import time
 from gnuradio import gr, blocks, filter, audio
 import osmosdr
 
+from . import addons as _addons
+
 
 class Receiver(gr.top_block):
     BAND = None
+    # What this receiver can do, and what each feature promises:
+    #   'mono'          set_force_mono(on)
+    #   'fm_helpers'    set_enhancements(blend, hicut), set_dip_hicut(on), set_noise_reduction(on)
+    #   'echo'          the echo canceller: set_eq_mode(mode), eq_taps()
+    #   'fm_bandwidth'  broadcast FM's filter: set_if_mode('auto' | 'wide' | 'narrow')
+    #   'am_width'      set_auto_ceiling(hz), set_if_mode('auto' | 'fixed'), set_wide(on)
+    #   'am_stereo'     set_stereo_system('auto' | 'cquam' | 'kahn')
+    #   'nrsc'          set_nrsc_deemphasis(on)
+    #   'blankers'      set_blankers(impulse, noise), blanker_stats()
+    #   'rds'           station data in rds_ps, rds_rt, rds_pi and the other rds_ fields
     FEATURES = frozenset()
+
+    # What the window may call on any receiver: set_freq, set_output_gain, set_mute, set_tone,
+    # set_agc, set_manual_gain, update_blend, snapshot, cnr_since_tune, audio_lag, monitor,
+    # and the gr.top_block start / stop / wait.
 
     # ---- watchdog ----
     STALL_S          = 2.0    # no samples for this long = dongle gone (raises, so a GUI can
@@ -44,6 +62,20 @@ class Receiver(gr.top_block):
         self._wb_seen = time.monotonic()      # last time samples were seen arriving
         self._got_samples = False             # any since start()
         self._n_in = 0                        # samples taken from the dongle, at last look
+        self.addons = []                      # add-ons running on this receiver
+        self.station = {}                     # what they last reported (radio/addons.py)
+
+    def has(self, feature):
+        return feature in self.FEATURES
+
+    # ------------------------------------------------- the rest of the interface
+    def audio_lag(self):
+        """(meters, front end) seconds the sound card trails the measurements, or None."""
+        return None
+
+    def monitor(self):
+        """Meter readings since the last call (see radio/meters.py), or None."""
+        return None
 
     # -------------------------------------------------- hardware (tests replace these)
     def _make_source(self, args):
@@ -147,3 +179,36 @@ class Receiver(gr.top_block):
             return self.HEADROOM_DB
         r = self.TONE_RANGE_DB
         return max(0.0, min(bass_db, r), min(treble_db, r)) + self.TONE_SAFETY_DB
+
+    # ----------------------------------------------------------------- add-ons
+    def addon_tap(self):
+        """(block, port) an add-on listens to, or None if this receiver takes no add-ons."""
+        return None
+
+    def _attach_addons(self):
+        """Start the installed add-ons for this band. Call once the flowgraph is built."""
+        if self.addon_tap() is not None:
+            self.addons = _addons.attach(self)
+
+    def _reset_addons(self):
+        """On a retune: the add-ons start over, and the old station's data is cleared."""
+        if not self.addons:
+            return
+        for a in self.addons:
+            a.reset()
+        self.station = {}
+        self.rds_ps, self.rds_rt, self.rds_pi, self.rds_call, self.rds_pty = '', '', None, None, None
+        self.rds_synced = False
+
+    def _update_addons(self, now):
+        """From update_blend(): what the add-ons report fills the station data fields."""
+        for a in self.addons:
+            data = a.update(now)
+            if data:
+                self.station.update(data)
+                for key, attr in _addons.STATION_FIELDS.items():
+                    if key in data:
+                        setattr(self, attr, data[key])
+
+    def _addons_readout(self):
+        return ''.join('\n' + a.readout() for a in self.addons if a.readout())

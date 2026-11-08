@@ -7,15 +7,32 @@ more modes and amateur digital modes (see `docs/ROADMAP.md`). Owner: Michael Fol
 
 ## Where things are
 
-- `quartz_tuner_ui.py`: the tuner and monitor window, the program people run.
-- `am_receiver.py`, `fm_stereo.py`: the receivers (GNU Radio top blocks), same interface.
-- `rx_meters.py`: read-only metering taps (BS.1770 loudness blocks, true peak, modulation).
+- `quartz_tuner_ui.py`: the launcher people run (its docstring is the user's guide to the
+  keys). It only calls `radio.ui.app.main()`.
+- `radio/`: the package. `receiver.py` is the base every receiver derives from (dongle and
+  sound-card openers, lost-dongle watchdog, tone controls, add-on hook); `am.py` and `fm/`
+  are the receivers (GNU Radio top blocks); `meters.py` the read-only metering taps;
+  `addons.py` finds installed add-ons; `ui/` is the window (`app.py` with the Settings and
+  Advanced windows as mixins in `settings.py` and `advanced.py`; displays, widgets, artwork,
+  fonts, theme, constants in their own modules).
 - `rx_check.py`: runs a receiver without the window and reports per-stage sample counts and a
   verdict. First thing to ask for when a receiver misbehaves on a machine you can't see.
 - `tests/`: tests that need neither GNU Radio nor a dongle. `tests/standin/` is a stand-in
   for GNU Radio and osmosdr that the tests put first on the path; it pretends a dongle is
-  sending samples.
+  sending samples, and with `STANDIN_TRACE=1` it logs every block, connection and call.
 - `docs/ROADMAP.md`: the phased plan. Tick items off and add notes as work lands.
+- `docs/ADDONS.md`: the add-on interface.
+
+## How the pieces talk
+
+- A receiver declares `BAND` and `FEATURES` (listed in `radio/receiver.py`). The window calls
+  the common interface on any receiver, and a feature's methods only when the receiver has
+  that feature (`tb.has('am_width')`); building windows before a receiver runs, it asks
+  `radio.ui.backend.band_has()`. No `hasattr` probing and no do-nothing stand-ins: a new
+  mode is a new `Receiver` subclass that declares what it can do.
+- Settings files live beside `quartz_tuner_ui.py` (`radio.TOP_DIR`), never inside the package.
+- `fonts.UI_FAMILY` and `fonts.FACE_FONT` are reassigned at start-up (Nimbus Sans): read them
+  through the module, never `from .fonts import UI_FAMILY`.
 
 ## Must run on
 
@@ -32,11 +49,17 @@ Run before every commit:
     python3 tests/test_watchdog.py
     python3 tests/test_loudness.py
     python3 tests/test_am_width.py
+    python3 tests/test_addons.py
     python3 tests/test_window.py          # needs a screen; headless Linux: xvfb-run -a ...
 
 `test_window.py --fonts <folder>` limits the window to one folder of fonts (Ubuntu's basic
-DejaVu set, or an empty folder). Recorded-signal tests from the owner's IQ files are next
-(Phase 1); the recordings stay out of git.
+DejaVu set, or an empty folder).
+
+The owner has no usable IQ recordings, so a refactor is proven with
+`tests/trace_receivers.py`: record a trace of the old code (check it out with
+`git worktree add`) and of the new, and `--compare` them. Identical means every block,
+setting and connection is unchanged. For the window, compare screenshots of the old and new
+(both windows, AM and FM) pixel for pixel. Say what was compared in the commit message.
 
 ## PMDS stays out of this repository
 
@@ -45,8 +68,9 @@ DejaVu set, or an empty folder). Recorded-signal tests from the owner's IQ files
   works: not in code, comments, docs, tests, commit messages or pull requests. Refer to it
   only as an optional add-on for the AM receiver.
 - The plan (roadmap Phase 3): the AM receiver uses the PMDS add-on if it's installed and stays
-  a plain AM radio, silently, if it isn't. The add-on interface lives here; the add-on lives
-  in the private repository.
+  a plain AM radio, silently, if it isn't. The add-on interface (`radio/addons.py`,
+  `docs/ADDONS.md`) is generic and names no add-on; the add-on lives in the private
+  repository and registers itself through the `all_mode_receiver.addons` entry point.
 - Until then the private repository carries its own copies of this repository's receivers,
   meters and tuner, so a fix to that shared code may be needed there as well. It already uses
   this repository's automatic AM filter table, but not its AM width settings or 12 kHz Wide.

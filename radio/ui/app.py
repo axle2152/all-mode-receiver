@@ -470,9 +470,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
     def _apply_mono(self):
         """Mono: FM zeroes the L-R gain; AM ignores the C-QUAM stereo. STEREO stays dark."""
         tb = self.tb
-        if tb is not None and self.band == 'FM' and hasattr(tb, 'target_lmr'):
-            tb.target_lmr = 0.0 if self.fm_mono else self.lmr_gain
-        if tb is not None and hasattr(tb, 'set_force_mono'):
+        if tb is not None and tb.has('mono'):
             tb.set_force_mono(self.fm_mono)
 
     def _apply_output(self):
@@ -481,22 +479,25 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             self.tb.set_output_gain(g, g)
 
     def _apply_dsp(self, tb):
-        tb.set_enhancements(blend=self.blend_on, hicut=self.hicut_on)
-        tb.set_eq_mode(self.eq_mode)
-        if hasattr(tb, 'set_auto_ceiling'):            # AM: its own width settings
+        """Every setting the receiver has a feature for (Receiver.FEATURES)."""
+        if tb.has('fm_helpers'):
+            tb.set_enhancements(blend=self.blend_on, hicut=self.hicut_on)
+        if tb.has('echo'):
+            tb.set_eq_mode(self.eq_mode)
+        if tb.has('am_width'):
             tb.set_auto_ceiling(self.am_normal_hz)
             tb.set_if_mode('auto' if self.am_auto_width else 'fixed')
             tb.set_wide(self.am_wide)
-        elif hasattr(tb, 'set_if_mode'):
+        if tb.has('fm_bandwidth'):
             tb.set_if_mode(self.if_mode)
-        if hasattr(tb, 'set_dip_hicut'):
+        if tb.has('fm_helpers'):
             tb.set_dip_hicut(self.dip_hicut)
             tb.set_noise_reduction(self.noise_red)
-        if hasattr(tb, 'set_nrsc_deemphasis'):
+        if tb.has('nrsc'):
             tb.set_nrsc_deemphasis(self.am_nrsc)
-        if hasattr(tb, 'set_stereo_system'):
+        if tb.has('am_stereo'):
             tb.set_stereo_system(self.am_stereo)
-        if hasattr(tb, 'set_blankers'):
+        if tb.has('blankers'):
             tb.set_blankers(impulse=self.am_ib, noise=self.am_nb)
 
     # ------------------------------------------------------------------
@@ -744,7 +745,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if not self.power_on:
             return
         self.am_wide = not self.am_wide
-        if self.tb is not None and self.band == 'AM' and hasattr(self.tb, 'set_wide'):
+        if self.tb is not None and self.tb.has('am_width'):
             self.tb.set_wide(self.am_wide)
         self._refresh_keys()
         self._save_settings()
@@ -1308,7 +1309,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         tb = self.tb
         if tb is not self._lag_tb:
             self._lag_tb, self._lag = tb, None
-        if tb is None or not hasattr(tb, 'audio_lag'):
+        if tb is None:
             return
         try:
             raw = tb.audio_lag()
@@ -1338,7 +1339,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             self._mon_reset_req = False
             self._mon_q.append(dict(t=now, reset=True))
         m = None
-        if tb is not None and hasattr(tb, 'monitor'):
+        if tb is not None:
             try:
                 m = tb.monitor()
             except Exception as e:
@@ -1539,7 +1540,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         now = time.monotonic()
         if self._echo is not None and now - self._echo_t < 0.25:
             return self._echo
-        if not hasattr(tb, 'eq_taps'):
+        if not tb.has('echo'):
             return None
         h, wgt = tb.eq_taps()
         h = np.asarray(h, np.complex128)

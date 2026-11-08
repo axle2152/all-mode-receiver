@@ -78,6 +78,8 @@ def smoothstep(x, lo, hi):
 
 
 class FMStereoReceiver(Receiver):
+    BAND = 'FM'
+    FEATURES = frozenset({'mono', 'fm_helpers', 'echo', 'fm_bandwidth', 'rds'})
 
     # ------------------------------------------------------------------
     # Tuning constants. Circle CNR is in dB; see module docstring.
@@ -234,6 +236,7 @@ class FMStereoReceiver(Receiver):
         self.audio_rate  = audio_rate
         self.lmr_only    = lmr_only
         self.target_lmr  = lmr_gain
+        self._lmr_gain   = lmr_gain               # what mono off goes back to
         self.phase_trim  = phase_trim_deg
         self._lock       = threading.RLock()
 
@@ -1210,6 +1213,11 @@ class FMStereoReceiver(Receiver):
             self._if_apply(new)
         else:
             self._if_cur = new
+
+    def set_force_mono(self, on):
+        """Mono: no L-R at all, so the STEREO light stays dark."""
+        with self._lock:
+            self.target_lmr = 0.0 if on else self._lmr_gain
 
     def set_phase_trim(self, degrees):
         self.phase_trim = degrees

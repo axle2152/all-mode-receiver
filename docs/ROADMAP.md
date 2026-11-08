@@ -28,35 +28,36 @@ are so the split in Phase 2 can be shown to leave it that way.
 - [x] Tests that need neither GNU Radio nor a dongle (`tests/`): the dongle watchdog, the
   loudness meter against ITU BS.1770 and EBU Tech 3341/3342, the AM filter settings, and the
   whole window on AM and FM
-- [ ] Play an IQ recording through a receiver in place of the dongle
-- [ ] Reference results from the owner's recordings: C/N, filter width, stereo, RDS text,
-  loudness, peak modulation over time. A test plays each recording and compares.
-  The recordings themselves stay out of git (too large); the test takes their folder.
-
-Needs from the owner: the recordings, and for each one its file format, sample rate, centre
-frequency and what's on it.
+- [x] In place of recordings (the owner has none usable): `tests/trace_receivers.py` records
+  every block, setting, connection and call each receiver makes through a scripted session,
+  so old and new code can be compared exactly; screenshots of the window, compared pixel for
+  pixel, cover the window
+- [ ] Later, if recordings turn up: play an IQ recording through a receiver in place of the
+  dongle, with reference results (C/N, filter width, stereo, RDS text, loudness, peaks)
 
 ## Phase 2: Split into parts (no change in behaviour)
 
 The code grew around exactly two bands. Before adding more, split it so new bands and modes
 plug in instead of adding another branch everywhere.
 
-- [ ] A package folder beside the program with:
-  - a shared receiver base: dongle or recording input, the watchdog, and the audio output
-    (tone, volume, mute, headroom, meter taps)
-  - the FM parts: RDS decoder, echo canceller, noise reduction, blend and high-cut control
-  - the AM parts: C-QUAM and Kahn decoders, the adaptive filter
-  - the meters
-- [ ] The window split into the display drawing (VFD, dot matrix, scope screen), the controls,
-  the monitor and loudness logic, the Settings and Advanced windows, and the app itself
-- [ ] Each receiver states what it can do, and the window shows the controls that fit. This
-  replaces the window probing receivers and the receivers' do-nothing stand-ins for the
-  other band's controls, which is how the AM blanker controls ended up wired to nothing.
-- [ ] A small add-on interface, so a decoder that isn't part of this repository can plug into
-  a receiver (Phase 3)
-- [ ] `quartz_tuner_ui.py` stays the program you run, and existing settings files keep working
+- [x] The `radio/` package beside the program:
+  - `receiver.py`, the base every receiver shares: dongle and sound-card openers, the
+    lost-dongle watchdog, tone controls and headroom
+  - `am.py`; `fm/` with the receiver, its RDS decoder and its own blocks
+  - `meters.py`
+- [x] The window split into 14 modules under `radio/ui/`: the app, the Settings and Advanced
+  windows, monitor and loudness logic, the displays, widgets, artwork, fonts, theme,
+  constants
+- [x] Each receiver states its band and what it can do (`FEATURES`), and the window calls only
+  what a receiver has. The probing and the do-nothing stand-ins are gone; the AM blanker
+  controls are hidden until the blankers exist (Phase 6).
+- [x] The add-on interface: `radio/addons.py`, `docs/ADDONS.md`, `tests/test_addons.py`
+- [x] `quartz_tuner_ui.py` stays the program you run, and existing settings files keep working
 
-Done when the Phase 1 tests pass unchanged and the window looks and behaves the same.
+Checked: the receivers' traces were identical before and after the move (10,268 events), and
+the window's screenshots pixel-identical, with and without Nimbus Sans. Found on the way and
+fixed: Settings' Static cut checkbox couldn't turn static cut off (its variable was reused by
+the blanker row), and clicking Noise reduction switched static cut on.
 
 Afterwards: FM at a lower sample rate too, like AM, once the recordings can show its tuning
 (gain control, quality thresholds) still holds.
@@ -66,12 +67,14 @@ Afterwards: FM at a lower sample rate too, like AM, once the recordings can show
 PMDS is the owner's own work and stays private for now, in its own repository. None of its
 code, and nothing about how it works, goes in this repository.
 
-- [ ] When the AM receiver starts, it looks for the PMDS add-on. If it's installed, the tuner
-  shows what it decodes, the way it shows RDS on FM. If it isn't, this is a regular AM radio:
-  no message, no empty controls.
-- [ ] The add-on gets the AM receiver's channel signal and reports station data the tuner
-  already knows how to show (station name, text, program type), plus its own lines for the
-  Advanced window.
+- [x] When the AM receiver starts, it looks for installed add-ons. If there are none, this is
+  a regular AM radio: no message, no empty controls.
+- [x] An add-on gets the AM receiver's channel signal and reports station data (station name,
+  text, program type and the other RDS fields), plus its own lines for the Advanced window.
+- [ ] The window shows that station data on AM the way it shows RDS on FM: the dot matrix,
+  the RDS lamp, the Advanced window's station panel
+- [ ] The add-on itself, in the private repository, registered through the
+  `all_mode_receiver.addons` entry point
 - [ ] The private repository keeps only PMDS and its add-on. Its own copies of this
   repository's tuner and receivers retire, which ends the drift between the copies.
 - [x] Meanwhile the private repository uses this receiver's automatic AM filter table.

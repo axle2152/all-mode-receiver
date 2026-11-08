@@ -44,6 +44,9 @@ W = filter.window.WIN_HAMMING
 
 
 class AMReceiver(Receiver):
+    BAND = 'AM'
+    FEATURES = frozenset({'mono', 'am_width', 'am_stereo', 'nrsc'})
+
     # ---- source ----
     AM_SOURCE        = 'direct_q'   # 'direct_q' | 'native' | 'upconverter'
     UPCONVERTER_HZ   = 125e6        # Ham It Up and similar
@@ -324,6 +327,7 @@ class AMReceiver(Receiver):
         self._wbw_wp = float(np.sum(self._wbw ** 2))
         self._set_notch(self.bw >= self.NOTCH_FROM_HZ)
         self._apply_gain()
+        self._attach_addons()                    # any installed add-ons (radio/addons.py)
 
     # ------------------------------------------------------------------ helpers
     def _a(self, hz):
@@ -394,6 +398,7 @@ class AMReceiver(Receiver):
             self.blend_k.set_k(0.0)
             self.current_blend = 0.0
             self._blank_until = time.monotonic() + self.TUNE_SETTLE_S
+            self._reset_addons()
 
     def set_output_gain(self, left, right):
         with self._lock:
@@ -468,25 +473,6 @@ class AMReceiver(Receiver):
         if self.am_source != 'direct_q':
             self.src.set_gain_mode(bool(on), 0)
 
-    # FM-only controls: accepted, nothing to do on AM
-    def set_enhancements(self, blend=None, hicut=None):
-        pass
-
-    def set_eq_mode(self, mode):
-        pass
-
-    def set_noise_blanker(self, on):
-        pass
-
-    def set_dip_hicut(self, on):
-        pass
-
-    def set_noise_reduction(self, on):
-        pass
-
-    def eq_reset(self):
-        pass
-
     def cnr_since_tune(self):
         with self._lock:
             return list(self._tune_cnr)
@@ -552,7 +538,11 @@ class AMReceiver(Receiver):
                 f"Stereo   {'Kahn ISB' if self.stereo_system == 'kahn' else 'C-QUAM'} {st}   "
                 f"pilot {self.pilot_hz} Hz {100 * self.pilot_level:4.1f}% "
                 f"({self.pilot_ratio_db:+5.1f} dB)  blend {self.current_blend:4.2f}\n"
-                f"Clip     {self.clip_pct:6.3f} %   source: {src}")
+                f"Clip     {self.clip_pct:6.3f} %   source: {src}" + self._addons_readout())
+
+    def addon_tap(self):
+        """Add-ons listen to the 48 kHz channel after the carrier lock."""
+        return (self.pll, 0)
 
     # ---------------------------------------------------------------- update
     def _dongle_block(self):
@@ -593,6 +583,7 @@ class AMReceiver(Receiver):
                 if not getattr(self, '_said', False):
                     self._said = True
                     print(f"AM measurement: {type(e).__name__}: {e}")
+            self._update_addons(now)
 
     def _measure(self, now):
         # carrier-to-noise, 20 ms windows

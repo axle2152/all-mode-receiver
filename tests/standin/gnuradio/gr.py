@@ -1,3 +1,4 @@
+from . import _log
 from ._block import Block
 from ._sim import SIM
 
@@ -26,14 +27,20 @@ class hier_block2(_Base): pass
 
 class top_block:
     def __init__(self, *a, **k): pass
-    def connect(self, *a): pass
-    def disconnect(self, *a): pass
+
+    def connect(self, *a):
+        _log.log('connect', list(a))
+
+    def disconnect(self, *a):
+        _log.log('disconnect', list(a))
+
     def msg_connect(self, *a): pass
     def lock(self): pass
     def unlock(self): pass
     def wait(self): pass
 
     def start(self, *a, **k):
+        _log.log('start')
         SIM.started_at = SIM.now()
 
     def stop(self):

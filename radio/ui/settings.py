@@ -4,6 +4,7 @@ radio/ui/settings.py - The Settings window: reception, panel, and the display co
 import tkinter as tk
 
 from . import fonts
+from .backend import band_has
 from .constants import AM_WIDTHS, OUTPUT_DB_CHOICES
 from .theme import BUTTON_SMALL, COLOR_DEFAULTS, COLOR_ITEMS, COLOR_PANEL, FACE_FG
 from .tips import TIPS
@@ -102,20 +103,22 @@ class SettingsWindow:
                                command=self._am_stereo_changed, **rb)
             w.pack(side=tk.LEFT, padx=1)
             tips.bind(w, TIPS['amstereo'])
-        r = row(t, 'AM BLANKERS')
-        self._ib_var = tk.BooleanVar(value=self.am_ib)
-        w = tk.Checkbutton(r, text='IMPULSE', variable=self._ib_var, command=self._blankers_changed, **cb)
-        w.pack(side=tk.LEFT)
-        tips.bind(w, TIPS['ib'])
-        w = tk.Label(r, text='NOISE', **lab)
-        w.pack(side=tk.LEFT, padx=(14, 4))
-        tips.bind(w, TIPS['nb'])
-        self._nb_var = tk.StringVar(value=self.am_nb)
-        for val, caption in (('off', 'OFF'), ('low', 'LOW'), ('med', 'MED'), ('high', 'HIGH')):
-            w = tk.Radiobutton(r, text=caption, value=val, variable=self._nb_var, width=6,
-                               command=self._blankers_changed, **rb)
-            w.pack(side=tk.LEFT, padx=1)
+        if band_has('AM', 'blankers'):                   # only once a receiver has them
+            r = row(t, 'AM BLANKERS')
+            self._ib_var = tk.BooleanVar(value=self.am_ib)
+            w = tk.Checkbutton(r, text='IMPULSE', variable=self._ib_var, command=self._blankers_changed,
+                               **cb)
+            w.pack(side=tk.LEFT)
+            tips.bind(w, TIPS['ib'])
+            w = tk.Label(r, text='NOISE', **lab)
+            w.pack(side=tk.LEFT, padx=(14, 4))
             tips.bind(w, TIPS['nb'])
+            self._amnb_var = tk.StringVar(value=self.am_nb)     # not _nb_var: that's Static cut's
+            for val, caption in (('off', 'OFF'), ('low', 'LOW'), ('med', 'MED'), ('high', 'HIGH')):
+                w = tk.Radiobutton(r, text=caption, value=val, variable=self._amnb_var, width=6,
+                                   command=self._blankers_changed, **rb)
+                w.pack(side=tk.LEFT, padx=1)
+                tips.bind(w, TIPS['nb'])
         r = row(t, 'AM WIDTH')
         self._amw_var = tk.IntVar(value=int(self.am_normal_hz))
         for hz in AM_WIDTHS:
@@ -312,28 +315,28 @@ class SettingsWindow:
         self._save_settings()
 
     def _blankers_changed(self):
-        self.am_ib, self.am_nb = bool(self._ib_var.get()), self._nb_var.get()
-        if self.tb is not None and hasattr(self.tb, 'set_blankers'):
+        self.am_ib, self.am_nb = bool(self._ib_var.get()), self._amnb_var.get()
+        if self.tb is not None and self.tb.has('blankers'):
             self.tb.set_blankers(impulse=self.am_ib, noise=self.am_nb)
         self._save_settings()
 
     def _am_stereo_changed(self):
         self.am_stereo = self._ams_var.get()
-        if self.tb is not None and hasattr(self.tb, 'set_stereo_system'):
+        if self.tb is not None and self.tb.has('am_stereo'):
             self.tb.set_stereo_system(self.am_stereo)
         self._save_settings()
 
     def _am_width_changed(self):
         self.am_normal_hz = int(self._amw_var.get())
         self.am_auto_width = bool(self._amauto_var.get())
-        if self.tb is not None and hasattr(self.tb, 'set_auto_ceiling'):
+        if self.tb is not None and self.tb.has('am_width'):
             self.tb.set_auto_ceiling(self.am_normal_hz)
             self.tb.set_if_mode('auto' if self.am_auto_width else 'fixed')
         self._save_settings()
 
     def _nrsc_changed(self):
         self.am_nrsc = bool(self._nrsc_var.get())
-        if self.tb is not None and hasattr(self.tb, 'set_nrsc_deemphasis'):
+        if self.tb is not None and self.tb.has('nrsc'):
             self.tb.set_nrsc_deemphasis(self.am_nrsc)
         self._save_settings()
 
@@ -358,21 +361,22 @@ class SettingsWindow:
     def _enh_changed(self):
         self.blend_on, self.hicut_on = self._blend_var.get(), self._hicut_var.get()
         self.eq_mode = self._eq_var.get()
-        if self.tb:
+        if self.tb is not None and self.tb.has('fm_helpers'):
             self.tb.set_enhancements(blend=self.blend_on, hicut=self.hicut_on)
+        if self.tb is not None and self.tb.has('echo'):
             self.tb.set_eq_mode(self.eq_mode)
         self._save_settings()
 
     def _fm_assist_changed(self):
         self.dip_hicut, self.noise_red = self._nb_var.get(), self._nr_var.get()
-        if self.tb and hasattr(self.tb, 'set_dip_hicut'):
+        if self.tb is not None and self.tb.has('fm_helpers'):
             self.tb.set_dip_hicut(self.dip_hicut)
             self.tb.set_noise_reduction(self.noise_red)
         self._save_settings()
 
     def _if_changed(self):
         self.if_mode = self._if_var.get()                 # FM only; AM has its own width settings
-        if self.tb and hasattr(self.tb, 'set_if_mode') and not hasattr(self.tb, 'set_auto_ceiling'):
+        if self.tb is not None and self.tb.has('fm_bandwidth'):
             self.tb.set_if_mode(self.if_mode)
         self._save_settings()
 

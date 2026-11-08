@@ -1,10 +1,12 @@
 """One permissive block type for every GNU Radio block the receivers build."""
+from . import _log
 from ._sim import SIM
 
 
 class Block:
     def __init__(self, kind='block', *a, **k):
         self._kind, self._a = kind, a
+        _log.register(self, kind, a, k)
 
     def __getattr__(self, name):
         if name.startswith('__'):
@@ -13,7 +15,10 @@ class Block:
             return lambda port=0: SIM.count()
         if name == 'level':
             return self._level
-        return lambda *a, **k: 0.0                # setters, getters: accepted, nothing happens
+        def call(*a, **k):                        # setters, getters: accepted, nothing happens
+            _log.log('call', _log.oid(self), name, a, k)
+            return 0.0
+        return call
 
     def _value(self):
         n = SIM.count()

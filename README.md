@@ -142,12 +142,22 @@ so `git pull` won't touch your presets.
 | File | What it is |
 |---|---|
 | `quartz_tuner_ui.py` | The tuner and monitor window. This is the one you run. |
-| `am_receiver.py` | The AM receiver the tuner uses on AM |
-| `fm_stereo.py` | The FM stereo receiver the tuner uses on FM; also runs on its own |
-| `rx_meters.py` | Audio and signal metering taps for the monitor |
 | `rx_check.py` | Checks a receiver's signal chain without the window, and says in plain words which part stops |
+| `radio/` | The radio itself (below) |
 | `tests/` | Checks that run without GNU Radio or a dongle (see below) |
 | `docs/ROADMAP.md` | Where the project is going, phase by phase |
+| `docs/ADDONS.md` | How a decoder that isn't part of this program can plug into it |
+
+Inside `radio/`:
+
+| | |
+|---|---|
+| `receiver.py` | What every receiver shares: opening the dongle and the sound card, noticing a lost dongle, tone controls |
+| `am.py` | The AM receiver |
+| `fm/` | The FM stereo receiver, with its RDS decoder. `python3 -m radio.fm --freq 90.5e6` runs it without the window. |
+| `meters.py` | Audio and signal metering taps for the monitor |
+| `addons.py` | Finds and runs add-ons, if any are installed |
+| `ui/` | The window: the tuner and monitor, the Settings and Advanced windows, the displays and meters |
 
 ## Checks
 
@@ -157,6 +167,7 @@ samples:
     python3 tests/test_watchdog.py       # tells a lost dongle from a quiet one, AM and FM
     python3 tests/test_loudness.py       # loudness meter against ITU BS.1770 and EBU Tech 3341/3342
     python3 tests/test_am_width.py       # the AM filter follows the width settings and the Wide key
+    python3 tests/test_addons.py         # add-ons plug in; a missing or broken one stays harmless
     python3 tests/test_window.py         # the whole window runs on AM and FM
 
 On Linux without a screen, run the window check as `xvfb-run -a python3 tests/test_window.py`.
