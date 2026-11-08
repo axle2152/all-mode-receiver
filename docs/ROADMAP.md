@@ -28,6 +28,8 @@ are so the split in Phase 2 can be shown to leave it that way.
 - [x] Tests that need neither GNU Radio nor a dongle (`tests/`): the dongle watchdog, the
   loudness meter against ITU BS.1770 and EBU Tech 3341/3342, the AM filter settings, and the
   whole window on AM and FM
+- [x] `tests/test_gnuradio.py` runs the real receivers in GNU Radio with a pretend dongle (a test
+  station on the tuned frequency) and checks rates, updates and measurements
 - [x] In place of recordings (the owner has none usable): `tests/trace_receivers.py` records
   every block, setting, connection and call each receiver makes through a scripted session,
   so old and new code can be compared exactly; screenshots of the window, compared pixel for
@@ -71,13 +73,19 @@ code, and nothing about how it works, goes in this repository.
   a regular AM radio: no message, no empty controls.
 - [x] An add-on gets the AM receiver's channel signal and reports station data (station name,
   text, program type and the other RDS fields), plus its own lines for the Advanced window.
-- [ ] The window shows that station data on AM the way it shows RDS on FM: the dot matrix,
-  the RDS lamp, the Advanced window's station panel
-- [ ] The add-on itself, in the private repository, registered through the
-  `all_mode_receiver.addons` entry point
-- [ ] The private repository keeps only PMDS and its add-on. Its own copies of this
-  repository's tuner and receivers retire, which ends the drift between the copies.
-- [x] Meanwhile the private repository uses this receiver's automatic AM filter table.
+- [x] The window shows that station data on AM the way it shows RDS on FM: the dot matrix and
+  RDS legend, the Advanced window's station panel, a lamp and meters for the add-on, an
+  alert blinking over the station name, and the add-on's own window on key I
+- [x] An add-on can say the station is mono, and the AM receiver then ignores anything that
+  looks like a stereo pilot
+- [x] The add-on itself, in the private repository, registered through the
+  `all_mode_receiver.addons` entry point; installing that folder is all it takes
+- [x] The private repository keeps only PMDS and its add-on. Its copies of this repository's
+  tuner and receivers are retired, which ends the drift between the copies.
+
+Checked end to end in GNU Radio: a simulated station through this repository's real AM
+receiver, with the add-on attached the way the tuner attaches it, decodes call letters, name
+and text at several data rates, with and without an alert.
 
 ## Phase 4: Frequency display and S-meter
 

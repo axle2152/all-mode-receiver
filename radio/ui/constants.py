@@ -47,7 +47,7 @@ TUNED_SETTLE_S = 0.3
 TUNED_HYST_DB  = 2.0
 
 SIG_STEPS      = 9
-SIG_RANGE      = {'FM': (3.0, 33.0), 'AM': (12.0, 48.0)}
+SIG_RANGE      = {'FM': (3.0, 33.0), 'AM': (7.5, 43.5)}   # AM was (12, 48) before its C/N was corrected
 SIG_FALL_PER_S = 8.0
 
 OUTPUT_DB_DEFAULT = -6.0
@@ -71,7 +71,8 @@ PEAK_SPAN      = 150.0
 MOD_MIN_CNR_DB = 20.0                     # FM: the deviation path sits ahead of the equalizer, so
                                           # noise or multipath before the EQ below this makes peaks
                                           # read high (15 dB read 9% high in testing): NOISY instead
-AM_MOD_MIN_CNR_DB = 40.0                  # AM below this (C/N in 10 kHz): noise pushes peaks >5% high: NOISY
+AM_MOD_MIN_CNR_DB = 35.5                  # AM below this (C/N in 10 kHz): noise pushes peaks >5% high: NOISY
+                                          # (40 before the AM C/N was corrected, 4.5 dB lower now)
 OVER_LAMP_S    = 1.0
 CORR_TAU_S     = 0.3
 LOUD_RECALC_S  = 0.5

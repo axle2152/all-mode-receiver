@@ -26,7 +26,9 @@ Signal chain (960 ksps from the RTL -> 48 kHz complex channel)
                 make-up gain, volume / balance and mute as the FM side
 
 Quality figure: carrier-to-noise in 10 kHz (C/N), measured every 20 ms from the
-coherent carrier against the noise floor of the whole 960 kHz.
+coherent carrier against the noise floor of the whole 960 kHz. The floor is a low
+percentile of the wideband spectrum's bins (so the band's stations don't lift it),
+scaled to the mean that percentile implies for noise.
 """
 
 import math
@@ -64,8 +66,11 @@ class AMReceiver(Receiver):
     NOTCH_HZ, NOTCH_R = 10000.0, 0.99   # the 10 kHz whistle of adjacent carriers, notched out...
     NOTCH_FROM_HZ    = 9500.0       # ...whenever the filter is open far enough to pass it
     AM_MIN_HZ        = 2500.0
-    # carrier-to-noise (dB in 10 kHz) -> bandwidth, interpolated
-    BW_TABLE         = [(15, 2500), (18, 3500), (21, 4500), (24, 6000), (27, 8000), (30, 10200)]
+    # carrier-to-noise (dB in 10 kHz) -> bandwidth, interpolated. Every C/N threshold here was
+    # 4.5 dB higher until the noise floor was corrected (NOISE_PCT below): same behaviour, the
+    # reading is just true now
+    BW_TABLE         = [(10.5, 2500), (13.5, 3500), (16.5, 4500), (19.5, 6000), (22.5, 8000),
+                        (25.5, 10200)]
     # a carrier 10 kHz away this strong (dB re ours) limits the bandwidth to...
     ADJ_TABLE        = [(-35, 7000), (-25, 5000), (-15, 4000), (-8, 3000)]
     BW_SLEW_IN       = 2000.0       # Hz per second, narrowing
@@ -77,12 +82,16 @@ class AMReceiver(Receiver):
     KAHN_HILBERT_N   = 1025         # Kahn ISB: the Hilbert transformer for L-R (21 ms at 48 kHz)
     PILOT_MIN        = 0.015        # pilot amplitude (fraction of carrier) to count
     PILOT_RATIO_DB   = 10.0         # pilot above its neighbourhood to count
-    STEREO_MONO_DB   = 15.0         # C/N at or below: mono even with a pilot
-    STEREO_FULL_DB   = 20.0         # C/N at or above: full stereo
+    STEREO_MONO_DB   = 10.5         # C/N at or below: mono even with a pilot
+    STEREO_FULL_DB   = 15.5         # C/N at or above: full stereo
 
     # ---- level / UI ----
     AM_AUDIO_GAIN    = 1.4          # 100% modulation -> about the FM side's level
-    SEEK_MIN_DB      = 22.0         # seek stops on a carrier this far above the noise
+    SEEK_MIN_DB      = 17.5         # seek stops on a carrier this far above the noise
+    # Noise floor: this percentile of the wideband spectrum's bins. For noise alone a bin's power
+    # is exponentially distributed, so the percentile sits at -ln(1 - p) of the mean (0.357 for
+    # 30%); dividing by that gives the floor itself. Without it C/N read 4.5 dB high.
+    NOISE_PCT        = 30.0
     TUNE_SETTLE_S    = 0.25
     IF_TAPS          = 97           # IF and audio filters: fixed length, fixed delay
     MPX_FULL         = 1.0          # ADV audio spectrum: 1.0 = 100% modulation
@@ -325,6 +334,7 @@ class AMReceiver(Receiver):
         self._hann_wp = float(np.sum(self._hann ** 2))
         self._wbw = np.hanning(self.WB_N)
         self._wbw_wp = float(np.sum(self._wbw ** 2))
+        self._pct_mean = -math.log(1.0 - self.NOISE_PCT / 100.0)   # noise: percentile / mean
         self._set_notch(self.bw >= self.NOTCH_FROM_HZ)
         self._apply_gain()
         self._attach_addons()                    # any installed add-ons (radio/addons.py)
@@ -541,8 +551,10 @@ class AMReceiver(Receiver):
                 f"Clip     {self.clip_pct:6.3f} %   source: {src}" + self._addons_readout())
 
     def addon_tap(self):
-        """Add-ons listen to the 48 kHz channel after the carrier lock."""
-        return (self.pll, 0)
+        """Add-ons listen to the 48 kHz channel, frequency-corrected and filtered, before the
+        carrier lock: one that needs a locked carrier runs its own, as fast or slow as it needs
+        (this receiver's 4 Hz lock is tuned for C-QUAM)."""
+        return (self.if_filter, 0)
 
     # ---------------------------------------------------------------- update
     def _dongle_block(self):
@@ -567,7 +579,8 @@ class AMReceiver(Receiver):
                     k = self.WB_N // 10
                     # (with |FFT(x w)|^2 / sum(w^2), white noise shows its total power in
                     # every bin: per Hz is that over the whole sample rate)
-                    n0 = float(np.percentile(P[k:-k], 30)) / self.samp_rate
+                    n0 = (float(np.percentile(P[k:-k], self.NOISE_PCT)) / self._pct_mean
+                          / self.samp_rate)
                     if n0 > 0 and math.isfinite(n0):
                         self._n0_hz = n0 if self._n0_hz is None else 0.8 * self._n0_hz + 0.2 * n0
                     self.composite_dbfs = 10 * math.log10(max(float(np.mean(np.abs(x) ** 2)), 1e-12))
@@ -676,6 +689,10 @@ class AMReceiver(Receiver):
                 self.pilot_on = True
             elif self._pil_hits == 0:
                 self.pilot_on = False
+
+        # An add-on knows this station is mono: whatever looks like a pilot isn't one
+        if self.station.get('mono'):
+            self._pil_hits, self.pilot_on = 0, False
 
         # stereo blend: only with the pilot, and as the carrier-to-noise allows
         tb = 0.0

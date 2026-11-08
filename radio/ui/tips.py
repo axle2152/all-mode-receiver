@@ -40,7 +40,7 @@ TIPS = dict(
     bw="Width of the receiver's filter. On a weak station it narrows to just the station to cut noise; "
        "it never narrows on loud music. The white tick is how wide the station really is.",
     mod="How hard the station is modulating. 75 kHz (the tick) is 100%, the legal limit in the US.",
-    am_quality="Carrier-to-noise ratio of the AM station in a 10 kHz channel. Above 25 dB is clean.",
+    am_quality="Carrier-to-noise ratio of the AM station in a 10 kHz channel. Above 20 dB is clean.",
     am_adj="How strong the neighbouring stations are next to this one. High readings mean splatter "
            "and whistles, so the receiver narrows its filter.",
     am_bw="Width of the AM filter: the width chosen in Settings, narrower on weak stations or with "
@@ -138,7 +138,8 @@ TIPS = dict(
     rds_detail="PI: the station's RDS code. TP / TA: traffic program, and a traffic announcement in "
                "progress. Music or speech. Clock: the station's own clock. AF: other frequencies "
                "carrying the same station. Groups per second (about 11 when all get through) and the "
-               "share of blocks lost to noise or echoes.",
+               "share of blocks lost to noise or echoes. On AM, when an add-on is decoding station "
+               "data: click here (or press I) for the add-on's own window, if it has one.",
     lamp_stereo="The station's stereo pilot is received and stereo is playing.",
     lamp_rds="RDS data (station name, song text) is being decoded.",
     lamp_echo="The echo canceller is in use.",
@@ -150,4 +151,10 @@ TIPS = dict(
     lamp_lock="The receiver has locked onto the AM carrier.",
     lamp_amst="C-QUAM AM stereo is playing.",
     lamp_pilot="The C-QUAM stereo pilot is present.",
+    lamp_data="An add-on is decoding station data on this AM station (name, text, program type).",
+    lamp_alert="An alert is on the air: the station data carries an alert, an emergency or a test. "
+               "The alert's text is in the text line.",
+    am_data="How well the add-on hears its data. Its own window (press I) has the details.",
+    am_blocks="Station data blocks that failed their check lately. Blocks the decoder could repair "
+              "don't count.",
 )
