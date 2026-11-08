@@ -18,9 +18,10 @@ Tuner (top unit)
                     moment for a second digit; 0 then a digit = 01 to 09)
     Memory          then a channel number: stores the station you're on
     FM / AM         band; each band remembers its own frequency
-    Wide            latching AM filter key: 10.2 kHz, with a 10 kHz notch for
-                    adjacent-channel whistles. Off: auto, never wider than the normal
-                    width chosen in Settings (5, 6 or 8 kHz). Lights WIDE on AM.
+    Wide            latching AM filter key: 12 kHz, with a 10 kHz notch for
+                    adjacent-channel whistles. Off: the AM width chosen in Settings
+                    (2.5, 5, 8 or 10.2 kHz), narrowing from there on noise and loud
+                    neighbours unless AUTO is off there. Lights WIDE on AM.
     Mono            latching Stereo key, both bands: FM mono, or AM with the
                     C-QUAM stereo ignored
     ADV / MON / SET the faint buttons bottom left: Advanced window (diagnostics),
@@ -119,6 +120,7 @@ TUNER_MIN  = 24e6
 FM_DEVICE_ARGS = 'numchan=1 rtl=0'
 DIRECT_WAIT_S = 10.0                       # direct frequency entry gives up after this
 N_CHANNELS = 24
+AM_WIDTHS  = (2500, 5000, 8000, 10200)     # Settings > AM width (Hz); the Wide key is 12 kHz
 
 SEEK_MIN_CNR_DB = 6.0      # FM; AM uses its receiver's own SEEK_MIN_DB
 SEEK_QUICK_N    = 3
@@ -1700,8 +1702,8 @@ TIPS = dict(
     am_quality="Carrier-to-noise ratio of the AM station in a 10 kHz channel. Above 25 dB is clean.",
     am_adj="How strong the neighbouring stations are next to this one. High readings mean splatter "
            "and whistles, so the receiver narrows its filter.",
-    am_bw="Width of the AM filter: wide on clean stations for full audio, narrow on weak ones or with "
-          "loud neighbours.",
+    am_bw="Width of the AM filter: the width chosen in Settings, narrower on weak stations or with "
+          "loud neighbours when AUTO is on, 12 kHz with the Wide key.",
     am_pilot="Strength of the stereo pilot tone that tells the receiver a station is in AM stereo: "
              "25 Hz for C-QUAM, 15 Hz for Kahn ISB.",
     am_ib="Impulse blanker: spikes per minute it patched (envelope spikes beyond +300%, which no legal "
@@ -1755,10 +1757,12 @@ TIPS = dict(
        "the channel filter can stretch them into ticks. LOW, MED and HIGH set how small a pulse it "
        "goes after. If it ever starts patching too much, it backs itself off. Off by default; turn "
        "it up when there's noise to fight.",
-    amwidth="The widest the AM filter opens when the Wide key is off. It still narrows on its own "
-            "for noise and loud neighbours. 8 kHz is AMAX-class wideband, and it keeps the 10 kHz "
-            "whistle from adjacent stations out of the audio. 6 kHz suits a crowded night band; "
-            "5 kHz is what most AM radios do.",
+    amwidth="How wide the AM filter opens when the Wide key is off. 2.5 kHz digs a weak station out "
+            "of a crowded band; 5 kHz is what most AM radios do; 8 kHz is AMAX-class wideband; "
+            "10.2 kHz is everything a US station may send (NRSC-1), with the 10 kHz whistle from "
+            "neighbouring stations notched out. The Wide key opens it to 12 kHz.",
+    amauto="AUTO: the AM filter narrows by itself on noisy stations or when the stations next door "
+           "are loud, and never opens wider than the width chosen here. Off: it stays at that width.",
     nrsc="Undo the treble boost that AM stations following NRSC-1 transmit (a modified 75 \u00b5s "
          "curve, +10 dB at 10 kHz), so the full-width AM filter sounds natural instead of bright. "
          "Not every station uses it: if a station sounds dull with this on, it probably doesn't. "
@@ -1781,7 +1785,8 @@ TIPS = dict(
     sw_nr="Spectral noise reduction on weak stations.",
     sw_static="Trim treble and stereo during brief dropouts, and stereo during multipath bursts.",
     sw_eq="Echo canceller (adaptive equalizer). AUTO uses it only when it measurably helps.",
-    sw_bw="Receiver filter width. AUTO narrows only on weak stations and never on loud music.",
+    sw_bw="FM filter width. AUTO narrows only on weak stations and never on loud music. "
+          "AM has its own width setting below.",
     bars="Overall reception, strength and quality together, like the bars on a phone. "
          "Five bars is a clean, strong station; one bar is barely there.",
     rds_ps="The station's name as it sends it over RDS (some stations scroll it), with the call "
@@ -2125,6 +2130,7 @@ class TunerApp:
         self.am_ib      = saved.get('am_ib', True)
         self.am_nb      = saved.get('am_nb', 'off')
         self.am_normal_hz = saved.get('am_normal_hz', 8000)
+        self.am_auto_width = bool(saved.get('am_auto_width', True))
         self.colors     = dict(saved.get('colors', {}))
         self.freeze     = False
         self.lmr_gain   = lmr_gain
@@ -2276,8 +2282,12 @@ class TunerApp:
             out['am_ib'] = raw['am_ib']
         if raw.get('am_nb') in ('off', 'low', 'med', 'high'):
             out['am_nb'] = raw['am_nb']
-        if raw.get('am_normal_hz') in (5000, 6000, 8000):
+        if raw.get('am_normal_hz') in AM_WIDTHS:
             out['am_normal_hz'] = raw['am_normal_hz']
+        elif raw.get('am_normal_hz') == 6000:              # no longer offered: the next one down
+            out['am_normal_hz'] = 5000
+        if isinstance(raw.get('am_auto_width'), bool):
+            out['am_auto_width'] = raw['am_auto_width']
         if raw.get('rds_scale') in ('standard', 'stereo_tool'):
             out['rds_scale'] = raw['rds_scale']
         if isinstance(raw.get('colors'), dict):
@@ -2354,6 +2364,7 @@ class TunerApp:
             'am_ib': bool(self.am_ib),
             'am_nb': self.am_nb,
             'am_normal_hz': int(self.am_normal_hz),
+            'am_auto_width': bool(self.am_auto_width),
             'colors': dict(sorted(self.colors.items())),
             'pi_calls': dict(sorted(self.pi_calls.items())),
         }
@@ -2501,16 +2512,17 @@ class TunerApp:
     def _apply_dsp(self, tb):
         tb.set_enhancements(blend=self.blend_on, hicut=self.hicut_on)
         tb.set_eq_mode(self.eq_mode)
-        if hasattr(tb, 'set_if_mode'):
+        if hasattr(tb, 'set_auto_ceiling'):            # AM: its own width settings
+            tb.set_auto_ceiling(self.am_normal_hz)
+            tb.set_if_mode('auto' if self.am_auto_width else 'fixed')
+            tb.set_wide(self.am_wide)
+        elif hasattr(tb, 'set_if_mode'):
             tb.set_if_mode(self.if_mode)
         if hasattr(tb, 'set_dip_hicut'):
             tb.set_dip_hicut(self.dip_hicut)
             tb.set_noise_reduction(self.noise_red)
         if hasattr(tb, 'set_nrsc_deemphasis'):
             tb.set_nrsc_deemphasis(self.am_nrsc)
-        if hasattr(tb, 'set_auto_ceiling'):
-            tb.set_auto_ceiling(self.am_normal_hz)
-            tb.set_wide(self.am_wide)
         if hasattr(tb, 'set_stereo_system'):
             tb.set_stereo_system(self.am_stereo)
         if hasattr(tb, 'set_blankers'):
@@ -3843,7 +3855,7 @@ class TunerApp:
                                command=self._enh_changed, **rb)
             w.pack(side=tk.LEFT, padx=1)
             tips.bind(w, TIPS['sw_eq'])
-        r = row(t, 'BANDWIDTH')
+        r = row(t, 'FM BANDWIDTH')
         self._if_var = tk.StringVar(value=self.if_mode)
         for mo in ('auto', 'wide', 'narrow'):
             w = tk.Radiobutton(r, text=mo.upper(), value=mo, variable=self._if_var, width=7,
@@ -3883,13 +3895,17 @@ class TunerApp:
                                command=self._blankers_changed, **rb)
             w.pack(side=tk.LEFT, padx=1)
             tips.bind(w, TIPS['nb'])
-        r = row(t, 'AM NORMAL WIDTH')
+        r = row(t, 'AM WIDTH')
         self._amw_var = tk.IntVar(value=int(self.am_normal_hz))
-        for hz in (5000, 6000, 8000):
-            w = tk.Radiobutton(r, text=f'{hz // 1000} kHz', value=hz, variable=self._amw_var, width=7,
+        for hz in AM_WIDTHS:
+            w = tk.Radiobutton(r, text=f'{hz / 1000:g} kHz', value=hz, variable=self._amw_var, width=8,
                                command=self._am_width_changed, **rb)
             w.pack(side=tk.LEFT, padx=1)
             tips.bind(w, TIPS['amwidth'])
+        self._amauto_var = tk.BooleanVar(value=self.am_auto_width)
+        w = tk.Checkbutton(r, text='AUTO', variable=self._amauto_var, command=self._am_width_changed, **cb)
+        w.pack(side=tk.LEFT, padx=(14, 0))
+        tips.bind(w, TIPS['amauto'])
         r = row(t, 'TUNER GAIN')
         self.agc_btn = SilverButton(r, size=BUTTON_SMALL, text='AGC', font=FACE_FONT, command=self._toggle_agc)
         self.agc_btn.pack(side=tk.LEFT, padx=(0, 8))
@@ -4088,8 +4104,10 @@ class TunerApp:
 
     def _am_width_changed(self):
         self.am_normal_hz = int(self._amw_var.get())
+        self.am_auto_width = bool(self._amauto_var.get())
         if self.tb is not None and hasattr(self.tb, 'set_auto_ceiling'):
             self.tb.set_auto_ceiling(self.am_normal_hz)
+            self.tb.set_if_mode('auto' if self.am_auto_width else 'fixed')
         self._save_settings()
 
     def _nrsc_changed(self):
@@ -4132,8 +4150,8 @@ class TunerApp:
         self._save_settings()
 
     def _if_changed(self):
-        self.if_mode = self._if_var.get()
-        if self.tb and hasattr(self.tb, 'set_if_mode'):
+        self.if_mode = self._if_var.get()                 # FM only; AM has its own width settings
+        if self.tb and hasattr(self.tb, 'set_if_mode') and not hasattr(self.tb, 'set_auto_ceiling'):
             self.tb.set_if_mode(self.if_mode)
         self._save_settings()
 
@@ -4387,7 +4405,7 @@ class TunerApp:
             self._meters.show('lvl', (tb.channel_dbfs + 60) / 60, f"{tb.channel_dbfs:5.1f}")
             self._meters.show('adj', (tb.adj_db + 40) / 50, f"{tb.adj_db:+4.0f} dB")
             bw = tb.bw / 1e3
-            self._meters.show('bw', bw / 10, 'wide' if tb.bw >= tb.AM_WIDE_HZ else f"{bw:4.1f} kHz")
+            self._meters.show('bw', bw / 12, f"{bw:4.1f} kHz")
             self._meters.show('pil', tb.pilot_ratio_db / 30 if tb.pilot_on else 0,
                               f"{100 * tb.pilot_level:4.1f}%" if tb.pilot_on else 'none')
             self._meters.show('st', tb.current_blend if tb.pilot_on else 0,

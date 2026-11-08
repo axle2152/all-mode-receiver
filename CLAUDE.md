@@ -31,6 +31,7 @@ Run before every commit:
 
     python3 tests/test_watchdog.py
     python3 tests/test_loudness.py
+    python3 tests/test_am_width.py
     python3 tests/test_window.py          # needs a screen; headless Linux: xvfb-run -a ...
 
 `test_window.py --fonts <folder>` limits the window to one folder of fonts (Ubuntu's basic

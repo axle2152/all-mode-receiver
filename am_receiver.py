@@ -12,9 +12,11 @@ Signal chain (2.4 Msps from the RTL -> 48 kHz complex channel)
                 nothing sits on DC
   carrier       coarse frequency correction from the channel spectrum, then a
                 slow PLL (about 4 Hz, well below the 25 Hz stereo pilot)
-  IF filter     adaptive bandwidth: wide (10 kHz audio) on a clean station,
-                narrower as the carrier-to-noise drops or when the stations
-                10 kHz either side get strong
+  IF filter     the chosen width (2.5, 5, 8 or 10.2 kHz audio), narrowing by
+                itself as the carrier-to-noise drops or when the stations 10 kHz
+                either side get strong (auto), or held there (fixed); the Wide
+                key opens it to 12 kHz. Open past 9.5 kHz, a notch takes out the
+                10 kHz whistle of the neighbouring carriers.
   L+R           envelope detection (what every AM radio does, so it is
                 exactly mono-compatible with C-QUAM)
   L-R           C-QUAM: the transmitter sends envelope 1+L+R and phase
@@ -56,10 +58,12 @@ class AMReceiver(gr.top_block):
     CH_RATE          = 48_000
 
     # ---- bandwidth (one-sided audio bandwidth, Hz) ----
-    AM_WIDE_HZ       = 10200.0      # NRSC full bandwidth at 10.2 kHz
-    AM_NARROW_HZ     = 4000.0       # the manual "narrow" setting
-    AM_XWIDE_HZ      = 15000.0      # set_wide(True): everything an NRSC-1 station sends
-    NOTCH_HZ, NOTCH_R = 10000.0, 0.99   # ... with the 10 kHz whistle of adjacent carriers notched out
+    AM_WIDE_HZ       = 10200.0      # NRSC-1: the full audio bandwidth a US station may send
+    AM_WIDTHS        = (2500.0, 5000.0, 8000.0, 10200.0)   # the widths the tuner offers
+    AM_NARROW_HZ     = 4000.0       # set_if_mode('narrow'), from older settings
+    AM_XWIDE_HZ      = 12000.0      # the Wide key: generous; no US station should send more
+    NOTCH_HZ, NOTCH_R = 10000.0, 0.99   # the 10 kHz whistle of adjacent carriers, notched out...
+    NOTCH_FROM_HZ    = 9500.0       # ...whenever the filter is open far enough to pass it
     AM_MIN_HZ        = 2500.0
     # carrier-to-noise (dB in 10 kHz) -> bandwidth, interpolated
     BW_TABLE         = [(15, 2500), (18, 3500), (21, 4500), (24, 6000), (27, 8000), (30, 10200)]
@@ -232,7 +236,7 @@ class AMReceiver(gr.top_block):
             lp = filter.fir_filter_fff(1, self._lp_taps(self.bw))
             vol = blocks.multiply_const_ff(0.5 * self.AM_AUDIO_GAIN)
             nrsc = filter.iir_filter_ffd([1.0, 0.0], [1.0, 0.0], False)   # NRSC de-emphasis, off until set
-            notch = filter.iir_filter_ffd([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], False)   # 10 kHz notch, wide only
+            notch = filter.iir_filter_ffd([1.0, 0.0, 0.0], [1.0, 0.0, 0.0], False)   # 10 kHz notch, past 9.5 kHz
             setattr(self, f"alp_{ch}", lp)
             setattr(self, f"nrsc_{ch}", nrsc)
             setattr(self, f"notch_{ch}", notch)
@@ -308,7 +312,8 @@ class AMReceiver(gr.top_block):
         self.pilot_on, self.stereo_indicator = False, False
         self.wide, self.force_mono = False, False
         self.stereo_mode, self.stereo_system, self.pilot_hz = 'auto', 'cquam', 25   # auto: by the pilot
-        self.auto_ceiling = self.AM_WIDE_HZ           # auto never opens wider than this
+        self.auto_ceiling = self.AM_WIDE_HZ           # the chosen width: auto never opens wider
+        self.notch_on = False
         self.current_blend, self.current_treble = 0.0, 1.0
         self.locked = False
         # FM-only things the GUI asks about
@@ -338,6 +343,7 @@ class AMReceiver(gr.top_block):
         self._hann_wp = float(np.sum(self._hann ** 2))
         self._wbw = np.hanning(self.WB_N)
         self._wbw_wp = float(np.sum(self._wbw ** 2))
+        self._set_notch(self.bw >= self.NOTCH_FROM_HZ)
         self._apply_gain()
 
     # ------------------------------------------------------------------ helpers
@@ -368,11 +374,37 @@ class AMReceiver(gr.top_block):
     def _apply_bw(self, hz):
         self.bw = hz
         self.if_khz = hz / 1e3
-        self.current_treble = hz / self.AM_WIDE_HZ
-        self.if_filter.set_taps(self._lp_taps(hz))
+        self.current_treble = min(1.0, hz / self.AM_WIDE_HZ)
         taps = self._lp_taps(hz)
+        self.if_filter.set_taps(taps)
         self.alp_l.set_taps(taps)
         self.alp_r.set_taps(taps)
+        self._set_notch(hz >= self.NOTCH_FROM_HZ)
+
+    def _set_notch(self, on):
+        """The 10 kHz notch, in only while the filter is open far enough to pass the whistle."""
+        if on == self.notch_on:
+            return
+        self.notch_on = on
+        if on:
+            w0 = 2 * math.pi * self.NOTCH_HZ / self.audio_rate
+            r = self.NOTCH_R
+            b = [1.0, -2 * math.cos(w0), 1.0]
+            a = [1.0, -2 * r * math.cos(w0), r * r]
+            g = (1 + a[1] + a[2]) / (b[0] + b[1] + b[2])        # unity at low frequencies
+            b = [v * g for v in b]
+        else:
+            b, a = [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]
+        for ch in ("l", "r"):
+            getattr(self, f"notch_{ch}").set_taps(b, a)
+
+    def _normal_bw(self):
+        """Where the filter sits with the Wide key off."""
+        if self.if_mode == 'fixed':
+            return self.auto_ceiling
+        if self.if_mode in ('wide', 'narrow'):
+            return {'wide': self.AM_WIDE_HZ, 'narrow': self.AM_NARROW_HZ}[self.if_mode]
+        return min(self._bw_cur, self.auto_ceiling)
 
     # --------------------------------------------------------------- controls
     def set_freq(self, freq):
@@ -413,34 +445,23 @@ class AMReceiver(gr.top_block):
             getattr(self, f"headroom_{ch}").set_k(hr)
 
     def set_wide(self, on):
-        """Wide: the filter fixed at 10.2 kHz, which passes everything an NRSC-1
-        station transmits, with a 10 kHz notch for adjacent-channel carriers.
-        Off: back to the chosen IF mode (auto narrows on noise and neighbours)."""
+        """Wide key: the filter fixed at 12 kHz, past anything a US station should send,
+        with the 10 kHz notch for adjacent-channel carriers. Off: back to the chosen width
+        (auto narrows from there on noise and neighbours; fixed stays there)."""
         with self._lock:
             self.wide = bool(on)
-            if self.wide:
-                w0 = 2 * math.pi * self.NOTCH_HZ / self.audio_rate
-                r = self.NOTCH_R
-                b = [1.0, -2 * math.cos(w0), 1.0]
-                a = [1.0, -2 * r * math.cos(w0), r * r]
-                g = (1 + a[1] + a[2]) / (b[0] + b[1] + b[2])        # unity at low frequencies
-                b = [v * g for v in b]
-                self._bw_cur = self.AM_XWIDE_HZ
-                self._apply_bw(self.AM_XWIDE_HZ)
-            else:
-                b, a = [1.0, 0.0, 0.0], [1.0, 0.0, 0.0]
-                hz = {'wide': self.AM_WIDE_HZ, 'narrow': self.AM_NARROW_HZ}.get(
-                    self.if_mode, min(self._bw_cur, self.auto_ceiling))
-                self._bw_cur = hz
-                self._apply_bw(hz)
-            for ch in ("l", "r"):
-                getattr(self, f"notch_{ch}").set_taps(b, a)
+            hz = self.AM_XWIDE_HZ if self.wide else self._normal_bw()
+            self._bw_cur = hz
+            self._apply_bw(hz)
 
     def set_auto_ceiling(self, hz):
-        """The widest the auto filter will open (normal width)."""
+        """The chosen width (2.5, 5, 8 or 10.2 kHz): the widest auto will open, or where
+        fixed stays."""
         with self._lock:
             self.auto_ceiling = float(min(max(hz, self.AM_MIN_HZ), self.AM_WIDE_HZ))
-            if not self.wide and self.if_mode == 'auto' and self._bw_cur > self.auto_ceiling:
+            if self.wide:
+                return
+            if self.if_mode == 'fixed' or (self.if_mode == 'auto' and self._bw_cur > self.auto_ceiling):
                 self._bw_cur = self.auto_ceiling
                 self._apply_bw(self.auto_ceiling)
 
@@ -463,17 +484,17 @@ class AMReceiver(gr.top_block):
         self.force_mono = bool(on)
 
     def set_if_mode(self, mode):
-        if mode in ('auto', 'wide', 'narrow'):
+        """'auto': the filter narrows by itself on noise and loud neighbours, never wider
+        than the chosen width; 'fixed': it stays at the chosen width. ('wide' and 'narrow',
+        from older settings, hold it at 10.2 or 4 kHz.) The Wide key overrides all of them."""
+        if mode in ('auto', 'fixed', 'wide', 'narrow'):
             with self._lock:
                 self.if_mode = mode
-                if self.wide:                           # Wide overrides until it's switched off
+                if self.wide:
                     return
-                if mode == 'wide':
-                    self._bw_cur = self.AM_WIDE_HZ
-                    self._apply_bw(self.AM_WIDE_HZ)
-                elif mode == 'narrow':
-                    self._bw_cur = self.AM_NARROW_HZ
-                    self._apply_bw(self.AM_NARROW_HZ)
+                hz = self._normal_bw()
+                self._bw_cur = hz
+                self._apply_bw(hz)
 
     def set_manual_gain(self, db):
         self.gain_db = float(db)
@@ -559,12 +580,13 @@ class AMReceiver(gr.top_block):
     def readout(self):
         """ADV text for AM."""
         st = 'STEREO' if self.stereo_indicator else ('pilot, blended to mono' if self.pilot_on else 'mono')
-        bw = 'wide' if self.bw >= self.AM_WIDE_HZ else f'{self.bw / 1e3:4.1f} kHz'
+        bw = f'{self.bw / 1e3:4.1f} kHz' + (' + 10 kHz notch' if self.notch_on else '')
+        mode = 'Wide key' if self.wide else self.if_mode
         src = {'direct_q': 'Q-branch direct sampling', 'native': 'native HF tuning',
                'upconverter': f'upconverter +{self.UPCONVERTER_HZ / 1e6:.0f} MHz'}[self.am_source]
         return (f"C/N      {self.cnr_db:5.1f} dB in 10 kHz   carrier {self.channel_dbfs:6.1f} dBFS"
                 f"{'  (PLL locked)' if self.locked else ''}\n"
-                f"IF       {bw:9s} {self.if_mode:6s}  adjacent carriers {self.adj_db:+6.1f} dB"
+                f"IF       {bw:23s} {mode:8s}  adjacent carriers {self.adj_db:+6.1f} dB"
                 f"   carrier offset {self.carrier_hz:+6.1f} Hz\n"
                 f"Stereo   {'Kahn ISB' if self.stereo_system == 'kahn' else 'C-QUAM'} {st}   "
                 f"pilot {self.pilot_hz} Hz {100 * self.pilot_level:4.1f}% "

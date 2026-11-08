@@ -47,11 +47,12 @@ It also shows how many data groups arrive each second and how many are lost.
 - **AM stereo, both systems:** Motorola C-QUAM and Kahn/Hazeltine ISB. It picks the right
   decoder from the station's pilot tone, as the multi-system radios did, and blends toward mono
   as the signal gets noisy. Mono stations play exactly as they do on any AM radio.
-- **Adaptive filter width.** Wide on clean stations for full audio, narrower on weak ones or
-  when the stations next door get loud. You choose how wide it normally opens: 5 kHz (what most
-  AM radios do), 6 kHz, or 8 kHz (AMAX-class wideband). The **Wide** key opens it all the way
-  for everything the station sends, with the 10 kHz whistle from neighbouring stations notched
-  out.
+- **Filter width.** Choose 2.5 kHz (to dig a weak station out of a crowded band), 5 kHz (what
+  most AM radios do), 8 kHz (AMAX-class wideband) or 10.2 kHz (everything a US station may
+  send). With AUTO on, it narrows by itself on weak stations or when the stations next door get
+  loud; with AUTO off it stays where you put it. The **Wide** key opens it to 12 kHz. Whenever
+  it's open wide enough to pass the 10 kHz whistle from neighbouring stations, that whistle is
+  notched out.
 - **NRSC-1 de-emphasis**, to undo the treble boost many US AM stations transmit.
 - Carrier lock, carrier-to-noise, adjacent-channel strength and carrier offset readings.
 
@@ -155,6 +156,7 @@ samples:
 
     python3 tests/test_watchdog.py       # tells a lost dongle from a quiet one, AM and FM
     python3 tests/test_loudness.py       # loudness meter against ITU BS.1770 and EBU Tech 3341/3342
+    python3 tests/test_am_width.py       # the AM filter follows the width settings and the Wide key
     python3 tests/test_window.py         # the whole window runs on AM and FM
 
 On Linux without a screen, run the window check as `xvfb-run -a python3 tests/test_window.py`.

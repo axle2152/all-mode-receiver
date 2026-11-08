@@ -14,13 +14,17 @@ listeners alike.
   Pillow 9.0, no false "Dongle lost"
 - [x] `rx_check.py` for diagnosing a receiver without the window
 - [x] README describes the radio, its features and what it needs
+- [x] AM filter: widths of 2.5, 5, 8 and 10.2 kHz, an AUTO switch (narrow by itself, or stay
+  put), the Wide key at 12 kHz, and the 10 kHz whistle notch whenever the filter is open past
+  9.5 kHz
 
 ## Phase 1: Safety net
 
 Tests that show a change hasn't altered what the radio does, before anything gets moved around.
 
 - [x] Tests that need neither GNU Radio nor a dongle (`tests/`): the dongle watchdog, the
-  loudness meter against ITU BS.1770 and EBU Tech 3341/3342, and the whole window on AM and FM
+  loudness meter against ITU BS.1770 and EBU Tech 3341/3342, the AM filter settings, and the
+  whole window on AM and FM
 - [ ] Play an IQ recording through a receiver in place of the dongle
 - [ ] Reference results from the owner's recordings: C/N, filter width, stereo, RDS text,
   loudness, peak modulation over time. A test plays each recording and compares.
@@ -51,12 +55,14 @@ Done when the Phase 1 tests pass unchanged and the window looks and behaves the 
 
 ## Phase 3: Frequency display and S-meter
 
-- [ ] A frequency display with enough digits for any frequency the dongle reaches. Broadcast
-  bands keep their familiar look (90.5 MHz, 1080 kHz); elsewhere it shows MHz with kHz and Hz
-  groups (for example 14.074.00). Off-band frequencies no longer spill into the dot matrix,
-  which stays free for RDS and PMDS text.
-- [ ] An S-meter in place of the generic signal ladder: S1 to S9, then decibels over S9,
-  to the IARU convention (S9 = -73 dBm below 30 MHz, -93 dBm above, 6 dB per S unit).
+- [ ] A frequency display with enough digits for any frequency the dongle reaches, down to
+  1 Hz (up to 1766.000.000 MHz). How many digits it shows follows the tuning step: broadcast
+  bands keep their familiar look (90.5 MHz, 1080 kHz), AM and narrowband FM on the shortwave
+  and amateur bands show kHz, SSB and CW show down to 10 Hz or 1 Hz. Off-band frequencies no
+  longer spill into the dot matrix, which stays free for RDS and PMDS text.
+- [ ] An S-meter in place of the generic signal ladder: a longer bar with an S scale under it,
+  S1 to S9 and then decibels over S9, to the IARU convention (S9 = -73 dBm below 30 MHz,
+  -93 dBm above, 6 dB per S unit).
   The dongle reports levels relative to its own full scale, not in dBm, so this needs a
   calibration per dongle (from a known signal) that allows for the tuner gain and for direct
   sampling. It reads "uncalibrated" until then.
@@ -68,6 +74,8 @@ Mock-ups first, for the owner to pick from.
 
 - [ ] A band plan: long and medium wave, the shortwave broadcast bands (120 to 11 m), the
   amateur bands, VHF and UHF. Each band has its default mode, tuning step and filter widths.
+- [ ] Tuning steps by mode, with a setting to change them: 5 kHz for AM and narrowband FM on
+  the shortwave and amateur bands, 10 Hz or 1 Hz for SSB and CW.
 - [ ] Presets store band, mode, frequency and filter, in pages of 24. Existing presets carry
   over.
 
@@ -79,7 +87,9 @@ Mock-ups first, for the owner to pick from.
   - synchronous AM, with either sideband selectable to dodge interference
   - SSB (upper and lower), DSB, CW
 - [ ] Filter width and passband shift, a notch, AGC with selectable speed for SSB and CW
-- [ ] Impulse and noise blankers (the window already has their controls)
+- [ ] Impulse and noise blankers. The window already has their controls, but the blankers
+  themselves were never written, so the controls do nothing yet. Written here, once, for AM
+  broadcast and shortwave alike.
 - [ ] Noise reduction for AM and SSB
 
 ## Phase 6: PMDS on the shared AM receiver
@@ -88,7 +98,8 @@ Mock-ups first, for the owner to pick from.
   uses this code instead of its own copy (by install or submodule, to be decided). That ends
   the drift between the copies; the different automatic AM filter tables, which made the
   loudness read about 1 dB apart on the same signal, came from that drift.
-- [ ] Until then, the pmds receiver uses this receiver's AM filter table (the owner's choice).
+- [x] Until then, the pmds receiver uses this receiver's AM filter table (the owner's choice;
+  only the table, not the new width settings).
 
 ## Phase 7: Narrowband FM and amateur digital modes
 
@@ -119,11 +130,4 @@ Mock-ups first, for the owner to pick from.
 
 ## Open questions for the owner
 
-- Frequency display resolution away from the broadcast bands: 10 Hz (14.074.00) or
-  1 Hz (14.074.000)?
-- S-meter style: S units on the existing segment ladder, a longer bar with an S scale, or a
-  needle?
-- AM Wide: the code opens to 15 kHz, but its own description and the tooltip say 10.2 kHz.
-  Which is intended?
-- AM blankers: is there a newer `am_receiver.py` with them, or should they be written in
-  Phase 5?
+None at the moment.
