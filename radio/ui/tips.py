@@ -40,7 +40,7 @@ TIPS = dict(
     bw="Width of the receiver's filter. On a weak station it narrows to just the station to cut noise; "
        "it never narrows on loud music. The white tick is how wide the station really is.",
     mod="How hard the station is modulating. 75 kHz (the tick) is 100%, the legal limit in the US.",
-    am_quality="Carrier-to-noise ratio of the AM station in a 10 kHz channel. Above 25 dB is clean.",
+    am_quality="Carrier-to-noise ratio of the AM station in a 10 kHz channel. Above 20 dB is clean.",
     am_adj="How strong the neighbouring stations are next to this one. High readings mean splatter "
            "and whistles, so the receiver narrows its filter.",
     am_bw="Width of the AM filter: the width chosen in Settings, narrower on weak stations or with "

@@ -125,7 +125,7 @@ def run(band, freq):
     if band == 'AM':
         check('carrier found and locked', tb.locked and abs(tb.carrier_hz) < 5,
               f"offset {tb.carrier_hz:+.1f} Hz, locked {tb.locked}")
-        check('C/N about what was sent (40 dB)', 34 <= tb.cnr_db <= 48, f"{tb.cnr_db:.1f} dB")
+        check('C/N reads what was sent (40 dB)', 38 <= tb.cnr_db <= 42, f"{tb.cnr_db:.1f} dB")
         check('filter opens to the chosen 8 kHz', abs(tb.bw - 8000) < 300, f"{tb.bw / 1e3:.1f} kHz")
         check('no stereo pilot on a mono station', not tb.pilot_on, f"pilot {tb.pilot_on}")
     else:
