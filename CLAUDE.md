@@ -41,9 +41,12 @@ DejaVu set, or an empty folder). Recorded-signal tests from the owner's IQ files
 ## Shared with the pmds repository (axle2152/pmds)
 
 - `fm_stereo.py` and `rx_meters.py` are copies; `am_receiver.py` ↔ `pmds_receiver.py` and
-  `quartz_tuner_ui.py` ↔ `pmds_tuner_ui.py` are forks. They have drifted (the automatic AM
-  filter tables differ, which made LUFS read about 1 dB apart on the same signal). The owner
-  prefers this repository's AM filter table.
+  `quartz_tuner_ui.py` ↔ `pmds_tuner_ui.py` are forks, and they drift. The automatic AM filter
+  tables differed (LUFS read about 1 dB apart on the same signal); pmds now uses this
+  repository's table, by the owner's choice, but not its AM width settings or 12 kHz Wide.
+- pmds's AM receiver takes 960 ksps from the dongle instead of 2.4 Msps: on the owner's bench
+  the RTL-SDR silently dropped samples at 2.4 Msps. This repository's receivers still run at
+  2.4 Msps.
 - Until PMDS moves onto the shared AM receiver (roadmap Phase 6), a fix to shared code
   belongs in both repositories.
 

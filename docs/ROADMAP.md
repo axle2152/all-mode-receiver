@@ -82,7 +82,9 @@ Mock-ups first, for the owner to pick from.
 ## Phase 5: Shortwave and more analog modes
 
 - [ ] One HF front end (direct sampling, a V4, or an upconverter) with switchable
-  demodulators, so changing mode doesn't reopen the dongle:
+  demodulators, so changing mode doesn't reopen the dongle. It should take fewer samples per
+  second from the dongle than today's 2.4 Msps: pmds found the RTL-SDR silently dropping
+  samples at that rate on the bench, and 960 ksps fixed it there.
   - AM
   - synchronous AM, with either sideband selectable to dodge interference
   - SSB (upper and lower), DSB, CW
