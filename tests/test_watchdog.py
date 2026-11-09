@@ -16,11 +16,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path[:0] = [os.path.join(HERE, 'standin'), os.path.dirname(HERE)]
 
 from gnuradio._sim import SIM, FakeTime          # noqa: E402  (the stand-in, not GNU Radio)
+import radio.addons                              # noqa: E402
 import radio.am                                  # noqa: E402
 import radio.fm.receiver                         # noqa: E402
 import radio.receiver                            # noqa: E402
 
 radio.am.time = radio.fm.receiver.time = radio.receiver.time = FakeTime()
+radio.addons._entry_points = lambda: []          # the receivers alone, whatever is installed
 GIVE_UP = 5                                      # the tuner's _MAX_ERRORS
 STEP = 0.02                                      # the tuner calls update_blend() every 20 ms
 RUN_S = 15.0

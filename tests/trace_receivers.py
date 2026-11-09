@@ -35,6 +35,11 @@ def record(out):
     import radio.receiver
     for m in (radio.am, radio.fm.receiver, radio.fm.rds, radio.receiver):
         m.time = FakeTime()
+    try:                                  # the receivers alone: installed add-ons stay out, so
+        import radio.addons               # traces compare the same thing on any machine
+        radio.addons._entry_points = lambda: []
+    except ImportError:                   # older code, from before add-ons
+        pass
     log = _log.EVENTS.append
 
     def state(tb):

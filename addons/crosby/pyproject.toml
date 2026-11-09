@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crosby-stereo"
+version = "1.0"
+description = "Crosby FM-FM compatible stereo (1958), an add-on for the all-mode receiver"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
+authors = [{name = "Michael Foley, KK4EKN"}]
+
+[project.entry-points."all_mode_receiver.addons"]
+crosby = "crosby_stereo.addon:Addon"
+
+[tool.setuptools]
+packages = ["crosby_stereo"]

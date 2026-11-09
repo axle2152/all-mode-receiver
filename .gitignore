@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 
+# What pip install -e leaves in an add-on's folder
+*.egg-info/
+build/
+
 # The tuner's own settings, saved beside it
 quartz_tuner_settings.json
 

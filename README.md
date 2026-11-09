@@ -36,6 +36,11 @@ arrives. This one handles a weak or difficult signal the way a good car radio do
 - **Smart gain control.** Sets the dongle's gain by whether more gain actually makes the station
   cleaner, not just louder, and backs off at once if the dongle overloads.
 - Channel 87.7 (the audio of TV channel 6, on 87.75 MHz) tunes like any other station.
+- **Crosby stereo, as an add-on.** Before today's FM stereo was chosen in 1961, Murray Crosby's
+  FM-FM system was on trial: no pilot tone, and L-R on a 50 kHz subcarrier of its own. With the
+  add-on in `addons/crosby` installed, the radio plays it on a station with no stereo pilot
+  that carries that subcarrier, and shows CROSBY STEREO. Nobody broadcasts it today, so it's for
+  a transmitter of your own; the add-on's README explains.
 
 **RDS and RBDS.** Station name, RadioText, program type and program type name, call letters
 worked out from the station's code (even when a station's encoder is set to the international
@@ -150,6 +155,7 @@ so `git pull` won't touch your presets.
 | `tests/` | Checks that run without GNU Radio or a dongle (see below) |
 | `docs/ROADMAP.md` | Where the project is going, phase by phase |
 | `docs/ADDONS.md` | How a decoder that isn't part of this program can plug into it |
+| `addons/crosby/` | The Crosby FM stereo add-on, installed separately (its README says how) |
 
 Inside `radio/`:
 
@@ -173,10 +179,11 @@ samples:
     python3 tests/test_addons.py         # add-ons plug in; a missing or broken one stays harmless
     python3 tests/test_window.py         # the whole window runs on AM and FM
 
-With GNU Radio installed (still no dongle needed), this one runs the real receivers on a
-pretend test station:
+With GNU Radio installed (still no dongle needed), these run the real receivers on pretend
+test stations:
 
     python3 tests/test_gnuradio.py
+    python3 addons/crosby/test_crosby.py   # the Crosby add-on: plays Crosby stereo, and only that
 
 On Linux without a screen, run the window check as `xvfb-run -a python3 tests/test_window.py`.
 

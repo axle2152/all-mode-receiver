@@ -11,7 +11,7 @@ Receiver is the base of the AM and FM receivers (and the modes still to come):
   tone controls  bass and treble first-order shelves at the audio rate, then just enough
                  headroom that a full boost can't clip
   add-ons        decoders installed separately (radio/addons.py, docs/ADDONS.md): a
-                 receiver that offers addon_tap() starts them once its flowgraph is built
+                 receiver that offers addon_tap() starts them once its blocks are built
 
 A receiver says which band it is (BAND) and what it can do (FEATURES). The window shows
 the controls for the features a receiver has, and calls nothing else on it.
@@ -41,7 +41,7 @@ class Receiver(gr.top_block):
 
     # What the window may call on any receiver: set_freq, set_output_gain, set_mute, set_tone,
     # set_agc, set_manual_gain, update_blend, snapshot, cnr_since_tune, audio_lag, monitor,
-    # and the gr.top_block start / stop / wait.
+    # addon_stereo, and the gr.top_block start / stop / wait.
 
     # ---- watchdog ----
     STALL_S          = 2.0    # no samples for this long = dongle gone (raises, so a GUI can
@@ -75,6 +75,12 @@ class Receiver(gr.top_block):
 
     def monitor(self):
         """Meter readings since the last call (see radio/meters.py), or None."""
+        return None
+
+    @property
+    def addon_stereo(self):
+        """The label of the add-on whose stereo system this station is using (it may be
+        blended to mono for now), or None."""
         return None
 
     # -------------------------------------------------- hardware (tests replace these)
@@ -193,8 +199,11 @@ class Receiver(gr.top_block):
                 self._clear_station()
 
     def _clear_station(self):
-        """Every station data field back to 'nothing decoded'."""
+        """Every station data field back to 'nothing decoded'. A receiver with RDS of its
+        own keeps those fields to itself: add-on data there stays in self.station."""
         self.station = {}
+        if self.has('rds'):
+            return
         for attr, empty in _addons.STATION_DEFAULTS.items():
             setattr(self, attr, list(empty) if isinstance(empty, list) else empty)
 
@@ -212,6 +221,8 @@ class Receiver(gr.top_block):
             data = a.update(now)
             if data:
                 self.station.update(data)
+                if self.has('rds'):                 # the receiver's own RDS fills those
+                    continue
                 for key, attr in _addons.STATION_FIELDS.items():
                     if key in data:
                         setattr(self, attr, data[key])

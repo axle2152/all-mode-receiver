@@ -1219,8 +1219,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             if not getattr(tb, 'stereo_indicator', False):
                 return ('', '', '')
             return ('', '', 'KAHN ISB STEREO' if getattr(tb, 'stereo_system', '') == 'kahn' else 'C-QUAM STEREO')
-        if getattr(tb, 'rds_pi', None) is None:
-            return ('', '', '')
+        if getattr(tb, 'rds_pi', None) is None:          # a stereo add-on's system is named,
+            st = tb.addon_stereo                          # as AM stereo is
+            return ('', '', f'{st} STEREO' if st and getattr(tb, 'stereo_indicator', False) else '')
         call = (self._call_for(tb) or '')[:4]
         ps = (tb.rds_ps or '').strip()[:8]
         alert = tb.station.get('alert', 0)              # an add-on's alert: blink ALERT or TEST

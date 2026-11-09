@@ -306,6 +306,9 @@ class LampStrip(tk.Canvas):
             return
         self.delete('all')
         self._keys, self._ids = keys, {}
+        rows = max(2, -(-len(lamps) // self.COLS))             # two rows, a third if it takes one
+        if int(self.cget('height')) != rows * (self.LH + 4) + 2:
+            self.config(height=rows * (self.LH + 4) + 2)
         for i, (key, label, colour, tip) in enumerate(lamps):
             x = 2 + (i % self.COLS) * (self.LW + 4)
             y = 2 + (i // self.COLS) * (self.LH + 4)
