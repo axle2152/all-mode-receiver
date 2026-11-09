@@ -6,9 +6,11 @@ test_addons.py - do installed add-ons plug in, and does a missing or broken one 
 
 Runs the receivers against the GNU Radio stand-in with pretend add-ons in place of installed
 ones (see radio/addons.py and docs/ADDONS.md): with none, nothing changes and nothing is
-printed; a working one is started on AM only, its station data reaches the receiver, and a
-retune clears it; one that fails to load, to start, or while running costs one line in the
-terminal and never stops the receiver.
+printed; a working one is started on the band it serves, its station data reaches the
+receiver, and a retune clears it; one that fails to load, to start, or while running costs one
+line in the terminal and never stops the receiver. On FM, a stereo add-on's L-R plays only
+without a pilot and while it says its stereo is on, blended as it says, with the main channel
+raised by its make-up gain; a pilot, a retune or the add-on stopping hands stereo back.
 """
 import contextlib
 import io
@@ -90,18 +92,56 @@ class FmOnly(Good):
     BANDS = ('FM',)
 
 
+class Stereo:
+    """A pretend FM stereo add-on (its own system, on a station with no pilot)."""
+    BANDS = ('FM',)
+    NAME = 'STX'
+    on, quality = True, 0.5
+
+    def __init__(self, rx):
+        self.out = blocks.multiply_const_ff(0.0)
+        rx.connect(rx.addon_tap(), self.out)
+        self.resets = 0
+
+    def stereo_decoder(self):
+        return {'out': (self.out, 0), 'main_gain': 2.0, 'mpx_top': 83e3}
+
+    def reset(self):
+        self.resets += 1
+
+    def update(self, now):
+        return {'stereo': self.on, 'stereo_quality': self.quality, 'synced': self.on}
+
+
+class StereoBadDecoder(Stereo):
+    def stereo_decoder(self):
+        return {'out': 'not a block', 'main_gain': 2.0}
+
+
+class StereoDies(Stereo):
+    die = False
+
+    def update(self, now):
+        if self.die:
+            raise RuntimeError('lost it')
+        return Stereo.update(self, now)
+
+
 def install(*eps):
     radio.addons._entry_points = lambda: list(eps)
 
 
-def build(cls, **kw):
-    """A receiver with whatever is 'installed', and what it printed while starting."""
+def build(cls, pilot=True, **kw):
+    """A receiver with whatever is 'installed', and what it printed while starting. On FM the
+    stand-in's steady probes pass for a stereo pilot; pilot=False makes it a station without."""
     SIM.reset()
     SIM.fake_clock = True
     SIM.vary = True
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
         tb = cls(**kw)
+        if not pilot:
+            tb.PILOT_ON = tb.PILOT_OFF = 1.0
         tb.start()
     return tb, out.getvalue()
 
@@ -114,6 +154,84 @@ def run(tb, secs=1.0):
             tb.update_blend()
             SIM.t += 0.02
     return out.getvalue()
+
+
+def stereo_tests(FM):
+    print("\nFM add-ons")
+    install()
+    tb, said = build(FM, freq=90.5e6)
+    check("FM starts with no add-ons, prints nothing, and wires nothing extra",
+          tb.addons == [] and said == '' and tb._stereo is None and run(tb) == '')
+    check("FM offers add-ons the composite", tb.addon_tap() == (tb.fm_demod, 0))
+    tb.stop()
+
+    install(EntryPoint('fm', FmOnly))
+    tb, said = build(FM, freq=90.5e6)
+    check("an FM add-on is started on FM", len(tb.addons) == 1 and said == '', said)
+    run(tb)
+    check("its station data stays in rx.station: FM's own RDS keeps its fields",
+          tb.station.get('ps') == 'TESTING' and tb.rds_ps != 'TESTING' and tb.rds_pi is None)
+    check("one with no stereo decoder leaves the matrix alone", tb._stereo is None)
+    tb.stop()
+
+    install(EntryPoint('stx', Stereo))
+    Stereo.on, Stereo.quality = True, 0.5
+    tb, said = build(FM, pilot=False, freq=90.5e6)
+    check("a stereo add-on joins the matrix", tb._stereo is not None and said == '', said)
+    run(tb, 1.0)
+    check("no pilot, its stereo on: its L-R plays, blended as it says",
+          tb.addon_stereo == 'STX' and tb._stereo['route'] == 'addon' and tb.stereo_indicator
+          and abs(tb.current_blend - 0.5) < 0.01, (tb.addon_stereo, tb.current_blend))
+    check("and the main channel is raised by its make-up gain (6 dB)",
+          abs(tb._stereo['gain_db'] - 6.02) < 0.01, tb._stereo['gain_db'])
+    tb.set_enhancements(blend=False)
+    run(tb, 0.2)
+    check("blend off: full stereo", tb.current_blend == 1.0, tb.current_blend)
+    tb.set_enhancements(blend=True)
+    tb.set_force_mono(True)
+    run(tb, 0.3)
+    check("mono: no L-R, but the main channel keeps its make-up",
+          tb.target_lmr == 0.0 and abs(tb._stereo['gain_db'] - 6.02) < 0.01)
+    tb.set_force_mono(False)
+    del tb.PILOT_ON, tb.PILOT_OFF                 # the stand-in's probes now pass for a pilot
+    run(tb, 1.0)
+    check("a pilot wins: the pilot decoder plays, the main channel back to normal",
+          tb.pilot_present and tb.addon_stereo is None and tb._stereo['route'] == 'own'
+          and tb._stereo['gain_db'] == 0.0, (tb.pilot_present, tb._stereo))
+    tb.PILOT_ON = tb.PILOT_OFF = 1.0
+    run(tb, 1.0)
+    check("pilot gone: back to the add-on's stereo", tb.addon_stereo == 'STX')
+    tb.set_freq(98.1e6)
+    check("a retune: the add-on starts over, the matrix and level go back at once",
+          tb.addons[0].obj.resets == 1 and tb._stereo['route'] == 'own'
+          and tb._stereo['gain_db'] == 0.0 and tb.station == {})
+    Stereo.on = False
+    run(tb, 1.0)
+    check("its stereo off: mono at the normal level",
+          tb.addon_stereo is None and not tb.stereo_indicator and tb._stereo['gain_db'] == 0.0)
+    tb.stop()
+    Stereo.on = True
+
+    install(EntryPoint('bad', StereoBadDecoder))
+    tb, said = build(FM, pilot=False, freq=90.5e6)
+    check("a stereo decoder that can't be used: one line, the add-on runs on without it",
+          said.count('\n') == 1 and "Add-on 'bad' stereo not used" in said and tb._stereo is None
+          and tb.addons[0].alive, said)
+    check("and the receiver plays on", run(tb) == '' and tb.addon_stereo is None)
+    tb.stop()
+
+    install(EntryPoint('dies', StereoDies))
+    StereoDies.die = False
+    tb, said = build(FM, pilot=False, freq=90.5e6)
+    run(tb, 1.0)
+    ok_before = tb.addon_stereo == 'STX'
+    StereoDies.die = True
+    said = run(tb, 1.0)
+    check("a stereo add-on that stops: one line, and stereo goes back to the pilot decoder",
+          ok_before and said.count('\n') == 1 and "Add-on 'dies' stopped" in said
+          and tb.addon_stereo is None and tb._stereo['route'] == 'own'
+          and tb._stereo['gain_db'] == 0.0, (ok_before, said, tb._stereo))
+    tb.stop()
 
 
 def main():
@@ -179,10 +297,7 @@ def main():
           and not tb.addons[0].alive, said)
     check("and the receiver keeps running", run(tb, 2.0) == '')
     tb.stop()
-    install(EntryPoint('fm', FmOnly))
-    tb, said = build(FM, freq=90.5e6)
-    check("an FM add-on isn't started: FM takes no add-ons yet", tb.addons == [] and said == '')
-    tb.stop()
+    stereo_tests(FM)
 
     print('\nAll passed.' if not failed else f'\n{failed} failed.')
     return 1 if failed else 0

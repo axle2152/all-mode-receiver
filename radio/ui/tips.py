@@ -140,7 +140,8 @@ TIPS = dict(
                "carrying the same station. Groups per second (about 11 when all get through) and the "
                "share of blocks lost to noise or echoes. On AM, when an add-on is decoding station "
                "data: click here (or press I) for the add-on's own window, if it has one.",
-    lamp_stereo="The station's stereo pilot is received and stereo is playing.",
+    lamp_stereo="Stereo is playing: the station's stereo pilot is received (or an add-on's own stereo "
+                "system, such as Crosby, is in use).",
     lamp_rds="RDS data (station name, song text) is being decoded.",
     lamp_echo="The echo canceller is in use.",
     lamp_nr="Noise reduction is removing hiss.",
@@ -155,6 +156,10 @@ TIPS = dict(
     lamp_alert="An alert is on the air: the station data carries an alert, an emergency or a test. "
                "The alert's text is in the text line.",
     am_data="How well the add-on hears its data. Its own window (press I) has the details.",
+    lamp_fm_addon="An add-on has found what it listens for on this station. For Crosby stereo: the "
+                  "station's 50 kHz stereo subcarrier, so the station plays in Crosby stereo.",
+    fm_addon="What the add-on measures on this station. For Crosby stereo: the strength of the 50 kHz "
+             "stereo subcarrier (the 1958 standard is 50%). The line under the station details has more.",
     am_blocks="Station data blocks that failed their check lately. Blocks the decoder could repair "
               "don't count.",
 )

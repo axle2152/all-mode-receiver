@@ -22,9 +22,16 @@ more modes and amateur digital modes (see `docs/ROADMAP.md`). Owner: Michael Fol
   sending samples, and with `STANDIN_TRACE=1` it logs every block, connection and call.
 - `docs/ROADMAP.md`: the phased plan. Tick items off and add notes as work lands.
 - `docs/ADDONS.md`: the add-on interface.
+- `addons/crosby/`: the Crosby FM-FM stereo add-on (1958), a package of its own (installed with
+  `pip install -e addons/crosby`), public, and the worked example of an FM stereo add-on. Its
+  `test_crosby.py` runs it through the real FM receiver in GNU Radio.
 
 ## How the pieces talk
 
+- Add-ons: AM's hear the channel, FM's hear the composite. An FM add-on with
+  `stereo_decoder()` joins the stereo matrix; its L-R plays only with no 19 kHz pilot and while
+  it reports `stereo`. Without add-ons the FM receiver builds and calls exactly what it did
+  before (prove it with the trace tool).
 - A receiver declares `BAND` and `FEATURES` (listed in `radio/receiver.py`). The window calls
   the common interface on any receiver, and a feature's methods only when the receiver has
   that feature (`tb.has('am_width')`); building windows before a receiver runs, it asks
@@ -52,9 +59,11 @@ Run before every commit:
     python3 tests/test_addons.py
     python3 tests/test_window.py          # needs a screen; headless Linux: xvfb-run -a ...
     python3 tests/test_gnuradio.py        # needs GNU Radio (apt install gnuradio gr-osmosdr)
+    python3 addons/crosby/test_crosby.py  # needs GNU Radio; after changing radio/fm/ or add-ons
 
 `test_window.py --fonts <folder>` limits the window to one folder of fonts (Ubuntu's basic
-DejaVu set, or an empty folder).
+DejaVu set, or an empty folder). The stand-in tests and the trace tool ignore installed add-ons
+(PMDS, Crosby): they test the radio alone and bring pretend add-ons of their own.
 
 The owner has no usable IQ recordings, so a refactor is proven with
 `tests/trace_receivers.py`: record a trace of the old code (check it out with
@@ -104,8 +113,12 @@ setting and connection is unchanged. For the window, compare screenshots of the 
 The cloud container is Ubuntu 24.04. What worked:
 - Real GNU Radio for `tests/test_gnuradio.py` and the private repository's
   `tests/test_addon.py`: `apt-get install -y --no-install-recommends gnuradio gr-osmosdr`
-  (GNU Radio 3.10.9, system Python 3.12). Python blocks in a hier block must stay referenced
+  (GNU Radio 3.10.9, system Python 3.12). `python3` may be another Python: run GNU Radio
+  things with `/usr/bin/python3.12`. Python blocks in a hier block must stay referenced
   from Python, or the flowgraph segfaults on start.
+- Test signals for FM: don't use tones on whole kHz. The receiver tunes 2 kHz off the
+  station, so a sideband lands on 0 Hz and the DC canceller removes it (it looked like a
+  broken Crosby decoder). Use 997 Hz and the like, and not harmonics of each other.
 - The window: `apt-get install -y python3-tk python3-pil python3-pil.imagetk xvfb` and run under
   `xvfb-run -a`; `fonts-urw-base35` adds Nimbus Sans.
 - Ubuntu 22.04's versions: `uv venv -p 3.10.12` with `pillow==9.0.1` and `numpy==1.21.5` for

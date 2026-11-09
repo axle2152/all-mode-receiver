@@ -12,14 +12,17 @@ Finding add-ons: an installed package declares itself in its pyproject.toml,
     mydecoder = "my_package.radio_addon:Addon"
 
 and the entry point names the add-on class. The class says which bands it serves
-(BANDS = ('AM',)); a receiver of that band creates it once its own flowgraph is built.
+(BANDS = ('AM',)); a receiver of that band creates it once its own blocks are built.
+On FM an add-on can also bring a stereo system of its own (stereo_decoder()), which the
+receiver plays when the station has no 19 kHz pilot and the add-on says its stereo is on.
 """
 from importlib import metadata
 
 GROUP = 'all_mode_receiver.addons'
 
 # Station data an add-on can report from update(), and the receiver attribute each one
-# fills (the same fields RDS fills on FM, so the window shows them the same way).
+# fills on AM (the same fields RDS fills on FM, so the window shows them the same way).
+# On FM the receiver's own RDS keeps those fields; an add-on's data stays in rx.station.
 STATION_FIELDS = {
     'ps': 'rds_ps', 'rt': 'rds_rt', 'pi': 'rds_pi', 'call': 'rds_call', 'pty': 'rds_pty',
     'synced': 'rds_synced', 'tp': 'rds_tp', 'ta': 'rds_ta', 'af': 'rds_af', 'ct': 'rds_ct',
@@ -88,6 +91,10 @@ class Attached:
     def meter(self):
         """(label, 0..1, text) for a meter in the Advanced window, or None."""
         return self._call('meter')
+
+    def stereo_decoder(self):
+        """FM: the add-on's stereo decoder (a dict, see docs/ADDONS.md), or None."""
+        return self._call('stereo_decoder')
 
     def window_maker(self):
         """The add-on's make_window(parent, current), or None if it has no window."""

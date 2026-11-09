@@ -11,7 +11,9 @@ dongle sending a steady signal, for 12 seconds on each band, and fails on any er
 'Dongle lost'. On FM it also clicks Static cut and Noise reduction in Settings and checks each
 one changes only its own setting. A third run is AM with a pretend add-on installed: its
 station data must reach the dot matrix and the Advanced window, an alert must blink, and key I
-must open its window. --fonts limits the window to the fonts in one folder (for example only
+must open its window. A fourth is FM with a pretend stereo add-on (a station with no pilot
+that uses the add-on's own stereo system): STEREO must light, the dot matrix must name the
+system, and the Advanced window must show its lamp, meter and line. --fonts limits the window to the fonts in one folder (for example only
 Ubuntu's basic DejaVu set, or an empty folder for none at all).
 
 The window runs from a copy of the program in a temporary folder, so it can't touch your
@@ -38,9 +40,15 @@ def child(appdir, band, fonts, secs):
     from radio.ui import app as A, fonts as F
     SIM.reset()
     addon = band == 'AM+addon'
+    fm_addon = band == 'FM+addon'
     if addon:
         install_pretend_addon()
         band = 'AM'
+    if fm_addon:
+        install_pretend_addon(PretendStereo)
+        band = 'FM'
+    if not (addon or fm_addon):                   # the window alone, whatever is installed
+        install_pretend_addon(None)
     if fonts is not None:
         F._FONT_DIRS = [fonts]
     log = []
@@ -126,11 +134,32 @@ def child(appdir, band, fonts, secs):
         app._toggle_advanced()
         real_print('INFO add-on station data:', 'ok' if not problems else '; '.join(problems))
 
+    def stereo_checks():
+        """The pretend stereo add-on: STEREO, the system's name, its lamp, meter and line."""
+        tb, now = app.tb, time.monotonic()
+        if tb.addon_stereo != 'TEST' or not tb.stereo_indicator:
+            problems.append(f'stereo add-on: in use {tb.addon_stereo!r}, STEREO {tb.stereo_indicator}')
+        if app._rds_fields(tb, now)[2].strip() != 'TEST STEREO':
+            problems.append(f'stereo add-on: dot matrix shows {app._rds_fields(tb, now)!r}')
+        app._toggle_advanced()
+        root.update()
+        root.after(1500, stereo_checks_2)
+
+    def stereo_checks_2():
+        if 'TEST STEREO' not in app._id_var.get() or 'Pretend stereo: subcarrier' not in app._rdsd_var.get():
+            problems.append(f'stereo add-on: Advanced shows {app._id_var.get()!r} / {app._rdsd_var.get()!r}')
+        if 'data' not in (app._meters._keys or []):
+            problems.append('stereo add-on: no meter in the Advanced window')
+        app._toggle_advanced()
+        real_print('INFO stereo add-on:', 'ok' if not problems else '; '.join(problems))
+
     root.after(250, sample)
-    if band == 'FM':
+    if band == 'FM' and not fm_addon:
         root.after(2000, settings_clicks)
     if addon:
         root.after(5000, addon_checks)
+    if fm_addon:
+        root.after(5000, stereo_checks)
     root.after(int(secs * 1000), finish)
     root.mainloop()
 
@@ -168,15 +197,39 @@ class PretendAddon:
         return w
 
 
-def install_pretend_addon():
+class PretendStereo:
+    """Stands in for an installed FM stereo add-on, on a station with no pilot: its stereo is
+    on, at full quality."""
+    BANDS = ('FM',)
+    NAME = 'TEST'
+
+    def __init__(self, rx):
+        from gnuradio import blocks
+        self.out = blocks.multiply_const_ff(0.0)
+        rx.connect(rx.addon_tap(), self.out)
+
+    def stereo_decoder(self):
+        return {'out': (self.out, 0), 'main_gain': 2.0, 'mpx_top': 83e3}
+
+    def update(self, now):
+        return {'stereo': True, 'stereo_quality': 1.0, 'synced': True}
+
+    def readout(self):
+        return 'Pretend stereo: subcarrier found'
+
+    def meter(self):
+        return ('Test subcarrier', 1.0, '50%')
+
+
+def install_pretend_addon(cls=PretendAddon):
     import radio.addons
 
     class EntryPoint:
         name = 'pretend'
 
         def load(self):
-            return PretendAddon
-    radio.addons._entry_points = lambda: [EntryPoint()]
+            return cls
+    radio.addons._entry_points = lambda: [EntryPoint()] if cls is not None else []
 
 
 def run(band, fonts):
@@ -211,13 +264,13 @@ def run(band, fonts):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument('--fonts', default=None, help='use only the fonts in this folder')
-    ap.add_argument('--child', choices=('AM', 'FM', 'AM+addon'), help=argparse.SUPPRESS)
+    ap.add_argument('--child', choices=('AM', 'FM', 'AM+addon', 'FM+addon'), help=argparse.SUPPRESS)
     ap.add_argument('--appdir', help=argparse.SUPPRESS)
     a = ap.parse_args()
     if a.child:
         child(a.appdir, a.child, a.fonts, SECS)
         return 0
-    results = [run(band, a.fonts) for band in ('AM', 'FM', 'AM+addon')]
+    results = [run(band, a.fonts) for band in ('AM', 'FM', 'AM+addon', 'FM+addon')]
     print('\nAll passed.' if all(results) else f'\n{results.count(False)} failed.')
     return 0 if all(results) else 1
 
