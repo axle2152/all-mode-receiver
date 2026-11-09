@@ -177,15 +177,31 @@ class Addon:
             return 0.0
         return 100 * self.SUB_INJ * 10 ** (self.level_db / 20)
 
+    def why_not(self):
+        """Why the station isn't taken for Crosby stereo right now, in a few words ('' when
+        it is): the first of the tests that fails."""
+        if self.found:
+            return ''
+        if self.level_db is None:
+            return 'listening for a 50 kHz subcarrier'
+        if self.rx.pilot_present:
+            return 'a 19 kHz pilot: ordinary stereo, not Crosby'
+        inj = self.injection_pct()
+        if self.level_db < self.LEVEL_MIN_DB:
+            return 'no subcarrier' if inj < 5 else f'subcarrier too weak ({inj:.0f}%, needs 18%)'
+        if abs(self.offset_hz) > self.OFFSET_MAX_HZ:
+            return f'not centred on 50 kHz ({(self.SUB_HZ + self.offset_hz) / 1e3:.1f} kHz)'
+        if self.circle_db < self.CIRCLE_MIN_DB:
+            return f'not a steady FM subcarrier (C/N {self.circle_db:.1f} dB, needs 6)'
+        return 'found, checking'
+
     def readout(self):
         if self.level_db is None:
             return 'Crosby  listening for a 50 kHz subcarrier'
         if self.found:
             state = 'STEREO' if self.quality > 0 else 'stereo station, blended to mono'
-        elif self.rx.pilot_present:
-            state = 'pilot stereo station, not Crosby'
         else:
-            state = 'no subcarrier'
+            state = self.why_not()
         return (f"Crosby  {state}   subcarrier {self.injection_pct():3.0f}% at "
                 f"{(self.SUB_HZ + self.offset_hz) / 1e3:4.1f} kHz, C/N {self.circle_db:4.1f} dB")
 

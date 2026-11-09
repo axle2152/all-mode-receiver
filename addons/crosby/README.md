@@ -48,9 +48,12 @@ not taken for Crosby.
 
 - the STEREO light, and **CROSBY STEREO** on the dot matrix. A Crosby station can't carry RDS,
   because RDS's 57 kHz falls inside the subcarrier.
-- in the Advanced window: a CROSBY lamp, a "Crosby subcarrier" meter (50% is the 1958
-  standard), and a line with the details, for example
-  `Crosby  STEREO   subcarrier  50% at 50.0 kHz, C/N 24.1 dB`
+- in the Advanced window (ADV on the tuner's face): a CROSBY lamp, a "Crosby subcarrier"
+  meter (50% is the 1958 standard), and a line with the details, for example
+  `Crosby  STEREO   subcarrier  50% at 50.0 kHz, C/N 24.1 dB`. When it isn't playing
+  Crosby, that line says why: no subcarrier, too weak, a 19 kHz pilot, not centred on 50 kHz,
+  or not steady. No CROSBY lamp at all means the add-on isn't installed (or didn't start: the
+  terminal says why).
 
 **What the radio does differently while Crosby stereo plays:**
 
@@ -115,6 +118,23 @@ receivers the matching change: the same `[0.5, 0.5]` filter on the L+R path, aft
 The 40 dB in the last row comes from the subcarrier's 19 to 81 kHz band, which both ends use.
 Carson's rule would want 10 to 90 kHz for full deviation at 15 kHz. It only shows when both
 channels are near full level at the same time.
+
+## If it doesn't play Crosby
+
+Close the tuner, start the transmitter, and from the `all-mode-receiver` folder run (on
+Windows, `python` instead of `python3`):
+
+```
+python3 addons/crosby/crosby_check.py --freq 90.5e6
+```
+
+It runs the FM receiver on the dongle for 10 seconds with no window and no sound. It says
+whether the add-on is installed in that Python, prints every second what the receiver and the
+add-on measure (signal quality, any 19 kHz pilot, peak deviation, the subcarrier's injection,
+centre and steadiness, and whether it's playing Crosby), and then says what it found and what
+to check. Add `--record 3` to also save 3 seconds of the radio signal exactly as the dongle
+sent it (`crosby_check.cs8`, about 14 MB), which `--replay crosby_check.cs8` plays back
+through the receiver without a dongle, here or on another machine.
 
 ## Checking it
 

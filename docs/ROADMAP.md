@@ -80,7 +80,8 @@ the blanker row), and clicking Noise reduction switched static cut on.
   `crosby_tx.grc` sends L-R half a sample early (fix in the add-on's README).
 - [ ] Crosby on the bench: the HackRF sending the fixed `crosby_tx.grc`, a dongle receiving.
   Check the subcarrier reading (about 50% at 50.0 kHz), the separation, and the signal quality
-  a dongle shows on a Crosby station (the simulation tops out at 23 to 24 dB).
+  a dongle shows on a Crosby station (the simulation tops out at 23 to 24 dB). First bench try:
+  no Crosby. `addons/crosby/crosby_check.py` (and a `--record` of the signal) to find out why.
 - [ ] FM at a lower sample rate too, like AM (the RTL-SDR can drop samples at 2.4 Msps). Its gain
   control and quality thresholds were tuned at 2.4 Msps, so check them on the bench, or with
   `tests/test_gnuradio.py` and the trace tool, before and after.

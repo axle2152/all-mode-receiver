@@ -24,7 +24,9 @@ more modes and amateur digital modes (see `docs/ROADMAP.md`). Owner: Michael Fol
 - `docs/ADDONS.md`: the add-on interface.
 - `addons/crosby/`: the Crosby FM-FM stereo add-on (1958), a package of its own (installed with
   `pip install -e addons/crosby`), public, and the worked example of an FM stereo add-on. Its
-  `test_crosby.py` runs it through the real FM receiver in GNU Radio.
+  `test_crosby.py` runs it through the real FM receiver in GNU Radio; `crosby_check.py` is
+  the bench check to ask for when it doesn't play Crosby (verdict in plain words; `--record`
+  saves raw IQ that `--replay` plays back here through the real receiver).
 
 ## How the pieces talk
 
