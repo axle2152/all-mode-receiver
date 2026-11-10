@@ -81,25 +81,32 @@ Windows, in the radioconda prompt:
 pip install -e addons/crosby
 ```
 
-Linux (if pip is missing: `sudo apt install python3-pip`):
+Linux: the command depends on the pip (if pip is missing: `sudo apt install python3-pip`).
+Ubuntu 22.04, with its own pip:
+
+```
+python3 -m pip install --user --no-build-isolation -e addons/crosby
+```
+
+Ubuntu 23.04 and newer:
+
+```
+python3 -m pip install --user --break-system-packages -e addons/crosby
+```
+
+A pip you've upgraded yourself, on 22.04:
 
 ```
 python3 -m pip install --user -e addons/crosby
 ```
 
-On Ubuntu 23.04 and newer, pip refuses to install into the system Python unless you add
-`--break-system-packages` to that line. The add-on is only an entry in Python's list of
-packages that points at this folder, so it's safe.
-
-If you installed the first version of this add-on on Ubuntu 22.04, it went in under the name
-"UNKNOWN", with nothing to tell the radio it's there: that version described itself in a way
-Ubuntu 22.04's pip can't read. Remove it, then install again as above:
-
-```
-python3 -m pip uninstall UNKNOWN
-```
-
-(`crosby_check.py`, below, says whether that's the case.) Newer pips may print a warning about
+Not sure which you have? `python3 addons/crosby/crosby_check.py` (below) says whether the
+add-on is installed and, if it isn't, prints the command for that machine. Each of these was
+tried on a real Ubuntu 22.04 or 24.04. Ubuntu 22.04's own pip builds with an old setuptools
+that falls back to an old way of installing, inside a sandbox that ignores `--user`, so
+it needs `--no-build-isolation`. A newer pip refuses that option for this add-on, and Ubuntu
+23.04 and newer want `--break-system-packages` (the add-on is only an entry in Python's list
+of packages that points at this folder, so it's safe). Newer pips may print a warning about
 "editable installation" and folders with the same name; it's harmless.
 
 Then start the tuner as usual. The `-e` means the installed add-on is this folder itself, so a

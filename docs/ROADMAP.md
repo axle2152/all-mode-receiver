@@ -82,8 +82,10 @@ the blanker row), and clicking Noise reduction switched static cut on.
   Check the subcarrier reading (about 50% at 50.0 kHz), the separation, and the signal quality
   a dongle shows on a Crosby station (the simulation tops out at 23 to 24 dB). First bench try:
   no Crosby. `addons/crosby/crosby_check.py` found the add-on working (CROSBY STEREO from the
-  first second, subcarrier steady at 50.0 kHz) but not installed: Ubuntu 22.04's pip had
-  installed it as "UNKNOWN" (now described in `setup.py`, which every pip reads). It also showed
+  first second, subcarrier steady at 50.0 kHz) but not installed. Ubuntu 22.04's pip can't read
+  a package described in `pyproject.toml`, and its editable installs need `--no-build-isolation`
+  (tried on a real 22.04: the add-on is now described in `setup.py`, and `crosby_check.py`
+  prints the right command for the machine's pip). It also showed
   the station at about half its deviation (subcarrier 26%, peaks 40 kHz), which would have
   left 10 dB of separation: L+R is now balanced to the measured subcarrier. Still to find:
   why the transmitter runs at half deviation.

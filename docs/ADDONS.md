@@ -23,9 +23,11 @@ setup(name='my-decoder', version='1.0', packages=['my_package'],
 ```
 
 with a `pyproject.toml` that only names the build system (`addons/crosby` has both). Declare it
-in `setup.py` rather than in `pyproject.toml`'s `[project]` table: Ubuntu 22.04's pip and
-setuptools can't read that table, and install the package as "UNKNOWN" with no entry point,
-so the radio never finds it.
+in `setup.py` rather than in `pyproject.toml`'s `[project]` table: Ubuntu 22.04's pip builds
+with the system's setuptools 59.6, which can't read that table, so the install fails (or, with
+some pips, the package comes out as "UNKNOWN" with no entry point and the radio never finds
+it). With that pip an editable install also needs `--no-build-isolation`;
+`addons/crosby/README.md` has the commands for each pip.
 
 The entry point names the add-on's class. Once a receiver of a band the add-on serves has
 built its own blocks, it creates the add-on.

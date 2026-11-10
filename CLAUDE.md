@@ -22,8 +22,9 @@ more modes and amateur digital modes (see `docs/ROADMAP.md`). Owner: Michael Fol
   sending samples, and with `STANDIN_TRACE=1` it logs every block, connection and call.
 - `docs/ROADMAP.md`: the phased plan. Tick items off and add notes as work lands.
 - `docs/ADDONS.md`: the add-on interface. Add-on packages declare themselves in `setup.py`:
-  Ubuntu 22.04's pip installs a package described only in `pyproject.toml` as "UNKNOWN", with
-  no entry point.
+  Ubuntu 22.04's pip builds with setuptools 59.6, which can't read `pyproject.toml`'s
+  `[project]`. That pip needs `--user --no-build-isolation -e`; a newer pip `--user -e` (plus
+  `--break-system-packages` on Ubuntu 23.04+). `crosby_check.py` prints the right one.
 - `addons/crosby/`: the Crosby FM-FM stereo add-on (1958), a package of its own (installed with
   `pip install -e addons/crosby`), public, and the worked example of an FM stereo add-on. Its
   `test_crosby.py` runs it through the real FM receiver in GNU Radio; `crosby_check.py` is
@@ -133,3 +134,9 @@ The cloud container is Ubuntu 24.04. What worked:
   with `tests/test_window.py --fonts /usr/share/fonts/truetype/dejavu`.
 - Screenshots for before/after comparisons: Pillow's `ImageGrab.grab(bbox=..., xdisplay=...)`
   on the system Python under Xvfb.
+- Installs on Ubuntu 22.04 (pip quirks a venv can't show): a real 22.04 in a chroot.
+  `debootstrap --variant=minbase jammy <dir>` (about 15 minutes), jammy-updates and
+  jammy-security in its sources.list, `apt-get install python3-pip ca-certificates sudo`,
+  bind-mount /proc and /dev, copy in /root/.ccr/ca-bundle.crt and run update-ca-certificates,
+  then test as a normal user (`useradd`; root can write the system folders and hides the
+  problems), passing HTTPS_PROXY and PIP_CERT=/etc/ssl/certs/ca-certificates.crt.
