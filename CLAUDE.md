@@ -104,7 +104,9 @@ setting and connection is unchanged. For the window, compare screenshots of the 
 - Machines: Windows (radioconda) and a Linux laptop (Ubuntu). Both update with `git pull`.
 - Hardware is on the owner's bench, not in the cloud session: RTL-SDR receivers (a Nooelec
   NESDR among them), a HackRF transmitter. Bench and listening results come from there. No
-  usable IQ recordings so far.
+  usable IQ recordings so far. The Soapy HackRF sink runs only whole-MHz rates (2 to 20 Msps);
+  a transmit flowgraph's rate variables must match the sink's (a stale 3.84 Msps once halved
+  Crosby's deviation). The RTL-SDR clips often on medium wave (Clip % in the Advanced window).
 - Merges pull requests on GitHub. After each merge, give the update commands for both
   machines (`git checkout main`, `git pull`; and in the pmds folder, the `pip install -e`
   again when its add-on changed).
