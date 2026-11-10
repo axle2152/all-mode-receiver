@@ -41,7 +41,11 @@ class Receiver(gr.top_block):
 
     # What the window may call on any receiver: set_freq, set_output_gain, set_mute, set_tone,
     # set_agc, set_manual_gain, update_blend, snapshot, cnr_since_tune, audio_lag, monitor,
-    # addon_stereo, and the gr.top_block start / stop / wait.
+    # addon_stereo, signal_level, and the gr.top_block start / stop / wait.
+    #
+    # signal_level() -> (dBFS, gain dB): the station's level relative to the converter's full
+    # scale, and the tuner gain ahead of it (None while the tuner's own AGC picks the gain, so
+    # nobody can know it). The window turns that into dBm for the S-meter.
 
     # ---- watchdog ----
     STALL_S          = 2.0    # no samples for this long = dongle gone (raises, so a GUI can

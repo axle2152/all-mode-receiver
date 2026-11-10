@@ -974,6 +974,11 @@ class FMStereoReceiver(Receiver):
     def rds_pty(self):
         return self.rds.pty
 
+    def signal_level(self):
+        """(channel dBFS, tuner gain dB). The gain is always known: this receiver's own AGC
+        sets it (the tuner's is never on)."""
+        return self.channel_dbfs, self.gain_db
+
     def snapshot(self, kind):
         """Latest FFT_N samples: kind 'iq' = channel IQ (complex, 240 kHz),
         'mpx' = demodulated composite (float, 1.8 = 75 kHz deviation)."""

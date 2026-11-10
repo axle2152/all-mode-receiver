@@ -73,8 +73,12 @@ It also shows how many data groups arrive each second and how many are lost.
 - A frequency display that reads any frequency up to 9.99 GHz, down to 1 Hz: in kHz below
   30 MHz and MHz above, with as many digits as the tuning step needs (1080 kHz, 90.5 MHz,
   14230.50 kHz).
-- A signal bar, phone-style signal bars, STEREO / TUNED / RDS indicators, and a dot-matrix
-  line for the station name and RadioText.
+- A signal meter that shows either how clean the signal is (poor, fair, good) or how strong
+  it is in S units, the way ham and shortwave radios measure it. Press S or METER to switch.
+  For true S units, calibrate it once in Settings against a signal of known strength; until
+  then it says UNCAL.
+- Phone-style signal bars, STEREO / TUNED / RDS indicators, and a dot-matrix line for the
+  station name and RadioText.
 - The look is yours to change: the colour of every lit element, the glow of the glass, the
   nameplate, even hand-drawn digits for the frequency display.
 - It remembers your station, presets and settings.
@@ -209,7 +213,6 @@ else running, the kernel's TV-tuner driver has it. Unplug the dongle, run
 
 ## Where it's going
 
-- An S-meter
 - Shortwave and amateur bands, with presets in pages of 24
 - More modes: synchronous AM, SSB, DSB and CW, then narrowband FM and amateur digital modes,
   with automatic identification of which digital system a signal is using

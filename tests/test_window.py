@@ -94,6 +94,60 @@ def child(appdir, band, fonts, secs):
         app._toggle_settings()
         real_print('INFO Settings clicks:', 'ok' if not problems else '; '.join(problems))
 
+    def meter_checks():
+        """The signal meter: S switches it to S units (UNCAL until calibrated), CALIBRATE in
+        Settings takes the station tuned now as the level typed, a click on the meter switches
+        back, and both are saved."""
+        import json
+        from radio.ui.theme import SIG_X, VFD_BOX
+        mine = []
+        if app._vfd_state()['meter'] != 'Q':
+            mine.append(f"meter starts as {app._vfd_state()['meter']!r}, not signal quality")
+        app._meter_toggle()
+        st = app._vfd_state()
+        if st['meter'] != 'S' or not st['uncal']:
+            mine.append(f"after S: meter {st['meter']!r}, UNCAL {st['uncal']}")
+        app._toggle_settings()
+        root.update()
+        btn = find(root, 'CALIBRATE')
+        if btn is None:
+            mine.append('Settings: no CALIBRATE button')
+        else:
+            app._cal_var.set('-73')
+            app._tuned = lambda tb, now: True        # the stand-in's station, taken as tuned
+            btn.invoke()
+            msg = (app._cal_msg or ('',))[0]
+            if not msg.startswith('Calibrated'):
+                mine.append(f'CALIBRATE said {msg!r}')
+            dbm = app._smeter_reading(app.tb)[0]
+            if abs(dbm + 73) > 0.5:
+                mine.append(f'just calibrated to -73 dBm, it reads {dbm:.1f}')
+            app._tick()
+            if app._cal_label.cget('text') != msg:
+                mine.append(f"Settings shows {app._cal_label.cget('text')!r}")
+        app._toggle_settings()
+
+        def after_cal():
+            from radio.ui import smeter
+            st = app._vfd_state()
+            want = smeter.segments(app._smeter_reading(app.tb)[0], app.freq)   # the gain may have moved
+            if st['uncal'] or abs(st['sig'] - want) > 1:
+                mine.append(f"calibrated: UNCAL {st['uncal']}, {st['sig']} bars for {want:.1f}")
+
+            class Click:
+                x, y = (VFD_BOX[0] + SIG_X + 30) * app.s, (VFD_BOX[1] + 50) * app.s
+            app._vfd_click(Click())
+            if app._vfd_state()['meter'] != 'Q':
+                mine.append('a click on the meter did not switch it back')
+            app._meter_toggle()
+            with open(os.path.join(appdir, 'quartz_tuner_settings.json')) as f:
+                saved = json.load(f)
+            if saved.get('meter_view', {}).get(band) != 'S' or app._input_path() not in saved.get('smeter_cal', {}):
+                mine.append(f"saved: {saved.get('meter_view')!r} {saved.get('smeter_cal')!r}")
+            problems.extend(mine)
+            real_print('INFO signal meter:', 'ok' if not mine else '; '.join(mine))
+        root.after(800, after_cal)
+
     def sample():
         states.append(app._status)
         root.after(250, sample)
@@ -156,6 +210,8 @@ def child(appdir, band, fonts, secs):
     root.after(250, sample)
     if band == 'FM' and not fm_addon:
         root.after(2000, settings_clicks)
+    if not (addon or fm_addon):
+        root.after(6000, meter_checks)
     if addon:
         root.after(5000, addon_checks)
     if fm_addon:

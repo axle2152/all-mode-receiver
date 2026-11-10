@@ -30,15 +30,16 @@ from .constants import (
     TUNED_HYST_DB, TUNED_SETTLE_S, TUNER_MIN, UI_TICK_MS, XOVER_HZ, _ASSET_DIR)
 from .crt import Crt
 from .fonts import draw_text, font, text_width, use_nimbus_in_tk
-from .frequency import freq_digits
+from .frequency import as_text, freq_digits
+from . import smeter
 from .monitor import DelayLine, MonitorLogic
 from .settings import SettingsWindow
 from .theme import (
     AM_KEY, BASE_H, BASE_W, COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, DOT_FIELDS,
     ECHO_KEY, FM_KEY, FREEZE_KEY, HINTS, HOLD_KEY, IF_KEY, LABEL_Y, LIP, LOWER_LABEL_Y,
     MEM_KEY, MONO_KEY, MPX_KEY, PAD_GAP, PAD_ROWS, PAD_W, PAD_X, POWER_KEY, PPM_KEY, PRINT,
-    PRINT_SOFT, RACK_GAP, RESET_KEY, SPEC_AVG, SS, TUNE_DOWN, TUNE_UP, VFD_BOX, VU_KEY, WELL,
-    WIDE_KEY, WIN)
+    PRINT_SOFT, RACK_GAP, RESET_KEY, SCALE_Y, SIG_PITCH, SIG_X, SPEC_AVG, SS, TUNE_DOWN, TUNE_UP,
+    VFD_BOX, VU_KEY, WELL, WIDE_KEY, WIN)
 from .vfd import MonitorVfd, TunerVfd
 from .widgets import Hint, Key
 
@@ -104,6 +105,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.am_normal_hz = saved.get('am_normal_hz', 8000)
         self.am_auto_width = bool(saved.get('am_auto_width', True))
         self.colors     = dict(saved.get('colors', {}))
+        self.meter_view = {'AM': 'Q', 'FM': 'Q'}       # per band: 'S' meter or signal 'Q'uality
+        self.meter_view.update(saved.get('meter_view', {}))
+        self.smeter_cal = dict(saved.get('smeter_cal', {}))   # input path -> {'db', 'mhz'}
         self.freeze     = False
         self.lmr_gain   = lmr_gain
         self._backend_args = dict(lmr_gain=lmr_gain, log_path=log_path, record_iq=record_iq)
@@ -126,6 +130,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._flash = None
         self._q_on = False
         self._sig, self._sig_t = 0.0, now
+        self._sm, self._sm_t = 0.0, now                  # the S-meter's bar, smoothed
+        self._cal_label, self._cal_msg = None, None     # Settings > S-meter: status, last result
         self._shown = self._mshown = None
         self._rt_text, self._rt_pos, self._rt_t = '', 0, 0.0
         self._direct, self._direct_t, self._dm_msg = None, 0.0, None   # direct entry; a short message
@@ -262,6 +268,13 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             out['am_auto_width'] = raw['am_auto_width']
         if raw.get('rds_scale') in ('standard', 'stereo_tool'):
             out['rds_scale'] = raw['rds_scale']
+        if isinstance(raw.get('meter_view'), dict):
+            out['meter_view'] = {b: v for b, v in raw['meter_view'].items() if b in BANDS and v in ('S', 'Q')}
+        if isinstance(raw.get('smeter_cal'), dict):
+            out['smeter_cal'] = {p: {'db': float(c['db']), 'mhz': float(c['mhz'])}
+                                 for p, c in raw['smeter_cal'].items()
+                                 if p in smeter.PATHS and isinstance(c, dict) and num(c.get('db'))
+                                 and -150 <= c['db'] <= 150 and num(c.get('mhz'))}
         if isinstance(raw.get('colors'), dict):
             out['colors'] = {k: v.lower() for k, v in raw['colors'].items()
                              if k in COLOR_DEFAULTS and isinstance(v, str) and re.fullmatch(r'#[0-9a-fA-F]{6}', v)}
@@ -338,6 +351,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             'am_normal_hz': int(self.am_normal_hz),
             'am_auto_width': bool(self.am_auto_width),
             'colors': dict(sorted(self.colors.items())),
+            'meter_view': dict(sorted(self.meter_view.items())),
+            'smeter_cal': {p: dict(c) for p, c in sorted(self.smeter_cal.items())},
             'pi_calls': dict(sorted(self.pi_calls.items())),
         }
         for path in (os.path.join(_ASSET_DIR, SETTINGS_NAME), SETTINGS_FALLBACK):
@@ -525,6 +540,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.vfd_item = c.create_image(round(VFD_BOX[0] * s), round(VFD_BOX[1] * s), anchor='nw')
         for seq in ('<MouseWheel>', '<Button-4>', '<Button-5>'):
             c.bind(seq, self._wheel)
+        c.tag_bind(self.vfd_item, '<ButtonRelease-1>', self._vfd_click)
 
         self.mvfd = MonitorVfd(s, self._colors_for('monitor'))
         self.vfd.glow = self.mvfd.glow = self.glow
@@ -553,7 +569,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.hints = [Hint(c, HINTS[0][1], s, 'ADV', self._toggle_advanced),
                       Hint(c, HINTS[1][1], s, 'MON', self._toggle_monitor),
                       Hint(c, HINTS[2][1], s, 'SET', self._toggle_settings),
-                      Hint(c, HINTS[3][1], s, 'FREQ', self._direct_toggle)]
+                      Hint(c, HINTS[3][1], s, 'FREQ', self._direct_toggle),
+                      Hint(c, HINTS[4][1], s, 'METER', self._meter_toggle)]
 
         K(mc, RESET_KEY, legend='Reset', size=11, on_press=self._mon_reset)
         K(mc, PPM_KEY, legend='PPM', size=11, on_press=lambda: self._set_meter_mode('ppm'),
@@ -583,7 +600,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         for ch, fn in (('m', self._memory), ('f', lambda: self._band('FM')),
                        ('a', lambda: self._band('AM')), ('o', self._toggle_mono),
                        ('w', self._toggle_wide), ('p', self._toggle_power),
-                       ('d', self._direct_toggle), ('i', self._addon_window)):
+                       ('d', self._direct_toggle), ('i', self._addon_window),
+                       ('s', self._meter_toggle)):
             r.bind(ch, lambda e, fn=fn: fn())
             r.bind(ch.upper(), lambda e, fn=fn: fn())
         self._refresh_vfd(force=True)
@@ -1055,6 +1073,82 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._sig = target if target >= self._sig else max(target, self._sig - SIG_FALL_PER_S * dt)
         return int(round(self._sig))
 
+    # ---- the S-meter
+    def _input_path(self):
+        """Which calibration readings use: direct sampling, or the tuner below / above 30 MHz."""
+        band, am_src, fm_args = self._run_mode or ((self.band,) + self._source_for(self.band, self.freq))
+        direct = am_src == 'direct_q' if band == 'AM' else 'direct_samp' in fm_args
+        return smeter.path_for(direct, self.freq)
+
+    def _smeter_reading(self, tb):
+        """(dBm, uncalibrated, path, gain known) for the station now, or None."""
+        if tb is None:
+            return None
+        dbfs, gain = tb.signal_level()
+        path = self._input_path()
+        if path == 'direct':
+            gain = 0.0                                 # no tuner ahead of the converter
+        cal = self.smeter_cal.get(path)
+        dbm = smeter.to_dbm(dbfs, gain or 0.0, smeter.GUESS_CAL_DB if cal is None else cal['db'])
+        return dbm, cal is None or gain is None, path, gain is not None
+
+    def _smeter_steps(self, tb, now):
+        """(bars lit, UNCAL) for the meter in S units: rises at once, falls like the quality bar."""
+        dt, self._sm_t = now - self._sm_t, now
+        r = self._smeter_reading(tb)
+        settling = self._moving() or now - self._tuned_t < TUNED_SETTLE_S
+        target = 0.0 if r is None or settling else smeter.segments(r[0], self.freq)
+        self._sm = target if target >= self._sm else max(target, self._sm - SIG_FALL_PER_S * dt)
+        return int(round(self._sm)), r is None or r[1]
+
+    def _meter_toggle(self):
+        """S, the METER button or a click on the meter: S units or signal quality, per band."""
+        self.meter_view[self.band] = 'S' if self.meter_view.get(self.band, 'Q') == 'Q' else 'Q'
+        self._save_settings()
+        self._refresh_vfd(force=True)
+
+    def _vfd_click(self, e):
+        x, y = e.x / self.s - VFD_BOX[0], e.y / self.s - VFD_BOX[1]
+        if SIG_X - 12 <= x <= SIG_X + SIG_STEPS * SIG_PITCH and 18 <= y <= SCALE_Y + 4:
+            self._meter_toggle()
+
+    def _smeter_calibrate(self, known_dbm):
+        """Settings > S-meter: the station tuned now is known_dbm strong. Returns what happened."""
+        tb, now = self.tb, time.monotonic()
+        if tb is None or not self.power_on:
+            return 'Turn the radio on and tune to the signal first.'
+        if not self._tuned(tb, now):
+            return 'Tune to the signal first (TUNED lit).'
+        dbm, _, path, gain_known = self._smeter_reading(tb)
+        if not gain_known:
+            return "Turn the tuner's AGC off first: with it on, the gain is unknown."
+        dbfs, gain = tb.signal_level()
+        self.smeter_cal[path] = {'db': round(smeter.calibration_for(known_dbm, dbfs,
+                                                                     0.0 if path == 'direct' else gain), 2),
+                                 'mhz': round(self.freq / 1e6, 4)}
+        self._save_settings()
+        return f'Calibrated {smeter.PATHS[path]} at {as_text(self.freq, self._step_hz())}.'
+
+    def _smeter_clear(self):
+        path = self._input_path()
+        self.smeter_cal.pop(path, None)
+        self._save_settings()
+        return f'Calibration for {smeter.PATHS[path]} cleared.'
+
+    def _smeter_status(self, now):
+        """The line under Settings > S-meter: the reading now, and this path's calibration."""
+        if self._cal_msg is not None and now < self._cal_msg[1]:
+            return self._cal_msg[0]
+        r = self._smeter_reading(self.tb)
+        if r is None:
+            return ''
+        dbm, _, path, gain_known = r
+        cal = self.smeter_cal.get(path)
+        where = smeter.PATHS[path]
+        how = (f"calibrated at {as_text(cal['mhz'] * 1e6, 1e3)}" if cal else 'not calibrated')
+        note = '' if gain_known else "; tuner AGC on, so the gain is unknown"
+        return f'Now {dbm:.1f} dBm ({smeter.s_text(dbm, self.freq)}). {where[0].upper()}{where[1:]}: {how}{note}.'
+
     def _vfd_state(self):
         if not self.power_on:
             return None
@@ -1069,7 +1163,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                   tuned=self._tuned(tb, now),
                   rds=(tb is not None and (tb.has('rds') or bool(tb.addons)) and not self._moving()
                        and getattr(tb, 'rds_synced', False)),
-                  sig=self._signal_steps(tb, now), text=self._rds_fields(tb, now))
+                  sig=self._signal_steps(tb, now), smeter=self._smeter_steps(tb, now),
+                  text=self._rds_fields(tb, now))
         self._rx_line.push(now, rx)
         shown = self._rx_line.at(now - self._delays()[1]) or rx
 
@@ -1105,8 +1200,11 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             n = self._channel_now()
             ch = ch_chars(n) if n else (' ', ' ')
 
+        view = self.meter_view.get(self.band, 'Q')
+        sig, uncal = shown['smeter'] if view == 'S' else (shown['sig'], False)
         state = dict(legends=frozenset(legends), fixed=True, unit=unit, freq=(big, dots, fine),
-                     sig=shown['sig'], ch=ch, rds=self._live_text(now, blink) or shown['text'])
+                     sig=sig, meter=view, uncal=uncal, ch=ch,
+                     rds=self._live_text(now, blink) or shown['text'])
         if now < self._lamp_until:
             state['all'] = True
         return state
@@ -1591,6 +1689,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             lag = self._lag
             self._lag_label.config(text='' if lag is None else
                                    f'audio trails the meters by {lag[0]:.2f} s')
+        if self._set_visible and self._cal_label is not None:
+            self._cal_label.config(text=self._smeter_status(now))
         try:
             self._refresh_vfd()
         except Exception as e:

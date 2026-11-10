@@ -7,7 +7,8 @@ a screen.
 
 Checks what the digits show for broadcast, shortwave, amateur and microwave frequencies at
 their tuning steps, off the step, and at the limits (kHz below 30 MHz, MHz above, small
-digits below 1 kHz), then draws the tuner's display for each one.
+digits below 1 kHz), and the S-meter's arithmetic (S units both sides of 30 MHz, the bar,
+calibration), then draws the tuner's display for each reading and both meter views.
 """
 import os
 import sys
@@ -15,6 +16,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
+from radio.ui import smeter  # noqa: E402
 from radio.ui.frequency import N_BIG, N_FINE, as_text, freq_digits  # noqa: E402
 
 failed = 0
@@ -64,6 +66,19 @@ def main():
                for x in freq_digits(hz, step)[:2]}
     check('always seven big digits', lengths == {N_BIG}, repr(lengths))
 
+    print('S-meter')
+    for dbm, hz, segs, text in ((-73, 1e6, 9, 'S9'), (-121, 7e6, 1, 'S1'), (-97, 14e6, 5, 'S5'),
+                                (-53, 1e6, 11, 'S9+20'), (-13, 1e6, 15, 'S9+60'), (0, 1e6, 15, 'S9+73'),
+                                (-130, 1e6, 0, 'below S1'), (-93, 146e6, 9, 'S9'), (-73, 146e6, 11, 'S9+20')):
+        got = (round(smeter.segments(dbm, hz)), smeter.s_text(dbm, hz))
+        check(f'{dbm} dBm at {hz / 1e6:g} MHz', got == (segs, text),
+              f'{got[0]} bars, {got[1]}' + ('' if got == (segs, text) else f' (expected {segs}, {text})'))
+    cal = smeter.calibration_for(-73.0, -40.0, 20.0)
+    check('calibration reads back the known level', smeter.to_dbm(-40.0, 20.0, cal) == -73.0, f'{cal:+.1f} dB')
+    check('and follows the gain', smeter.to_dbm(-30.0, 30.0, cal) == -73.0, '10 dB more gain, same dBm')
+    paths = (smeter.path_for(True, 1e6), smeter.path_for(False, 14e6), smeter.path_for(False, 90e6))
+    check('a calibration per input path', paths == ('direct', 'hf', 'vhf'), repr(paths))
+
     print('The tuner display')
     try:
         from radio.ui.vfd import TunerVfd
@@ -82,6 +97,13 @@ def main():
                 check(f'draws {what}', False, f'{type(e).__name__}: {e}')
         check('every reading draws, each one different', len(frames) == len(CASES),
               f'{len(frames)} different frames for {len(CASES)} readings')
+        big, dots, fine, unit = freq_digits(14230.5e3, 10)
+        views = set()
+        for meter, uncal in (('Q', False), ('S', True), ('S', False)):
+            st = dict(legends=frozenset(), fixed=True, unit=unit, freq=(big, dots, fine), sig=9,
+                      meter=meter, uncal=uncal, ch=(' ', ' '), rds=('', '', ''))
+            views.add(vfd.render(st).tobytes())
+        check('quality, S units, and UNCAL each draw', len(views) == 3, f'{len(views)} different frames')
 
     print('\nAll passed.' if not failed else f'\n{failed} failed.')
     return 1 if failed else 0

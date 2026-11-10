@@ -8,7 +8,8 @@ sound as good as the signal allows, clean up what it can, play at a correct, con
 and have meters and visuals for casual listeners, broadcast people, and hams and shortwave
 listeners alike.
 
-**Next up: Phase 4's S-meter.** The frequency display is done. Phases 0 to 3 are done.
+**Next up: the owner's bench test of Phase 4** (frequency display and S-meter, built and in one
+pull request). Then Phase 5 or 6: SSB and CW come before the band row. Phases 0 to 3 are done.
 
 ## Phase 0: Linux and the README (done)
 
@@ -138,13 +139,25 @@ and text at several data rates, with and without an alert.
   14230.50 kHz, 146.520 MHz, 9999.999.999 MHz). The rules are in `radio/ui/frequency.py`,
   checked by `tests/test_display.py`. The signal bar moved right into the S-meter's place,
   15 bars long; it still shows signal quality, labelled SIGNAL, until the S-meter lands.
-- [ ] An S-meter in place of the generic signal ladder: a longer bar with an S scale under it,
+- [x] An S-meter in place of the generic signal ladder: a longer bar with an S scale under it,
   S1 to S9 and then decibels over S9, to the IARU convention (S9 = -73 dBm below 30 MHz,
   -93 dBm above, 6 dB per S unit).
   The dongle reports levels relative to its own full scale, not in dBm, so this needs a
   calibration per dongle (from a known signal) that allows for the tuner gain and for direct
   sampling. It reads "uncalibrated" until then.
-- [ ] Signal quality (C/N) stays alongside it, since a strong signal isn't always a clean one.
+  Done: the receivers report the station's level (dBFS) and the tuner gain ahead of the
+  converter (`signal_level()`), and the window turns that into dBm: dBFS - gain + a
+  calibration, one per input path (direct sampling, the tuner below 30 MHz, the tuner from
+  30 MHz up), set in Settings > Reception > S-meter from a signal of known strength. UNCAL
+  lights until then, and while the tuner's own AGC hides the gain (AM through the tuner). The
+  arithmetic is in `radio/ui/smeter.py`; real GNU Radio reads the test stations' levels to
+  0.1 dB. Still to check on the bench: how close a calibration made at one frequency and gain
+  holds at others (the RTL-SDR's gain steps and frequency response aren't exact).
+- [x] Signal quality (C/N) stays alongside it, since a strong signal isn't always a clean one.
+  Done as the owner's option 2: one bar, S units or signal quality (POOR / FAIR / GOOD),
+  switched with S, the METER button or a click on the bar, remembered per band. MEMORY moved
+  over the channel number. Phase 5's band plan can give each band its starting view
+  (broadcast on quality, shortwave and amateur on S units).
 
 Mock-ups first, for the owner to pick from. Two layouts were drawn, both with the S-meter as a
 longer bar to the right of the frequency and an S scale under it. The owner picked A, with

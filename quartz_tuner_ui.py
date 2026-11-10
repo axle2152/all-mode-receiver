@@ -25,14 +25,19 @@ Tuner (top unit)
     Mono            latching Stereo key, both bands: FM mono, or AM with the
                     C-QUAM stereo ignored
     ADV / MON / SET the faint buttons bottom left: Advanced window (diagnostics),
-    / FREQ          monitor unit, Settings (reception, panel, and display colours),
-                    and direct frequency entry: then digits (keyboard or keypad),
+    / FREQ / METER  monitor unit, Settings (reception, panel, and display colours),
+                    the signal meter's view (below), and direct frequency entry:
+                    then digits (keyboard or keypad),
                     Enter to tune, Esc to cancel, Backspace to correct. FM: 885 =
                     88.5 MHz, or type a decimal (162.55); AM: kHz (1720), or a
                     decimal for MHz (5.905). Out-of-band needs Band limits: Override.
     Display         TUNED = the retune has settled and there is a carrier the
-                    receiver can hold; STEREO = the back end's stereo indicator;
-                    SIGNAL = control-loop CNR on a nine-step ladder
+                    receiver can hold; STEREO = the back end's stereo indicator.
+                    The bar shows signal quality (POOR / FAIR / GOOD, from the
+                    carrier-to-noise) or signal strength in S units (S1 to S9, then
+                    +20 to +60; S9 = -73 dBm below 30 MHz, -93 dBm above). S, METER
+                    or a click on the bar switches; each band remembers. UNCAL
+                    until calibrated in Settings > Reception > S-meter.
 
 Monitor (bottom unit; needs rx_meters.py next to fm_stereo.py)
     L / R           station audio level after de-emphasis, ahead of volume:
@@ -61,7 +66,8 @@ Monitor (bottom unit; needs rx_meters.py next to fm_stereo.py)
                     spectrum (MPX) or the multipath echo profile (Echo)
 
 Keyboard: Left / Right tune, Shift+Left / Right search, 0 to 9 presets, M memory,
-F / A band, O mono, W wide (AM), P power, D or Enter direct frequency entry.
+F / A band, O mono, W wide (AM), P power, D or Enter direct frequency entry,
+S signal meter (quality or S units).
 Mouse wheel over the tuner display tunes.
 
 Hand-drawn digits: vfd_0.png ... vfd_9.png in a 'vfd' folder next to this file

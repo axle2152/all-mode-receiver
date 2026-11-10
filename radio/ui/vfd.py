@@ -17,8 +17,8 @@ from .theme import (
     DIG_T, DIG_TOP, DIG_W, DIG_X, DOT_BLUR, DOT_FIELDS, DOT_PITCH, DOT_SIZE, DOT_TOP, DP_GAP,
     DP_SIZE, FINE_H, FINE_T, FINE_TOP, FINE_W, FINE_X, GLASS_EDGE, GLASS_MID, KHZ_Y, LEGENDS,
     LEG_Y, MB_ROWS, MB_SCALE, MB_SEGS, MB_X0, MB_X1, MHZ_Y, MON_STATS, NUMS, NUM_H, NUM_PITCH,
-    NUM_T, NUM_W, PHOSPHOR, SCALES, SIG_BOT, SIG_H0, SIG_H1, SIG_LABEL_X, SIG_LABEL_Y,
-    SIG_PITCH, SIG_RISE, SIG_W, SIG_X, SS, STAT_Y, UNIT_X, VFD_BOX, ghost_of, rgb_of)
+    NUM_T, NUM_W, PHOSPHOR, Q_SCALE, SCALES, SCALE_Y, SIG_BOT, SIG_H0, SIG_H1, SIG_PITCH,
+    SIG_RISE, SIG_W, SIG_X, SS, STAT_Y, S_SCALE, UNCAL_Y, UNIT_X, VFD_BOX, ghost_of, rgb_of)
 
 
 # 5x7 dot-matrix characters (the Delco's table)
@@ -230,6 +230,7 @@ class TunerVfd(VfdBase):
         k = self.k
         self.leg_font = font('vfd', 9.5 * k)
         self.unit_font = font('vfd', 11.5 * k)
+        self.scale_font = font('vfd', 8.0 * k)
         self.digit_masks = self._load_digit_images()
 
     def _load_digit_images(self):
@@ -260,6 +261,8 @@ class TunerVfd(VfdBase):
         keys = [('leg', n) for n, _ in LEGENDS] + [('leg', n) for n in ALWAYS_LIT]
         keys += [('unit', 'kHz'), ('unit', 'MHz')] + [('dp', i) for i in range(len(DIG_X))]
         keys += [('bar', i) for i in range(SIG_STEPS)]
+        keys += [('stxt', t) for t, _ in S_SCALE] + [('stxt', 'S'), ('uncal',)]
+        keys += [('qtxt', w) for w, _ in Q_SCALE]
         for slot in self.DIGIT_SLOTS:
             keys += self._digit_keys(slot, '8', ghost)
         keys += [('dot', f, c, r, k) for f, _, n in DOT_FIELDS for c in range(n) for r in range(7) for k in range(5)]
@@ -271,7 +274,9 @@ class TunerVfd(VfdBase):
     def _group(self, key):
         kind = key[0]
         if kind == 'leg':
-            return {'CH': 'ch_label', 'SIGNAL': 'sig_label'}.get(key[1], 'leg_' + key[1])
+            return 'ch_label' if key[1] == 'CH' else 'leg_' + key[1]
+        if kind in ('stxt', 'qtxt', 'uncal'):
+            return 'sig_label'
         if kind == 'unit':
             return 'units'
         if kind == 'dp':
@@ -312,6 +317,12 @@ class TunerVfd(VfdBase):
         for i, c in enumerate(fine):
             keys += self._digit_keys(('fine', i), c)
         keys += [('bar', i) for i in range(st['sig'])]
+        if st.get('meter') == 'S':
+            keys += [('stxt', t) for t, _ in S_SCALE] + [('stxt', 'S')]
+            if st.get('uncal'):
+                keys.append(('uncal',))
+        else:
+            keys += [('qtxt', w) for w, _ in Q_SCALE]
         for i, c in enumerate(st['ch']):
             keys += self._digit_keys(('ch', i), c)
         for (field, _, n), text in zip(DOT_FIELDS, st.get('rds', ('', '', ''))):
@@ -332,11 +343,21 @@ class TunerVfd(VfdBase):
             name = key[1]
             if name == 'CH':
                 x, y = CH_LABEL_X, CH_TOP + CH_H
-            elif name == 'SIGNAL':
-                x, y = SIG_LABEL_X, SIG_LABEL_Y
             else:
                 x, y = dict(LEGENDS)[name], LEG_Y
             draw_text(d, x * k, y * k, name, self.leg_font, 255, tracking=0.6 * k)
+        elif kind in ('stxt', 'qtxt', 'uncal'):
+            mid = lambda i: (SIG_X + i * SIG_PITCH + SIG_W / 2) * k
+            if kind == 'uncal':
+                draw_text(d, mid(SIG_STEPS - 1) + SIG_W / 2 * k, UNCAL_Y * k, 'UNCAL', self.scale_font, 255,
+                          align='r', tracking=0.5 * k)
+            elif key == ('stxt', 'S'):
+                draw_text(d, (SIG_X - 4) * k, SCALE_Y * k, 'S', self.scale_font, 255, align='r')
+            elif kind == 'stxt':
+                draw_text(d, mid(dict(S_SCALE)[key[1]]), SCALE_Y * k, key[1], self.scale_font, 255, align='m')
+            else:
+                draw_text(d, mid(dict(Q_SCALE)[key[1]]), SCALE_Y * k, key[1], self.scale_font, 255,
+                          align='m', tracking=0.5 * k)
         elif kind == 'unit':
             y = KHZ_Y if key[1] == 'kHz' else MHZ_Y
             draw_text(d, UNIT_X * k, y * k, key[1], self.unit_font, 255, tracking=0.4 * k)

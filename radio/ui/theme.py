@@ -57,7 +57,7 @@ COLOR_ITEMS = {
               ('leg_STEREO', 'STEREO', _PH), ('leg_MONO', 'MONO', _PH), ('leg_RDS', 'RDS', _PH),
               ('leg_WIDE', 'WIDE', _PH),
               ('leg_TUNED', 'TUNED', _PH), ('leg_MEMORY', 'MEMORY', _PH),
-              ('signal', 'Signal ladder', _PH), ('sig_label', 'SIGNAL label', _PH),
+              ('signal', 'Signal bar', _PH), ('sig_label', 'Meter scale, UNCAL', _PH),
               ('ch_label', 'CH label', _PH), ('ch_digits', 'Channel digits', _PH),
               ('rds_call', 'RDS call letters', _PH), ('rds_ps', 'RDS station name', _PH),
               ('rds_rt', 'RDS RadioText', _PH)),
@@ -106,7 +106,7 @@ MEM_KEY    = (1324, 107, 1384, 133)
 MONO_KEY   = (1392, 107, 1450, 133)
 LABEL_Y, LOWER_LABEL_Y = 43, 99
 HINTS      = (('ADV', (30, 145, 56, 156)), ('MON', (61, 145, 87, 156)), ('SET', (92, 145, 118, 156)),
-              ('FREQ', (123, 145, 153, 156)))
+              ('FREQ', (123, 145, 153, 156)), ('METER', (158, 145, 192, 156)))
 
 # Monitor layout
 RESET_KEY  = POWER_KEY
@@ -121,12 +121,12 @@ ECHO_KEY   = (1324, 107, 1382, 133)
 FREEZE_KEY = (1392, 107, 1450, 133)
 
 # Tuner VFD layout, relative to VFD_BOX: legends, italic frequency digits with
-# the signal bar and channel, and a dot-matrix row for RDS underneath.
+# the signal meter and channel, and a dot-matrix row for RDS underneath.
 # The frequency (radio/ui/frequency.py): seven big digits down to 1 kHz, each with a decimal
 # point after it, then three small digits for what's below 1 kHz, against the unit.
 LEG_Y      = 16
 LEGENDS    = (('FM', 20), ('AM', 44), ('AUTO', 82), ('STEREO', 124), ('MONO', 178), ('RDS', 222),
-              ('WIDE', 252), ('TUNED', 300), ('MEMORY', 492))
+              ('WIDE', 252), ('TUNED', 300), ('MEMORY', 534))       # MEMORY over the channel
 DIG_TOP, DIG_H, DIG_W, DIG_T = 24, 46, 24, 4.4
 DIG_SLANT  = 0.18                     # italic, about 10 degrees
 DIG_X      = tuple(10 + i * 35 for i in range(7))
@@ -136,14 +136,17 @@ DP_GAP, DP_SIZE = 3.0, 4.4            # a decimal point sits this far right of i
 UNIT_X, KHZ_Y, MHZ_Y = 324, 50, 70
 SIG_X, SIG_W, SIG_PITCH, SIG_H0, SIG_H1, SIG_BOT = 362, 7.5, 10.5, 8, 30, 62
 SIG_RISE   = 9                        # the first 9 bars rise; the rest stand at full height
-SIG_LABEL_X, SIG_LABEL_Y = 362, 74
+# The signal meter shows S units or signal quality, its scale under it (label, bar it sits under)
+S_SCALE    = (('1', 0), ('3', 2), ('5', 4), ('7', 6), ('9', 8), ('+20', 10), ('+40', 12), ('+60', 14))
+Q_SCALE    = (('POOR', 2), ('FAIR', 7), ('GOOD', 12))
+SCALE_Y, UNCAL_Y = 74, 28             # baselines: the scale, and UNCAL over the end of the bar
 CH_LABEL_X  = 529
 CH_TOP, CH_H, CH_W, CH_T = 44, 28, 13, 3.0
 CH_X        = (548, 567)
 DOT_TOP, DOT_PITCH, DOT_SIZE = 86, 2.45, 1.9
 DOT_FIELDS  = (('call', 16, 4), ('ps', 96, 8), ('rt', 235, 23))   # name, x, characters (gaps between zones)
 DOT_BLUR    = 1.3                     # dots glow less than the big segments
-ALWAYS_LIT  = ('CH', 'SIGNAL')
+ALWAYS_LIT  = ('CH',)
 
 # Monitor VFD layout, relative to VFD_BOX
 MB_X0, MB_X1, MB_SEGS = 34, 392, 30

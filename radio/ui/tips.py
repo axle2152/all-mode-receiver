@@ -80,6 +80,13 @@ TIPS = dict(
             "tail beyond the cliff is rare overshoots or stray spikes; a cliff past 75 kHz is a station "
             "running hot. Amber: peaks of frequent recurrence (reached at least once a second). Red: the "
             "highest peak seen.",
+    smeter="Calibrates the S-meter (S on the keyboard, or METER, switches the tuner's bar between S "
+           "units and signal quality). Feed the dongle a signal of known strength, from a signal "
+           "generator or a transmitter through known attenuators, tune to it, type its level in dBm "
+           "and press CALIBRATE. Direct sampling, the tuner below 30 MHz and the tuner from 30 MHz up "
+           "each keep their own calibration; CLEAR forgets the one in use. Until then the meter "
+           "guesses and lights UNCAL. On AM through the tuner, the tuner's own AGC hides the gain, "
+           "so turn AGC off there for real S units.",
     override="Tune anywhere the dongle can reach instead of stopping at the band edges, 100 kHz to "
              "1766 MHz. With direct sampling (AM source direct_q), both bands cross over at 28.8 MHz: "
              "direct sampling below, the quadrature tuner above, and crossing restarts the receiver for "
