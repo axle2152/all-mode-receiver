@@ -78,15 +78,24 @@ the blanker row), and clicking Noise reduction switched static cut on.
   stereo and mono, ordinary stereo and SCA stations untouched. Without the add-on, the FM receiver's
   trace and the window's screenshots are identical to before. Found on the way:
   `crosby_tx.grc` sends L-R half a sample early (fix in the add-on's README).
-- [ ] Crosby on the bench: the HackRF sending the fixed `crosby_tx.grc`, a dongle receiving.
-  Check the subcarrier reading (about 50% at 50.0 kHz), the separation, and the signal quality
-  a dongle shows on a Crosby station (the simulation tops out at 23 to 24 dB). First bench try:
-  no Crosby. `addons/crosby/crosby_check.py` found the add-on working (CROSBY STEREO from the
-  first second, subcarrier steady at 50.0 kHz) but not installed: Ubuntu 22.04's pip had
+- [x] Crosby on the bench: the HackRF sending the fixed `crosby_tx.grc`, a dongle receiving.
+  First try: no Crosby. `addons/crosby/crosby_check.py` found the add-on working (CROSBY STEREO
+  from the first second, subcarrier steady at 50.0 kHz) but not installed: Ubuntu 22.04's pip had
   installed it as "UNKNOWN" (now described in `setup.py`, which every pip reads). It also showed
-  the station at about half its deviation (subcarrier 26%, peaks 40 kHz), which would have
-  left 10 dB of separation: L+R is now balanced to the measured subcarrier. Still to find:
-  why the transmitter runs at half deviation.
+  the station at about half its deviation (subcarrier 26%, peaks 40 kHz); L+R is now balanced to
+  the measured subcarrier, which still helps on any station off its deviation. The half deviation
+  was the transmitter: the HackRF sink had been set to 2 Msps (the Soapy HackRF sink runs only
+  whole-MHz rates, 2 to 20 Msps; 2.4 and 3.84 don't work) while the flowgraph's `rf_rate` was
+  still 3.84 Msps, so its FM was worked out for 3.84 and sent at 2: 52% of the deviation, which
+  fits the 40 kHz and 26% measured. With `rf_rate` matching, everything came out where it should.
+  The bench separation, and the signal quality a dongle shows on a Crosby station (the
+  simulation tops out at 23 to 24 dB), are still to be written down.
+- [ ] A gentle start on AM. Today the tuner starts in AM loud and at its widest IF, a jump scare.
+  Probable causes: the audio level is the envelope divided by a carrier estimate smoothed over
+  0.25 s, and that estimate starts at zero, so the first half second is far too loud; and the IF
+  starts at 10.2 kHz and auto width only narrows it after the first C/N reading. Instead: start
+  muted, fade in over about a second once the carrier estimate has settled, and start the IF at
+  its narrowest (2.5 kHz) and let auto width open it up. Consider the same on every tune.
 - [ ] FM at a lower sample rate too, like AM (the RTL-SDR can drop samples at 2.4 Msps). Its gain
   control and quality thresholds were tuned at 2.4 Msps, so check them on the bench, or with
   `tests/test_gnuradio.py` and the trace tool, before and after.

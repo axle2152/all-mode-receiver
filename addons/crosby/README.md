@@ -126,6 +126,12 @@ The fix is one block. In `crosby_tx.grc`, put a **Decimating FIR Filter** betwee
 and `sub_fm`: type Float->Float (Real Taps), Decimation 1, Taps `[0.5, 0.5]`. Averaging each
 pair of samples moves L-R back by exactly half a sample.
 
+Keep the transmitter's rates in step with the HackRF. The Soapy HackRF sink runs only
+whole-MHz rates, 2 to 20 Msps (2.4 and 3.84 Msps don't work). If the sink is set to 2 Msps,
+set `rf_rate` to 2 Msps too: left at 3.84, the FM is worked out for 3.84 Msps and sent at 2, and
+the station goes out at 52% of its deviation (the radio reads the subcarrier near 26% instead
+of 50%, and the separation suffers).
+
 If you still use `crosby_rx.grc` or the loopback with the fixed transmitter, give their
 receivers the matching change: the same `[0.5, 0.5]` filter on the L+R path, after
 `sum_delay`.
@@ -176,7 +182,8 @@ The signal is the 1958 Crosby system as described in Audio magazine (November 19
 Radio-Electronics (July 1961). The subcarrier band of 19 to 81 kHz is a choice in
 `crosby_tx.grc`, not part of the 1958 description. Every figure above was measured in
 simulation, with a test transmitter built like `crosby_tx.grc`, through this radio's real FM
-receiver. Bench results with a dongle and the HackRF are still to come.
+receiver. On the bench, the HackRF to a dongle, it plays Crosby once the transmitter's rates
+match; bench figures are still to be written down.
 
 ## Licence
 
