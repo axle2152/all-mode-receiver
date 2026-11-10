@@ -8,7 +8,8 @@ sound as good as the signal allows, clean up what it can, play at a correct, con
 and have meters and visuals for casual listeners, broadcast people, and hams and shortwave
 listeners alike.
 
-**Next up: Phase 4** (frequency display and S-meter), mock-ups first. Phases 0 to 3 are done.
+**Next up: Phase 4** (frequency display and S-meter). Mock-ups of two layouts are drawn and wait
+for the owner's pick. Phases 0 to 3 are done.
 
 ## Phase 0: Linux and the README (done)
 
@@ -125,11 +126,14 @@ and text at several data rates, with and without an alert.
 
 ## Phase 4: Frequency display and S-meter
 
-- [ ] A frequency display with enough digits for any frequency the dongle reaches, down to
-  1 Hz (up to 1766.000.000 MHz). How many digits it shows follows the tuning step: broadcast
-  bands keep their familiar look (90.5 MHz, 1080 kHz), AM and narrowband FM on the shortwave
-  and amateur bands show kHz, SSB and CW show down to 10 Hz or 1 Hz. Off-band frequencies no
-  longer spill into the dot matrix, which stays free for station data text.
+- [ ] A frequency display with enough digits for any frequency up to 9.99 GHz, down to 1 Hz
+  (9999.999.999 MHz), so SDRs that reach further than the RTL-SDR fit too. Ten digits don't
+  fit beside today's signal ladder, so the ladder moves right, where the S-meter goes. How
+  many digits it shows follows the tuning step (and the exact frequency, when it's off the
+  step): broadcast bands keep their familiar look (90.5 MHz, 1080 kHz), AM and narrowband FM
+  on the shortwave and amateur bands show kHz, SSB and CW show down to 10 Hz or 1 Hz.
+  Off-band frequencies no longer spill into the dot matrix, which stays free for station
+  data text.
 - [ ] An S-meter in place of the generic signal ladder: a longer bar with an S scale under it,
   S1 to S9 and then decibels over S9, to the IARU convention (S9 = -73 dBm below 30 MHz,
   -93 dBm above, 6 dB per S unit).
@@ -138,7 +142,12 @@ and text at several data rates, with and without an alert.
   sampling. It reads "uncalibrated" until then.
 - [ ] Signal quality (C/N) stays alongside it, since a strong signal isn't always a clean one.
 
-Mock-ups first, for the owner to pick from.
+Mock-ups first, for the owner to pick from. Two layouts drawn so far, both with the S-meter
+as a longer bar to the right of the frequency and an S scale under it:
+- A, hi-fi: big digits down to 1 kHz and small digits below that (14.230.50), the number
+  against its unit, kHz below 2 MHz and MHz above.
+- B, communications receiver: ten equal digits in fixed groups, always in MHz (1.080 for
+  AM 1080).
 
 ## Phase 5: Bands, modes and presets
 
@@ -147,8 +156,29 @@ Mock-ups first, for the owner to pick from.
   the AM width and FM bandwidth rows in Settings).
 - [ ] A band plan: long and medium wave, the shortwave broadcast bands (120 to 11 m), the
   amateur bands, VHF and UHF. Each band has its default mode, tuning step and filter widths.
+- [ ] Regions, chosen in Settings, because band edges and channel spacing depend on where you
+  are:
+  - AM: 530 to 1700 kHz in 10 kHz steps in the Americas; 531 to 1602 kHz in 9 kHz steps in
+    Europe, Africa and most of Asia (to 1701 kHz in Australia); long wave, 153 to 279 kHz in
+    9 kHz steps, where it's still used.
+  - FM: 87.5 to 108 MHz in 100 kHz steps in most of the world; odd tenths in 200 kHz steps in
+    North America; 76 to 95 MHz in Japan; the old OIRT band, 65.8 to 74 MHz, in a few places
+    in Eastern Europe.
+  - Amateur bands differ by ITU region (40 m is 7.0 to 7.3 MHz in Region 2 and 7.0 to
+    7.2 MHz in Regions 1 and 3; 80 m is 3.5 to 4.0, 3.5 to 3.8 and 3.5 to 3.9 MHz in Regions
+    2, 1 and 3), and a few by country (60 m).
+  - Public service and utility bands differ by country too (airband channels 8.33 kHz apart
+    in much of Europe and 25 kHz in the US; CB on AM in the US and mostly FM in Europe).
+- [ ] A row of band keys on the face, grouped: broadcast (long wave, medium wave, the
+  shortwave bands, FM), amateur (160 m to 70 cm), public service and utility (air, marine,
+  weather and so on). Picking a band picks its usual mode: on the amateur bands LSB below
+  10 MHz and USB above (20 m is USB), AM on the airband, narrowband FM on marine and weather.
+  Needs SSB and CW first (Phase 6).
 - [ ] Tuning steps by mode, with a setting to change them: 5 kHz for AM and narrowband FM on
   the shortwave and amateur bands, 10 Hz or 1 Hz for SSB and CW.
+- [ ] Fine-tune keys: a pair of small keys that nudge the frequency by a fine amount whatever
+  the band's step (10 Hz on SSB and CW, 100 Hz or so on AM), to settle on a station or a
+  voice.
 - [ ] Presets store band, mode, frequency and filter, in pages of 24. Existing presets carry
   over.
 
