@@ -34,8 +34,12 @@ not taken for Crosby.
 
 **Once it's playing:**
 
-- L+R is raised 6 dB, so a Crosby station plays as loud as any other station, whether it's in
-  stereo or mono.
+- L+R is raised to match L-R. In Crosby's system L-R comes out of its own FM subcarrier, so
+  its size doesn't depend on how hard the station deviates, but L+R's does. If they don't
+  match, the stereo is ruined: a station at half its deviation gets 10 dB of separation. So
+  the radio measures the subcarrier, which rides at the same 50% as L+R and is always there,
+  and raises L+R to match it: 6 dB on a station modulated right, more on one that isn't. A
+  Crosby station then plays as loud as any other, in stereo or in mono.
 - Like ordinary stereo, it blends toward mono as the signal gets noisy: full stereo down to a
   signal quality of 15 dB, mono by 10 dB. Crosby is quieter than ordinary stereo on a fair
   signal, but its subcarrier falls apart quickly below about 10 dB, so the blend comes in later
@@ -50,7 +54,7 @@ not taken for Crosby.
   because RDS's 57 kHz falls inside the subcarrier.
 - in the Advanced window (ADV on the tuner's face): a CROSBY lamp, a "Crosby subcarrier"
   meter (50% is the 1958 standard), and a line with the details, for example
-  `Crosby  STEREO   subcarrier  50% at 50.0 kHz, C/N 24.1 dB`. When it isn't playing
+  `Crosby  STEREO   subcarrier  50% at 50.0 kHz, C/N 24.1 dB, L+R raised  6.0 dB`. When it isn't playing
   Crosby, that line says why: no subcarrier, too weak, a 19 kHz pilot, not centred on 50 kHz,
   or not steady. No CROSBY lamp at all means the add-on isn't installed (or didn't start: the
   terminal says why).
@@ -87,6 +91,17 @@ On Ubuntu 23.04 and newer, pip refuses to install into the system Python unless 
 `--break-system-packages` to that line. The add-on is only an entry in Python's list of
 packages that points at this folder, so it's safe.
 
+If you installed the first version of this add-on on Ubuntu 22.04, it went in under the name
+"UNKNOWN", with nothing to tell the radio it's there: that version described itself in a way
+Ubuntu 22.04's pip can't read. Remove it, then install again as above:
+
+```
+python3 -m pip uninstall UNKNOWN
+```
+
+(`crosby_check.py`, below, says whether that's the case.) Newer pips may print a warning about
+"editable installation" and folders with the same name; it's harmless.
+
 Then start the tuner as usual. The `-e` means the installed add-on is this folder itself, so a
 `git pull` updates it with nothing to reinstall.
 
@@ -104,8 +119,8 @@ kHz rate, so the transmitter's half sample shows up:
 | Separation, measured through the radio (simulation) | 1 kHz | 10 kHz |
 |---|---|---|
 | `crosby_tx.grc` as drawn | 48 dB | 28 dB |
-| with the fix below | 96 dB | 55 dB |
-| with the fix, both channels at 90% at once | 78 dB | 40 dB |
+| with the fix below | 64 dB | 54 dB |
+| with the fix, both channels at 90% at once | 52 dB | 39 dB |
 
 The fix is one block. In `crosby_tx.grc`, put a **Decimating FIR Filter** between `diff_gain`
 and `sub_fm`: type Float->Float (Real Taps), Decimation 1, Taps `[0.5, 0.5]`. Averaging each
@@ -115,9 +130,15 @@ If you still use `crosby_rx.grc` or the loopback with the fixed transmitter, giv
 receivers the matching change: the same `[0.5, 0.5]` filter on the L+R path, after
 `sum_delay`.
 
-The 40 dB in the last row comes from the subcarrier's 19 to 81 kHz band, which both ends use.
+The 39 dB in the last row comes from the subcarrier's 19 to 81 kHz band, which both ends use.
 Carson's rule would want 10 to 90 kHz for full deviation at 15 kHz. It only shows when both
-channels are near full level at the same time.
+channels are near full level at the same time. At 1 kHz the limit is how exactly the radio can
+measure the subcarrier it balances L+R to: within about half a percent, so about 52 dB.
+
+The station's deviation matters less than you'd think, because of that balance: at half the
+proper deviation, separation is still 42 dB at 1 kHz (without the balance, 10 dB). But the
+station is quieter and noisier than it should be, so it's still worth putting right.
+`crosby_check.py` says when it's off.
 
 ## If it doesn't play Crosby
 

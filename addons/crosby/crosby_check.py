@@ -29,6 +29,26 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, REPO)
 
 
+def strays():
+    """Installs that point at this folder under another name: Ubuntu 22.04's pip installed the
+    first version of this add-on as "UNKNOWN", with no entry point."""
+    from importlib import metadata
+    here, out = os.path.realpath(HERE), []
+    for d in metadata.distributions():
+        name = d.metadata['Name'] or 'UNKNOWN'
+        if name == 'crosby-stereo':
+            continue
+        try:
+            url = d.read_text('direct_url.json') or ''
+        except Exception:
+            url = ''
+        path = os.path.realpath(str(getattr(d, '_path', '')))
+        if os.path.realpath(HERE).replace(os.sep, '/') in url.replace('%20', ' ') or \
+                os.path.dirname(path) == here:
+            out.append(name)
+    return sorted(set(out))
+
+
 def addon_class():
     """The Crosby add-on as the tuner would find it, and what to say about that."""
     import radio.addons
@@ -67,7 +87,8 @@ def make_receiver(a):
             def _make_source(self, args):
                 sys.path.insert(1, HERE)
                 from test_crosby import Station
-                return Station(self.samp_rate, a.pretend, a.freq, 40.0)
+                kind, _, dev = a.pretend.partition('@')          # e.g. crosby@39e3
+                return Station(self.samp_rate, kind, a.freq, 40.0, float(dev or 75e3))
 
     rec = os.path.join(HERE, 'crosby_check.cs8') if a.record else None
     return Rx(freq=a.freq, rf_gain=a.gain if a.gain is not None else 8.7, agc=a.gain is None,
@@ -126,6 +147,9 @@ def main():
           f"numpy {np.__version__}")
     cls, said = addon_class()
     print(f"Crosby add-on: {said}")
+    stray = strays()
+    if stray:
+        print(f"  This folder is also installed as {', '.join(repr(n) for n in stray)}: a broken earlier install.")
     if cls is None and 'NOT INSTALLED' in said:
         print("  (checking with this folder's copy instead)")
     try:
@@ -161,12 +185,13 @@ def main():
                  inj=o.injection_pct() if o else None,
                  centre=(o.SUB_HZ + o.offset_hz) / 1e3 if o and o.offset_hz is not None else None,
                  cn=o.circle_db if o else None, why=o.why_not() if o else 'add-on not running',
-                 blend=tb.current_blend, st=tb.addon_stereo)
+                 blend=tb.current_blend, st=tb.addon_stereo,
+                 lpr=tb._stereo['gain_db'] if tb._stereo is not None else 0.0)
         rows.append(r)
         dev = 0.0
         sub = (f"{r['inj']:3.0f}% {r['centre']:5.1f} kHz" if r['centre'] is not None else '     --       ')
         cn = f"{r['cn']:5.1f} dB" if r['cn'] is not None else '   --   '
-        state = (f"STEREO, blend {r['blend']:.2f}" if r['st'] else r['why'])
+        state = (f"STEREO, blend {r['blend']:.2f}, L+R +{r['lpr']:.1f} dB" if r['st'] else r['why'])
         print(f"  {sec:2d}  {r['q']:4.1f} dB {r['clip']:5.2f}% {r['gain']:4.1f}  "
               f"{r['pilot']:.3f}{'*' if r['has_pilot'] else ' '} {r['dev']:3.0f} kHz  {sub}  {cn}  {state}",
               flush=True)
@@ -175,13 +200,18 @@ def main():
     if errors:
         print(f"\n{len(errors)} errors from the receiver, the first: {errors[0]}")
     print("\n(signal = signal quality; pilot = 19 kHz pilot, * = heard; dev = peak deviation;\n"
-          " subcarrier = its share of full deviation and where it's centred; C/N = how steady it is)")
+          " subcarrier = its share of full deviation and where it's centred; C/N = how steady it is;\n"
+          " L+R = how much the main channel is raised to balance it: 6 dB at the proper deviation)")
 
     # ---- what it means: judged on the second half, after settling ----
     late = rows[len(rows) // 2:] or rows
     print('\nWhat it found:')
     if addon is None or cls is None and 'NOT INSTALLED' not in said:
         print(f"- The add-on isn't running ({said}).")
+    for name in stray:
+        print(f"- This folder is installed under the name {name!r}, with nothing that tells the radio\n"
+              "  it's there (Ubuntu 22.04's pip does that with the first version's packaging). Remove\n"
+              f"  it with   \"{sys.executable}\" -m pip uninstall {name}")
     if 'NOT INSTALLED' in said:
         print("- The add-on isn't installed in this Python, so the tuner runs without it: a Crosby\n"
               "  station plays in mono, 6 dB quieter than other stations. Install it with\n"
@@ -203,6 +233,14 @@ def main():
         if b < 0.99:
             print(f"- Blended {100 * (1 - b):.0f}% toward mono: signal quality {q:.1f} dB "
                   f"(full stereo from 15 dB, mono by 10).")
+        if not 42 <= inj <= 58:
+            lpr = median([r['lpr'] for r in late])
+            print(f"- The station runs at about {2 * inj:.0f}% of its proper deviation: the subcarrier is\n"
+                  f"  {inj:.0f}% (Crosby's is 50%) and the peaks reach {devmax:.0f} kHz (about 75 at full level).\n"
+                  f"  The radio balances L+R to the subcarrier (raised {lpr:.1f} dB, not 6), so the stereo\n"
+                  "  still works, but the station is quieter and noisier than it should be. In\n"
+                  "  crosby_tx.grc check main_dev (75e3) and that nothing scales the composite down\n"
+                  "  between mpx_sum and main_fm.")
         print("- If the stereo still sounds wrong (left and right leaking into each other), check\n"
               "  crosby_tx.grc has the [0.5, 0.5] filter before sub_fm (the add-on's README).")
     elif any(found):

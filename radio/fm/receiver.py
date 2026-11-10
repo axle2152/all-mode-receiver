@@ -1707,7 +1707,14 @@ class FMStereoReceiver(Receiver):
         channel to the level the add-on's system needs while the station uses it. The L-R
         source changes only at full mono, so it can't click: until then the blend comes down."""
         st = self._stereo
-        tgt = 20 * math.log10(st['main_gain']) if src == 'addon' else 0.0
+        gain = st['main_gain']
+        if src == 'addon':                        # the add-on may measure the gain it needs now
+            try:
+                g = float(self.station.get('main_gain', gain))
+                gain = g if 0.5 <= g <= 8.0 else gain
+            except (TypeError, ValueError):
+                pass
+        tgt = 20 * math.log10(gain) if src == 'addon' else 0.0
         step = self.STEREO_GAIN_DB_S * dt
         g = st['gain_db'] + max(-step, min(step, tgt - st['gain_db']))
         if g != st['gain_db']:

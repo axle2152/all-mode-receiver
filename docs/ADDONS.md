@@ -13,12 +13,19 @@ FM-FM stereo) is one, and a worked example of everything below.
 ## How the radio finds an add-on
 
 An add-on is an ordinary Python package, installed with pip, that declares itself in its
-`pyproject.toml`:
+`setup.py`:
 
-```toml
-[project.entry-points."all_mode_receiver.addons"]
-mydecoder = "my_package.radio_addon:Addon"
+```python
+from setuptools import setup
+
+setup(name='my-decoder', version='1.0', packages=['my_package'],
+      entry_points={'all_mode_receiver.addons': ['mydecoder = my_package.radio_addon:Addon']})
 ```
+
+with a `pyproject.toml` that only names the build system (`addons/crosby` has both). Declare it
+in `setup.py` rather than in `pyproject.toml`'s `[project]` table: Ubuntu 22.04's pip and
+setuptools can't read that table, and install the package as "UNKNOWN" with no entry point,
+so the radio never finds it.
 
 The entry point names the add-on's class. Once a receiver of a band the add-on serves has
 built its own blocks, it creates the add-on.
@@ -124,6 +131,7 @@ On FM:
 | `synced` | it has found what it listens for (lights its lamp) |
 | `stereo` | a stereo add-on: its stereo system is on the air on this station |
 | `stereo_quality` | a stereo add-on: how much of its L-R to blend in now, 0 (mono) to 1 (full stereo) |
+| `main_gain` | a stereo add-on that measures it: how much to raise the main channel now, in place of its decoder's `main_gain` (0.5 to 8; anything else is ignored) |
 
 Any other key is kept in `rx.station`. A retune clears all of it.
 

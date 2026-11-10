@@ -25,6 +25,13 @@ Is it a Crosby station? Only when, for 0.4 s running:
 Once found, it holds until a retune, a pilot, or a second of absence while the signal is
 good enough to have seen it (on a weak signal it can't tell, so the level stays put).
 
+L+R and L-R must come out of the matrix the same size. L-R's size is fixed by the
+subcarrier's own +/-25 kHz, whatever the station's deviation, but L+R's follows it: a station
+running at half its deviation would give half the L+R and ruin the separation (10 dB). The
+subcarrier is the reference: it rides at the same 50% as L+R, a steady carrier always there.
+So L+R is raised by 2 x 50% / the subcarrier as measured (its steady part, which noise
+doesn't lift), averaged over a couple of seconds: 6 dB on a station modulated right.
+
 How much L-R to blend in follows the receiver's signal quality: full stereo from
 FULL_DB, mono by MONO_DB. Crosby is quieter than pilot stereo above its threshold, but
 the subcarrier's discriminator falls apart below it, around 10 dB.
@@ -48,7 +55,11 @@ class Addon:
     SUB_HZ         = 50e3       # subcarrier centre
     SUB_DEV_HZ     = 25e3       # its deviation for (L-R)/2 = 1
     SUB_INJ        = 0.5        # its share of full deviation (0 dB on the level reading)
-    MAIN_GAIN      = 2.0        # L+R rides at 50% while the station is in stereo
+    MAIN_GAIN      = 2.0        # L+R rides at 50% while the station is in stereo...
+    BALANCE_S      = 2.0        # ...raised further if the subcarrier reads low, averaged this long
+    BALANCE_RANGE  = (18.0, 75.0)   # subcarrier readings (%) the balance follows, no further
+    READS          = 0.970      # a true 50% subcarrier reads 48.5% through the receiver's 200 kHz
+                                # channel (measured in simulation, with tones and with program)
     # ---- the subcarrier channel: 19-81 kHz, nothing below 17 or above 83 kHz ----
     SUB_HALF_BW    = 31e3       # -6 dB half-width
     SUB_WIDTH      = 4e3        # transition
@@ -76,14 +87,15 @@ class Addon:
         self._win = int(round(fs * self.WINDOW_S))
 
         # Subcarrier channel, even length (see the module notes). Its gain makes a full 50%
-        # subcarrier read |z| = 1, allowing for the main discriminator's roll-off at 50 kHz.
+        # subcarrier read |z| = 1, allowing for the main discriminator's roll-off at 50 kHz
+        # and what the receiver's channel takes off (READS).
         n = int(round(3.3 * fs / self.SUB_WIDTH))
         n += n % 2
         k = np.arange(n) - (n - 1) / 2
         fc = self.SUB_HALF_BW / fs
         h = 2 * fc * np.sinc(2 * fc * k) * np.hamming(n)
         droop = float(np.sinc(self.SUB_HZ / fs))
-        h *= 1.0 / (np.sum(h) * self.SUB_INJ * full / 2 * droop)
+        h *= 1.0 / (np.sum(h) * self.SUB_INJ * full / 2 * droop * self.READS)
         lp = list(rx.stereo_lowpass())               # the receiver's own: the channels match
         align = (len(lp) - 1) - n // 2 - (len(lp) - 1) // 2
         if align < 0:
@@ -130,6 +142,9 @@ class Addon:
         self.quality = 0.0
         self.level_db = self.circle_db = None
         self.offset_hz = None
+        self.steady = None           # the steady part of the subcarrier's power (1 = 50%)
+        self._bal = None             # ...averaged over BALANCE_S, for the L+R balance
+        self.main_gain = self.MAIN_GAIN
 
     # ------------------------------------------------------------------ update
     def update(self, now):
@@ -154,6 +169,10 @@ class Addon:
             self.level_db = 10 * math.log10(max(m2, 1e-15))
             self.circle_db = min(max(10 * math.log10(max(s, 1e-15) / max(m2 - s, 1e-15)), -10.0), 40.0)
             self.offset_hz = self._f * self.SUB_DEV_HZ
+            self.steady = s
+            if self.found:
+                b = 1 - math.exp(-self.WINDOW_S / self.BALANCE_S)
+                self._bal = s if self._bal is None else self._bal + b * (s - self._bal)
         pilot = bool(rx.pilot_present)
         ok = (not pilot and self.level_db is not None
               and self.level_db >= self.LEVEL_MIN_DB
@@ -165,17 +184,27 @@ class Addon:
             self._ok_s, self._bad_s = 0.0, self._bad_s + dt
         if not self.found and self._ok_s >= self.FIND_S:
             self.found = True
+            self._bal = self.steady
         elif self.found and (pilot or (self._bad_s >= self.LOSE_S and rx.cnr_db >= self.SEEN_CNR_DB)):
             self.found = False
+            self._bal = None
         self.quality = smoothstep(rx.cnr_db, self.MONO_DB, self.FULL_DB) if self.found else 0.0
-        return {'stereo': self.found, 'stereo_quality': self.quality, 'synced': self.found}
+        if self.found and self._bal:
+            lo, hi = self.BALANCE_RANGE
+            inj = min(max(100 * self.SUB_INJ * math.sqrt(self._bal), lo), hi)
+            self.main_gain = self.MAIN_GAIN * 100 * self.SUB_INJ / inj
+        else:
+            self.main_gain = self.MAIN_GAIN
+        return {'stereo': self.found, 'stereo_quality': self.quality, 'synced': self.found,
+                'main_gain': self.main_gain}
 
     # --------------------------------------------------------- for the window
     def injection_pct(self):
-        """The subcarrier's share of full deviation, percent (50 for the 1958 system)."""
-        if self.level_db is None:
+        """The subcarrier's share of full deviation, percent (50 for the 1958 system): its
+        steady part, which noise doesn't lift."""
+        if self.steady is None:
             return 0.0
-        return 100 * self.SUB_INJ * 10 ** (self.level_db / 20)
+        return 100 * self.SUB_INJ * math.sqrt(self.steady)
 
     def why_not(self):
         """Why the station isn't taken for Crosby stereo right now, in a few words ('' when
@@ -202,8 +231,11 @@ class Addon:
             state = 'STEREO' if self.quality > 0 else 'stereo station, blended to mono'
         else:
             state = self.why_not()
-        return (f"Crosby  {state}   subcarrier {self.injection_pct():3.0f}% at "
+        line = (f"Crosby  {state}   subcarrier {self.injection_pct():3.0f}% at "
                 f"{(self.SUB_HZ + self.offset_hz) / 1e3:4.1f} kHz, C/N {self.circle_db:4.1f} dB")
+        if self.found:
+            line += f", L+R raised {20 * math.log10(self.main_gain):4.1f} dB"
+        return line
 
     def meter(self):
         if not self.found:

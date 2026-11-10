@@ -14,6 +14,7 @@ raised by its make-up gain; a pilot, a retune or the add-on stopping hands stere
 """
 import contextlib
 import io
+import math
 import os
 import sys
 
@@ -111,6 +112,14 @@ class Stereo:
 
     def update(self, now):
         return {'stereo': self.on, 'stereo_quality': self.quality, 'synced': self.on}
+
+
+class StereoGain(Stereo):
+    """...that measures the make-up gain it needs as it goes."""
+    gain = 3.0
+
+    def update(self, now):
+        return dict(Stereo.update(self, now), main_gain=self.gain)
 
 
 class StereoBadDecoder(Stereo):
@@ -211,6 +220,17 @@ def stereo_tests(FM):
           tb.addon_stereo is None and not tb.stereo_indicator and tb._stereo['gain_db'] == 0.0)
     tb.stop()
     Stereo.on = True
+
+    install(EntryPoint('gain', StereoGain))
+    tb, said = build(FM, pilot=False, freq=90.5e6)
+    run(tb, 1.0)
+    check("one that reports the make-up gain it needs: the main channel follows it",
+          abs(tb._stereo['gain_db'] - 20 * math.log10(3.0)) < 0.01, tb._stereo['gain_db'])
+    StereoGain.gain = 100.0
+    run(tb, 1.0)
+    check("a gain out of range (past 8): its decoder's own gain instead",
+          abs(tb._stereo['gain_db'] - 6.02) < 0.01, tb._stereo['gain_db'])
+    tb.stop()
 
     install(EntryPoint('bad', StereoBadDecoder))
     tb, said = build(FM, pilot=False, freq=90.5e6)
