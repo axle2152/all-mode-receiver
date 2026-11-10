@@ -11,6 +11,7 @@ quartz_tuner_settings.json
 
 # Recordings: large, and they may hold real program audio
 *.cfile
+*.cs8
 *.iq
 *.raw
 *.wav

@@ -21,10 +21,14 @@ more modes and amateur digital modes (see `docs/ROADMAP.md`). Owner: Michael Fol
   for GNU Radio and osmosdr that the tests put first on the path; it pretends a dongle is
   sending samples, and with `STANDIN_TRACE=1` it logs every block, connection and call.
 - `docs/ROADMAP.md`: the phased plan. Tick items off and add notes as work lands.
-- `docs/ADDONS.md`: the add-on interface.
+- `docs/ADDONS.md`: the add-on interface. Add-on packages declare themselves in `setup.py`:
+  Ubuntu 22.04's pip installs a package described only in `pyproject.toml` as "UNKNOWN", with
+  no entry point.
 - `addons/crosby/`: the Crosby FM-FM stereo add-on (1958), a package of its own (installed with
   `pip install -e addons/crosby`), public, and the worked example of an FM stereo add-on. Its
-  `test_crosby.py` runs it through the real FM receiver in GNU Radio.
+  `test_crosby.py` runs it through the real FM receiver in GNU Radio; `crosby_check.py` is
+  the bench check to ask for when it doesn't play Crosby (verdict in plain words; `--record`
+  saves raw IQ that `--replay` plays back here through the real receiver).
 
 ## How the pieces talk
 
