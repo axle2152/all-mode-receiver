@@ -8,8 +8,7 @@ sound as good as the signal allows, clean up what it can, play at a correct, con
 and have meters and visuals for casual listeners, broadcast people, and hams and shortwave
 listeners alike.
 
-**Next up: Phase 4** (frequency display and S-meter). Mock-ups of two layouts are drawn and wait
-for the owner's pick. Phases 0 to 3 are done.
+**Next up: Phase 4's S-meter.** The frequency display is done. Phases 0 to 3 are done.
 
 ## Phase 0: Linux and the README (done)
 
@@ -126,7 +125,7 @@ and text at several data rates, with and without an alert.
 
 ## Phase 4: Frequency display and S-meter
 
-- [ ] A frequency display with enough digits for any frequency up to 9.99 GHz, down to 1 Hz
+- [x] A frequency display with enough digits for any frequency up to 9.99 GHz, down to 1 Hz
   (9999.999.999 MHz), so SDRs that reach further than the RTL-SDR fit too. Ten digits don't
   fit beside today's signal ladder, so the ladder moves right, where the S-meter goes. How
   many digits it shows follows the tuning step (and the exact frequency, when it's off the
@@ -134,6 +133,11 @@ and text at several data rates, with and without an alert.
   on the shortwave and amateur bands show kHz, SSB and CW show down to 10 Hz or 1 Hz.
   Off-band frequencies no longer spill into the dot matrix, which stays free for station
   data text.
+  Done as layout A (below), with kHz up to 30 MHz: seven big digits down to 1 kHz, three
+  small ones below that, the number against its unit (1080 kHz, 90.5 MHz, 9580 kHz,
+  14230.50 kHz, 146.520 MHz, 9999.999.999 MHz). The rules are in `radio/ui/frequency.py`,
+  checked by `tests/test_display.py`. The signal bar moved right into the S-meter's place,
+  15 bars long; it still shows signal quality, labelled SIGNAL, until the S-meter lands.
 - [ ] An S-meter in place of the generic signal ladder: a longer bar with an S scale under it,
   S1 to S9 and then decibels over S9, to the IARU convention (S9 = -73 dBm below 30 MHz,
   -93 dBm above, 6 dB per S unit).
@@ -142,10 +146,11 @@ and text at several data rates, with and without an alert.
   sampling. It reads "uncalibrated" until then.
 - [ ] Signal quality (C/N) stays alongside it, since a strong signal isn't always a clean one.
 
-Mock-ups first, for the owner to pick from. Two layouts drawn so far, both with the S-meter
-as a longer bar to the right of the frequency and an S scale under it:
-- A, hi-fi: big digits down to 1 kHz and small digits below that (14.230.50), the number
-  against its unit, kHz below 2 MHz and MHz above.
+Mock-ups first, for the owner to pick from. Two layouts were drawn, both with the S-meter as a
+longer bar to the right of the frequency and an S scale under it. The owner picked A, with
+kHz up to 30 MHz, and the S-meter where the mock-ups put it:
+- A, hi-fi: big digits down to 1 kHz and small digits below that, the number against its
+  unit (drawn with kHz below 2 MHz; built with kHz below 30 MHz).
 - B, communications receiver: ten equal digits in fixed groups, always in MHz (1.080 for
   AM 1080).
 

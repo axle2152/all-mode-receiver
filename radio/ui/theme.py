@@ -121,21 +121,25 @@ ECHO_KEY   = (1324, 107, 1382, 133)
 FREEZE_KEY = (1392, 107, 1450, 133)
 
 # Tuner VFD layout, relative to VFD_BOX: legends, italic frequency digits with
-# the signal ladder and channel, and a dot-matrix row for RDS underneath
+# the signal bar and channel, and a dot-matrix row for RDS underneath.
+# The frequency (radio/ui/frequency.py): seven big digits down to 1 kHz, each with a decimal
+# point after it, then three small digits for what's below 1 kHz, against the unit.
 LEG_Y      = 16
 LEGENDS    = (('FM', 20), ('AM', 44), ('AUTO', 82), ('STEREO', 124), ('MONO', 178), ('RDS', 222),
               ('WIDE', 252), ('TUNED', 300), ('MEMORY', 492))
-DIG_TOP, DIG_H, DIG_W, DIG_T = 24, 48, 29, 5.0
+DIG_TOP, DIG_H, DIG_W, DIG_T = 24, 46, 24, 4.4
 DIG_SLANT  = 0.18                     # italic, about 10 degrees
-HALF_X     = 14
-DIG_X      = (34, 73, 112)
-DP_X       = 104.5
-UNIT_X, KHZ_Y, MHZ_Y = 160, 50, 72
-SIG_X, SIG_W, SIG_PITCH, SIG_H0, SIG_H1, SIG_BOT = 300, 7, 11, 7, 36, 72
-SIG_LABEL_X, SIG_LABEL_Y = 402, 72
-CH_LABEL_X  = 470
-CH_TOP, CH_H, CH_W, CH_T = 44, 28, 17, 3.4
-CH_X        = (492, 516)
+DIG_X      = tuple(10 + i * 35 for i in range(7))
+FINE_TOP, FINE_H, FINE_W, FINE_T = 42, 28, 14, 3.0
+FINE_X     = (263, 282, 301)
+DP_GAP, DP_SIZE = 3.0, 4.4            # a decimal point sits this far right of its digit's foot
+UNIT_X, KHZ_Y, MHZ_Y = 324, 50, 70
+SIG_X, SIG_W, SIG_PITCH, SIG_H0, SIG_H1, SIG_BOT = 362, 7.5, 10.5, 8, 30, 62
+SIG_RISE   = 9                        # the first 9 bars rise; the rest stand at full height
+SIG_LABEL_X, SIG_LABEL_Y = 362, 74
+CH_LABEL_X  = 529
+CH_TOP, CH_H, CH_W, CH_T = 44, 28, 13, 3.0
+CH_X        = (548, 567)
 DOT_TOP, DOT_PITCH, DOT_SIZE = 86, 2.45, 1.9
 DOT_FIELDS  = (('call', 16, 4), ('ps', 96, 8), ('rt', 235, 23))   # name, x, characters (gaps between zones)
 DOT_BLUR    = 1.3                     # dots glow less than the big segments

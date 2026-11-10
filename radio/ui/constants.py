@@ -46,9 +46,9 @@ ADV_TICK_MS      = 100
 TUNED_SETTLE_S = 0.3
 TUNED_HYST_DB  = 2.0
 
-SIG_STEPS      = 9
+SIG_STEPS      = 15                 # signal bar: 9 rising, then 6 at full height
 SIG_RANGE      = {'FM': (3.0, 33.0), 'AM': (7.5, 43.5)}   # AM was (12, 48) before its C/N was corrected
-SIG_FALL_PER_S = 8.0
+SIG_FALL_PER_S = 8.0 * SIG_STEPS / 9      # steps a second: the bar falls as fast as the old 9-step ladder
 
 OUTPUT_DB_DEFAULT = -6.0
 OUTPUT_DB_CHOICES = (-12.0, -9.0, -6.0, -3.0, 0.0)

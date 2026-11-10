@@ -70,7 +70,10 @@ It also shows how many data groups arrive each second and how many are lost.
   tuning.
 - With the band-limit override it tunes anywhere the dongle reaches, 100 kHz to 1766 MHz. It
   switches between direct sampling and the normal tuner by itself.
-- A signal ladder, phone-style signal bars, STEREO / TUNED / RDS indicators, and a dot-matrix
+- A frequency display that reads any frequency up to 9.99 GHz, down to 1 Hz: in kHz below
+  30 MHz and MHz above, with as many digits as the tuning step needs (1080 kHz, 90.5 MHz,
+  14230.50 kHz).
+- A signal bar, phone-style signal bars, STEREO / TUNED / RDS indicators, and a dot-matrix
   line for the station name and RadioText.
 - The look is yours to change: the colour of every lit element, the glow of the glass, the
   nameplate, even hand-drawn digits for the frequency display.
@@ -177,6 +180,7 @@ samples:
     python3 tests/test_loudness.py       # loudness meter against ITU BS.1770 and EBU Tech 3341/3342
     python3 tests/test_am_width.py       # the AM filter follows the width settings and the Wide key
     python3 tests/test_addons.py         # add-ons plug in; a missing or broken one stays harmless
+    python3 tests/test_display.py        # the frequency display reads every band right
     python3 tests/test_window.py         # the whole window runs on AM and FM
 
 With GNU Radio installed (still no dongle needed), these run the real receivers on pretend
@@ -205,7 +209,7 @@ else running, the kernel's TV-tuner driver has it. Unplug the dongle, run
 
 ## Where it's going
 
-- A frequency display with enough digits for any frequency, and an S-meter
+- An S-meter
 - Shortwave and amateur bands, with presets in pages of 24
 - More modes: synchronous AM, SSB, DSB and CW, then narrowband FM and amateur digital modes,
   with automatic identification of which digital system a signal is using

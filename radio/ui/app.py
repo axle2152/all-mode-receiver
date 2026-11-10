@@ -30,6 +30,7 @@ from .constants import (
     TUNED_HYST_DB, TUNED_SETTLE_S, TUNER_MIN, UI_TICK_MS, XOVER_HZ, _ASSET_DIR)
 from .crt import Crt
 from .fonts import draw_text, font, text_width, use_nimbus_in_tk
+from .frequency import freq_digits
 from .monitor import DelayLine, MonitorLogic
 from .settings import SettingsWindow
 from .theme import (
@@ -1060,15 +1061,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         now = time.monotonic()
         blink = int(now * 3) % 2 == 0
         tb = self.tb
-        if self.band == 'FM' or self.freq >= 2e6:      # AM from 2 MHz up reads in MHz
-            v, dp, unit = int(round(self.freq / 1e5)), True, 'MHz'
-        else:
-            v, dp, unit = int(round(self.freq / 1e3)), False, 'kHz'
-        if v > 1999:                                   # past 199.9 MHz: the dot matrix has it
-            digits, dp = (' ', '---'), False
-        else:
-            txt = f'{v:4d}'
-            digits = ('1' if txt[0] == '1' else ' ', txt[1:])
+        big, dots, fine, unit = freq_digits(self.freq, self._step_hz())
 
         # What the receiver measures now, then shown as of when the audio you're
         # hearing was received (Settings > Panel > Sync to audio)
@@ -1112,26 +1105,20 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             n = self._channel_now()
             ch = ch_chars(n) if n else (' ', ' ')
 
-        state = dict(legends=frozenset(legends), fixed=True, unit=unit, digits=digits, dp=dp,
+        state = dict(legends=frozenset(legends), fixed=True, unit=unit, freq=(big, dots, fine),
                      sig=shown['sig'], ch=ch, rds=self._live_text(now, blink) or shown['text'])
         if now < self._lamp_until:
             state['all'] = True
         return state
 
-    # ---- direct frequency entry, messages, and the exact frequency off the band
-    def _freq_text(self, f=None):
-        f = self.freq if f is None else f
-        if self.band == 'FM' or f >= 2e6:
-            return f"{f / 1e6:.3f} MHz"
-        return f"{f / 1e3:.0f} kHz"
-
+    # ---- direct frequency entry and messages
     def _message(self, text, secs=2.5):
         self._dm_msg = (text, time.monotonic() + secs)
 
     def _live_text(self, now, blink):
-        """What the dot matrix shows right now, ahead of RDS: an entry in progress,
-        a message, or the exact frequency when it's off the band's raster. Live,
-        never held back for audio sync."""
+        """What the dot matrix shows right now, ahead of RDS: an entry in progress or a
+        message. Live, never held back for audio sync. (The exact frequency, off the band
+        or off its raster, is on the frequency digits.)"""
         if self._direct is not None:
             unit = 'MHz' if self.band == 'FM' or '.' in self._direct else 'kHz'
             return ('', '  FREQ', f"{self._direct}{'_' if blink else ' '} {unit}")
@@ -1139,9 +1126,6 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             if now < self._dm_msg[1]:
                 return ('', '', self._dm_msg[0])
             self._dm_msg = None
-        lo, hi, st = BANDS[self.band]
-        if not self._in_band() or abs(self.freq - self._snap_in(self.band, self.freq)) > 1:
-            return ('', '', self._freq_text())
         return None
 
     def _direct_start(self):

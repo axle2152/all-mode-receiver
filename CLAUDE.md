@@ -61,6 +61,7 @@ Run before every commit:
     python3 tests/test_loudness.py
     python3 tests/test_am_width.py
     python3 tests/test_addons.py
+    python3 tests/test_display.py
     python3 tests/test_window.py          # needs a screen; headless Linux: xvfb-run -a ...
     python3 tests/test_gnuradio.py        # needs GNU Radio (apt install gnuradio gr-osmosdr)
     python3 addons/crosby/test_crosby.py  # needs GNU Radio; after changing radio/fm/ or add-ons

@@ -84,8 +84,8 @@ TIPS = dict(
              "1766 MHz. With direct sampling (AM source direct_q), both bands cross over at 28.8 MHz: "
              "direct sampling below, the quadrature tuner above, and crossing restarts the receiver for "
              "a moment. AM above 28.8 MHz covers the aircraft band; FM is still wideband FM anywhere. "
-             "Up/Down steps past the band edge, FREQ entry accepts any of it, and the dot matrix spells "
-             "out the exact frequency whenever you're off the band.",
+             "Up/Down steps past the band edge, FREQ entry accepts any of it, and the frequency "
+             "display reads the exact frequency there too.",
     amstereo="Which AM stereo decoder. AUTO picks by the pilot, like the multi-system radios did: 25 Hz is "
              "Motorola C-QUAM, 15 Hz is Kahn/Hazeltine ISB (left on the lower sideband, right on the upper). "
              "Forcing one decodes with it whatever the station sends.",

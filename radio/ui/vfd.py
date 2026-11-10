@@ -14,11 +14,11 @@ from .constants import (
 from .fonts import draw_text, font
 from .theme import (
     ALWAYS_LIT, CH_H, CH_LABEL_X, CH_T, CH_TOP, CH_W, CH_X, COLOR_DEFAULTS, DIG_H, DIG_SLANT,
-    DIG_T, DIG_TOP, DIG_W, DIG_X, DOT_BLUR, DOT_FIELDS, DOT_PITCH, DOT_SIZE, DOT_TOP, DP_X,
-    GLASS_EDGE, GLASS_MID, HALF_X, KHZ_Y, LEGENDS, LEG_Y, MB_ROWS, MB_SCALE, MB_SEGS, MB_X0,
-    MB_X1, MHZ_Y, MON_STATS, NUMS, NUM_H, NUM_PITCH, NUM_T, NUM_W, PHOSPHOR, SCALES, SIG_BOT,
-    SIG_H0, SIG_H1, SIG_LABEL_X, SIG_LABEL_Y, SIG_PITCH, SIG_W, SIG_X, SS, STAT_Y, UNIT_X,
-    VFD_BOX, ghost_of, rgb_of)
+    DIG_T, DIG_TOP, DIG_W, DIG_X, DOT_BLUR, DOT_FIELDS, DOT_PITCH, DOT_SIZE, DOT_TOP, DP_GAP,
+    DP_SIZE, FINE_H, FINE_T, FINE_TOP, FINE_W, FINE_X, GLASS_EDGE, GLASS_MID, KHZ_Y, LEGENDS,
+    LEG_Y, MB_ROWS, MB_SCALE, MB_SEGS, MB_X0, MB_X1, MHZ_Y, MON_STATS, NUMS, NUM_H, NUM_PITCH,
+    NUM_T, NUM_W, PHOSPHOR, SCALES, SIG_BOT, SIG_H0, SIG_H1, SIG_LABEL_X, SIG_LABEL_Y,
+    SIG_PITCH, SIG_RISE, SIG_W, SIG_X, SS, STAT_Y, UNIT_X, VFD_BOX, ghost_of, rgb_of)
 
 
 # 5x7 dot-matrix characters (the Delco's table)
@@ -223,6 +223,7 @@ class VfdBase:
 
 class TunerVfd(VfdBase):
     DIGIT_SLOTS = {('big', i): (x, DIG_TOP, DIG_W, DIG_H, DIG_T) for i, x in enumerate(DIG_X)}
+    DIGIT_SLOTS.update({('fine', i): (x, FINE_TOP, FINE_W, FINE_H, FINE_T) for i, x in enumerate(FINE_X)})
     DIGIT_SLOTS.update({('ch', i): (x, CH_TOP, CH_W, CH_H, CH_T) for i, x in enumerate(CH_X)})
 
     def _setup(self):
@@ -257,7 +258,7 @@ class TunerVfd(VfdBase):
 
     def _all_keys(self, ghost=False):
         keys = [('leg', n) for n, _ in LEGENDS] + [('leg', n) for n in ALWAYS_LIT]
-        keys += [('unit', 'kHz'), ('unit', 'MHz'), ('half',), ('dp',)]
+        keys += [('unit', 'kHz'), ('unit', 'MHz')] + [('dp', i) for i in range(len(DIG_X))]
         keys += [('bar', i) for i in range(SIG_STEPS)]
         for slot in self.DIGIT_SLOTS:
             keys += self._digit_keys(slot, '8', ghost)
@@ -273,10 +274,10 @@ class TunerVfd(VfdBase):
             return {'CH': 'ch_label', 'SIGNAL': 'sig_label'}.get(key[1], 'leg_' + key[1])
         if kind == 'unit':
             return 'units'
-        if kind in ('half', 'dp'):
+        if kind == 'dp':
             return 'freq'
         if kind in ('seg', 'img'):
-            return 'freq' if key[1] == 'big' else 'ch_digits'
+            return 'ch_digits' if key[1] == 'ch' else 'freq'
         if kind == 'bar':
             return 'signal'
         if kind == 'dot':
@@ -303,13 +304,13 @@ class TunerVfd(VfdBase):
             keys += [('leg', n) for n in ALWAYS_LIT]
         if st['unit']:
             keys.append(('unit', st['unit']))
-        half, digits = st['digits']
-        if half == '1':
-            keys.append(('half',))
-        for i, c in enumerate(digits):
+        big, dots, fine = st['freq']
+        for i, c in enumerate(big):
             keys += self._digit_keys(('big', i), c)
-        if st['dp']:
-            keys.append(('dp',))
+            if dots[i]:
+                keys.append(('dp', i))
+        for i, c in enumerate(fine):
+            keys += self._digit_keys(('fine', i), c)
         keys += [('bar', i) for i in range(st['sig'])]
         for i, c in enumerate(st['ch']):
             keys += self._digit_keys(('ch', i), c)
@@ -330,7 +331,7 @@ class TunerVfd(VfdBase):
         if kind == 'leg':
             name = key[1]
             if name == 'CH':
-                x, y = CH_LABEL_X, DIG_TOP + DIG_H
+                x, y = CH_LABEL_X, CH_TOP + CH_H
             elif name == 'SIGNAL':
                 x, y = SIG_LABEL_X, SIG_LABEL_Y
             else:
@@ -339,17 +340,13 @@ class TunerVfd(VfdBase):
         elif kind == 'unit':
             y = KHZ_Y if key[1] == 'kHz' else MHZ_Y
             draw_text(d, UNIT_X * k, y * k, key[1], self.unit_font, 255, tracking=0.4 * k)
-        elif kind == 'half':
-            for poly in segment_polys(HALF_X * k, DIG_TOP * k, 12 * k, DIG_H * k, DIG_T * k,
-                                      DIG_SLANT, 'bc'):
-                d.polygon(poly, fill=255)
         elif kind == 'dp':
-            sz = 5.0
-            d.rectangle([DP_X * k, (DIG_TOP + DIG_H - sz) * k, (DP_X + sz) * k,
+            x = DIG_X[key[1]] + DIG_W + DP_GAP
+            d.rectangle([x * k, (DIG_TOP + DIG_H - DP_SIZE) * k, (x + DP_SIZE) * k,
                          (DIG_TOP + DIG_H) * k], fill=255)
         elif kind == 'bar':
             i = key[1]
-            bh = SIG_H0 + (SIG_H1 - SIG_H0) * i / (SIG_STEPS - 1)
+            bh = SIG_H0 + (SIG_H1 - SIG_H0) * min(i, SIG_RISE - 1) / (SIG_RISE - 1)
             x = SIG_X + i * SIG_PITCH
             d.rectangle([x * k, (SIG_BOT - bh) * k, (x + SIG_W) * k, SIG_BOT * k], fill=255)
         elif kind == 'seg':
