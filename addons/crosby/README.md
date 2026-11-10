@@ -137,6 +137,13 @@ If you still use `crosby_rx.grc` or the loopback with the fixed transmitter, giv
 receivers the matching change: the same `[0.5, 0.5]` filter on the L+R path, after
 `sum_delay`.
 
+The HackRF's sample rate: through the Soapy HackRF sink, 3.84 Msps (the flowgraph's `rf_rate`
+as first drawn) didn't work on the bench, and the station came out at about half its deviation
+(subcarrier 26%). 3 or 4 Msps work. `up_rf` must then turn the 384 kHz composite into exactly
+that rate: interpolation 125 and decimation 16 for 3 Msps, 125 and 12 for 4 Msps. If the two
+disagree, every frequency in the composite moves, and `crosby_check.py` shows the subcarrier
+centred off 50.0 kHz.
+
 The 39 dB in the last row comes from the subcarrier's 19 to 81 kHz band, which both ends use.
 Carson's rule would want 10 to 90 kHz for full deviation at 15 kHz. It only shows when both
 channels are near full level at the same time. At 1 kHz the limit is how exactly the radio can

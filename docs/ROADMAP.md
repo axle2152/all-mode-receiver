@@ -91,7 +91,9 @@ the blanker row), and clicking Noise reduction switched static cut on.
   Second bench try, installed with `--user --no-build-isolation`: CROSBY STEREO from the first
   second, subcarrier 50% at 50.0 kHz with C/N 26 to 27 dB, peaks 61 to 70 kHz (the transmitter
   at full deviation now), L+R raised 6.0 dB, signal quality 23 dB (the simulation's ceiling
-  for a Crosby signal in a 200 kHz channel). Still to do: listen for the separation.
+  for a Crosby signal in a 200 kHz channel). The half deviation was the transmitter: the Soapy
+  HackRF sink doesn't take 3.84 Msps (3 or 4 Msps work; noted in the add-on's README). Still to
+  do: the tuner window, and listening for the separation.
 - [ ] FM at a lower sample rate too, like AM (the RTL-SDR can drop samples at 2.4 Msps). Its gain
   control and quality thresholds were tuned at 2.4 Msps, so check them on the bench, or with
   `tests/test_gnuradio.py` and the trace tool, before and after.
