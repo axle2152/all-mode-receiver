@@ -292,10 +292,10 @@ def main():
 
     install(EntryPoint('mono', SaysMono))
     tb, said = build(AM, freq=1080e3)
-    tb.pilot_on, tb._pil_hits = True, 3                   # as if something passed for a pilot
+    tb.pilot_on, tb._pil_hits = True, 3                   # as if the receiver hears a pilot
     run(tb, 0.1)
-    check("one that says the station is mono: no stereo pilot, whatever it looks like",
-          tb.pilot_on is False and tb._pil_hits == 0)
+    check("one that says the station is mono can't lock out a pilot the receiver hears",
+          tb.pilot_on is True and tb._pil_hits == 3 and tb.station.get('mono') is True)
     tb.stop()
 
     print("\nBroken add-ons")

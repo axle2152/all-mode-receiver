@@ -101,6 +101,14 @@ the blanker row), and clicking Noise reduction switched static cut on.
   runs after each retune: tuning to a station 20 dB stronger played +16.5 dB for 0.7 s, now one
   50 ms tick at +8 dB. `tests/test_gnuradio.py` checks the start. Still to hear on the bench:
   retunes on a real dongle, whose buffers delay the new station.
+- [x] AM stereo pilots: an add-on can't lock them out, and data can't pass for one. An add-on
+  that reported a station as mono held stereo off, and on the bench a false report on a real
+  C-QUAM station cost it its stereo. Now a pilot the receiver hears always wins, and the pilot
+  test is stricter: the strongest line within 2.5 Hz of 25 Hz (15 Hz for Kahn) must sit within
+  0.5 Hz of it and stand 10 dB over the spectrum 3 to 4.5 Hz either side. Before, the
+  strongest energy anywhere from 23 to 27.5 Hz counted. `tests/test_gnuradio.py` checks real
+  pilots (found as before, down to 12 dB C/N), one with an add-on saying mono, a strong tone
+  1.5 Hz off, and broad energy around 25 Hz; the old test failed the last three.
 - [ ] FM at a lower sample rate too, like AM (the RTL-SDR can drop samples at 2.4 Msps). Its gain
   control and quality thresholds were tuned at 2.4 Msps, so check them on the bench, or with
   `tests/test_gnuradio.py` and the trace tool, before and after.

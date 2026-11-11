@@ -82,6 +82,11 @@ class AMReceiver(Receiver):
     KAHN_HILBERT_N   = 1025         # Kahn ISB: the Hilbert transformer for L-R (21 ms at 48 kHz)
     PILOT_MIN        = 0.015        # pilot amplitude (fraction of carrier) to count
     PILOT_RATIO_DB   = 10.0         # pilot above its neighbourhood to count
+    PILOT_TOL_HZ     = 0.5          # a pilot is a steady tone at exactly 25 (or 15) Hz: the
+                                    # strongest line within 2.5 Hz must sit this close to it,
+    PILOT_LINE_DB    = 10.0         # and stand this far over the spectrum 3 to 4.5 Hz either side.
+                                    # So neither a strong tone 1.5 Hz away nor broad energy around
+                                    # 25 Hz (data, flutter) passes for one
     STEREO_MONO_DB   = 10.5         # C/N at or below: mono even with a pilot
     STEREO_FULL_DB   = 15.5         # C/N at or above: full stereo
 
@@ -708,7 +713,16 @@ class AMReceiver(Receiver):
             Y = np.abs(np.fft.rfft((x - np.mean(x)) * w, 8 * len(x)))      # zero-padded: 25 Hz lands on a bin,
             f = np.fft.rfftfreq(8 * len(x), 1 / 1000.0)                     # not between two (1.8 dB low before)
             nb = np.median(Y[((f > 4) & (f < 11.5)) | ((f > 19) & (f < 21.5)) | ((f > 31) & (f < 45))])
-            pk25, pk15 = Y[(f > 23) & (f < 27.5)].max(), Y[(f > 13) & (f < 17.5)].max()
+
+            def line_at(f0):
+                m = (f > f0 - 2.5) & (f < f0 + 2.5)
+                i = int(np.argmax(Y[m]))
+                pk = Y[m][i]
+                side = Y[(np.abs(f - f0) > 3.0) & (np.abs(f - f0) < 4.5)].max()
+                if abs(f[m][i] - f0) > self.PILOT_TOL_HZ or pk < side * 10 ** (self.PILOT_LINE_DB / 20):
+                    return 0.0
+                return pk
+            pk25, pk15 = line_at(25.0), line_at(15.0)
             lv25, lv15 = 2 * pk25 / np.sum(w) / self._pil_gain, 2 * pk15 / np.sum(w) / self._pil_gain15
             r25, r15 = (20 * math.log10(max(p, 1e-12) / max(nb, 1e-12)) for p in (pk25, pk15))
             ok = lambda lv, r: lv >= self.PILOT_MIN and r >= self.PILOT_RATIO_DB
@@ -733,9 +747,8 @@ class AMReceiver(Receiver):
             elif self._pil_hits == 0:
                 self.pilot_on = False
 
-        # An add-on knows this station is mono: whatever looks like a pilot isn't one
-        if self.station.get('mono'):
-            self._pil_hits, self.pilot_on = 0, False
+        # (An add-on that reports the station as mono no longer holds stereo off: a pilot this
+        # receiver hears wins, so a false report can't lock out a real stereo station.)
 
         # stereo blend: only with the pilot, and as the carrier-to-noise allows
         tb = 0.0
