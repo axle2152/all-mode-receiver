@@ -525,6 +525,13 @@ class AMReceiver(Receiver):
             return None
         return dict(audio=self.audio_meter.read(), mod=self.mod_meter.read())
 
+    def signal_level(self):
+        """(carrier dBFS, tuner gain dB): no tuner with direct sampling, and an unknown gain
+        while the tuner's own AGC has it."""
+        if self.am_source == 'direct_q':
+            return self.channel_dbfs, 0.0
+        return self.channel_dbfs, (None if self.agc_enabled else self.gain_db)
+
     def snapshot(self, kind):
         if kind == 'iq':
             return np.asarray(self.snap_ch.level(), dtype=np.complex64)

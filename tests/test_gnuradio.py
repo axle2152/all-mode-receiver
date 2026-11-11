@@ -7,7 +7,7 @@ test_gnuradio.py - do the receivers really run in GNU Radio? Needs GNU Radio, no
 Runs the real AM and FM receivers in your GNU Radio for 6 seconds each, with a pretend
 dongle (a test station: carrier, a 1 kHz tone and noise, at the frequency tuned) and a
 silent sound card, then checks samples flow at the right rates, the receivers' updates run
-without errors, and what they measure fits the test station. If GNU Radio isn't installed,
+without errors, and what they measure fits the test station (its level for the S-meter too). If GNU Radio isn't installed,
 it says so and stops.
 """
 import math
@@ -122,6 +122,10 @@ def run(band, freq):
     check('updates run without errors', not errors, errors[0] if errors else f"{int(secs / 0.02)} updates")
     check('meters see the audio', bool(mon and mon['audio']['blocks']),
           f"{len(mon['audio']['blocks']) if mon else 0} loudness blocks")
+    dbfs, gain = tb.signal_level()                 # the S-meter's input
+    want = 20 * math.log10(0.1 if band == 'AM' else 0.3)     # FakeDongle's carrier amplitude
+    check(f'level reads what was sent ({want:.1f} dBFS)', abs(dbfs - want) < 1.0,
+          f"{dbfs:.1f} dBFS, tuner gain {gain}")
     if band == 'AM':
         check('carrier found and locked', tb.locked and abs(tb.carrier_hz) < 5,
               f"offset {tb.carrier_hz:+.1f} Hz, locked {tb.locked}")
