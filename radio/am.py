@@ -82,6 +82,11 @@ class AMReceiver(Receiver):
     KAHN_HILBERT_N   = 1025         # Kahn ISB: the Hilbert transformer for L-R (21 ms at 48 kHz)
     PILOT_MIN        = 0.015        # pilot amplitude (fraction of carrier) to count
     PILOT_RATIO_DB   = 10.0         # pilot above its neighbourhood to count
+    PILOT_TOL_HZ     = 0.5          # a pilot is a steady tone at exactly 25 (or 15) Hz: the
+                                    # strongest line within 2.5 Hz must sit this close to it,
+    PILOT_LINE_DB    = 10.0         # and stand this far over the spectrum 3 to 4.5 Hz either side.
+                                    # So neither a strong tone 1.5 Hz away nor broad energy around
+                                    # 25 Hz (data, flutter) passes for one
     STEREO_MONO_DB   = 10.5         # C/N at or below: mono even with a pilot
     STEREO_FULL_DB   = 15.5         # C/N at or above: full stereo
 
@@ -93,6 +98,15 @@ class AMReceiver(Receiver):
     # 30%); dividing by that gives the floor itself. Without it C/N read 4.5 dB high.
     NOISE_PCT        = 30.0
     TUNE_SETTLE_S    = 0.25
+    # A gentle start: the carrier estimate the audio is divided by (envelope / carrier) would
+    # start from nothing and play the first half second far too loud, and after a retune it
+    # would hold the last station's level. So it runs fast until it has the station's level,
+    # then at its usual pace; and at start the sound fades in once it has settled.
+    CAR_SLOW_S       = 0.25         # the carrier estimate's time constant
+    CAR_FAST_S       = 0.01         # ... for its first moments, after start and each retune,
+    CAR_FAST_FOR_S   = 0.2          # that long once samples arrive (after a retune, once the
+                                    # new station's samples are through: TUNE_SETTLE_S more)
+    FADE_IN_S        = 1.0          # the sound fades in over this, once at start
     IF_TAPS          = 97           # IF and audio filters: fixed length, fixed delay
     MPX_FULL         = 1.0          # ADV audio spectrum: 1.0 = 100% modulation
 
@@ -148,7 +162,8 @@ class AMReceiver(Receiver):
         # ---------------- demod ----------------
         self.mag = blocks.complex_to_mag(1)
         self.arg = blocks.complex_to_arg(1)
-        self.car = filter.single_pole_iir_filter_ff(1 - math.exp(-1 / (0.25 * self.ch_rate)))
+        self.car = filter.single_pole_iir_filter_ff(self._car_alpha(self.CAR_FAST_S))
+        self._car_fast, self._car_fast_until = True, None       # until samples arrive
         self.norm = blocks.divide_ff(1)                 # envelope / carrier = 1 + L + R
         self.car_floor = blocks.add_const_ff(1e-9)      # never 0/0: one NaN would poison every filter after it
         self.sum0 = blocks.add_const_ff(-1.0)           # L + R
@@ -236,6 +251,7 @@ class AMReceiver(Receiver):
 
         # ---------------- audio back end ----------------
         self._out_gain, self._muted = (1.0, 1.0), False
+        self._fade_k, self._fade_t0 = 0.0, None                  # silent until it fades in
         hr = 10 ** (-self._tone_atten_db(0, 0) / 20)
         self.audio_sink = self._make_audio_sink(self.audio_rate, audio_device)
         for idx, (ch, src) in enumerate((("l", self.mat_l), ("r", self.mat_r))):
@@ -327,7 +343,7 @@ class AMReceiver(Receiver):
         self._tune_cnr = []
         self._blank_until = time.monotonic() + self.TUNE_SETTLE_S
         self._t_last = time.monotonic()
-        self._bw_cur = self.bw
+        self._bw_cur = self.AM_MIN_HZ    # auto starts at its narrowest and opens as the C/N allows
         fr = np.fft.fftshift(np.fft.fftfreq(self.CH_N, 1 / self.ch_rate))
         self._fr = fr
         self._hann = np.hanning(self.CH_N)
@@ -354,9 +370,29 @@ class AMReceiver(Receiver):
         h = 2 * fc * np.sinc(2 * fc * (np.arange(n) - m)) * np.kaiser(n, 6.0)
         return [float(v) for v in h / np.sum(h)]
 
+    def _car_alpha(self, tc):
+        return 1 - math.exp(-1 / (tc * self.ch_rate))
+
+    def _settle_audio(self, now):
+        """The carrier estimate runs fast until it has the station's level, then slow; after
+        start, the sound then fades in."""
+        if not self._got_samples:
+            return
+        if self._car_fast_until is None:
+            self._car_fast_until = now + self.CAR_FAST_FOR_S
+        if self._car_fast and now >= self._car_fast_until:
+            self._car_fast = False
+            self.car.set_taps(self._car_alpha(self.CAR_SLOW_S))
+        if self._fade_k < 1.0 and not self._car_fast:
+            if self._fade_t0 is None:
+                self._fade_t0 = now
+            x = min(1.0, (now - self._fade_t0) / self.FADE_IN_S)
+            self._fade_k = math.sin(0.5 * math.pi * x) ** 2
+            self._apply_gain()
+
     def _apply_gain(self):
         gl, gr_ = (0.0, 0.0) if self._muted else self._out_gain
-        k = 0.5 * self.AM_AUDIO_GAIN
+        k = 0.5 * self.AM_AUDIO_GAIN * self._fade_k
         self.vol_l.set_k(k * gl)
         self.vol_r.set_k(k * gr_)
 
@@ -408,6 +444,10 @@ class AMReceiver(Receiver):
             self.blend_k.set_k(0.0)
             self.current_blend = 0.0
             self._blank_until = time.monotonic() + self.TUNE_SETTLE_S
+            self._car_fast = True                       # pick up the new station's level at once
+            self._car_fast_until = (time.monotonic() + self.TUNE_SETTLE_S + self.CAR_FAST_FOR_S
+                                    if self._got_samples else None)
+            self.car.set_taps(self._car_alpha(self.CAR_FAST_S))
             self._reset_addons()
 
     def set_output_gain(self, left, right):
@@ -596,6 +636,7 @@ class AMReceiver(Receiver):
             # counted, so a steady signal (or the 8-bit Q branch sitting on one value)
             # can't look stalled
             self._watchdog(now, fresh)
+            self._settle_audio(now)
 
             try:
                 self._measure(now)
@@ -672,7 +713,16 @@ class AMReceiver(Receiver):
             Y = np.abs(np.fft.rfft((x - np.mean(x)) * w, 8 * len(x)))      # zero-padded: 25 Hz lands on a bin,
             f = np.fft.rfftfreq(8 * len(x), 1 / 1000.0)                     # not between two (1.8 dB low before)
             nb = np.median(Y[((f > 4) & (f < 11.5)) | ((f > 19) & (f < 21.5)) | ((f > 31) & (f < 45))])
-            pk25, pk15 = Y[(f > 23) & (f < 27.5)].max(), Y[(f > 13) & (f < 17.5)].max()
+
+            def line_at(f0):
+                m = (f > f0 - 2.5) & (f < f0 + 2.5)
+                i = int(np.argmax(Y[m]))
+                pk = Y[m][i]
+                side = Y[(np.abs(f - f0) > 3.0) & (np.abs(f - f0) < 4.5)].max()
+                if abs(f[m][i] - f0) > self.PILOT_TOL_HZ or pk < side * 10 ** (self.PILOT_LINE_DB / 20):
+                    return 0.0
+                return pk
+            pk25, pk15 = line_at(25.0), line_at(15.0)
             lv25, lv15 = 2 * pk25 / np.sum(w) / self._pil_gain, 2 * pk15 / np.sum(w) / self._pil_gain15
             r25, r15 = (20 * math.log10(max(p, 1e-12) / max(nb, 1e-12)) for p in (pk25, pk15))
             ok = lambda lv, r: lv >= self.PILOT_MIN and r >= self.PILOT_RATIO_DB
@@ -697,9 +747,8 @@ class AMReceiver(Receiver):
             elif self._pil_hits == 0:
                 self.pilot_on = False
 
-        # An add-on knows this station is mono: whatever looks like a pilot isn't one
-        if self.station.get('mono'):
-            self._pil_hits, self.pilot_on = 0, False
+        # (An add-on that reports the station as mono no longer holds stereo off: a pilot this
+        # receiver hears wins, so a false report can't lock out a real stereo station.)
 
         # stereo blend: only with the pilot, and as the carrier-to-noise allows
         tb = 0.0

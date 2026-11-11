@@ -18,6 +18,8 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
+import numpy as np
+
 try:
     from gnuradio import gr, blocks, analog
 except ImportError:
@@ -32,7 +34,7 @@ class FakeDongle(gr.hier_block2):
     """Stands in for osmosdr.source: a station on `station_hz`, AM or FM, plus noise, at the
     receiver's sample rate and in real time. Retuning moves the station in the band."""
 
-    def __init__(self, rate, mode, station_hz, cnr_db):
+    def __init__(self, rate, mode, station_hz, cnr_db, phase_tone=None):
         gr.hier_block2.__init__(self, 'fake_dongle', gr.io_signature(0, 0, 0),
                                 gr.io_signature(1, 1, gr.sizeof_gr_complex))
         self.station_hz = self.centre = station_hz
@@ -44,6 +46,19 @@ class FakeDongle(gr.hier_block2):
             self.connect(one, (env, 1))
             self.connect(env, base)
             amp = 0.1
+            if phase_tone:                     # [(Hz, radians)]: steady tones on the carrier's
+                tones = [analog.sig_source_f(rate, analog.GR_SIN_WAVE, hz, rad)   # phase, which is
+                         for hz, rad in phase_tone]                              # where AM stereo
+                pm, turned = analog.phase_modulator_fc(1.0), blocks.multiply_cc()  # puts its pilot
+                if len(tones) > 1:
+                    total = blocks.add_ff()
+                    for i, t in enumerate(tones):
+                        self.connect(t, (total, i))
+                else:
+                    total = tones[0]
+                self.connect(base, (turned, 0))
+                self.connect(total, pm, (turned, 1))
+                self._keep, base = (tones, total, pm), turned
         else:                                  # 1 kHz tone at 50 kHz deviation, mono
             tone = analog.sig_source_f(rate, analog.GR_SIN_WAVE, 1000.0, 1.0)
             base = analog.frequency_modulator_fc(2 * math.pi * 50e3 / rate)
@@ -74,17 +89,31 @@ class FakeDongle(gr.hier_block2):
         return lambda *a, **k: 0
 
 
-def receiver(band, station_hz, cnr_db=40.0):
+class Speaker(gr.hier_block2):
+    """A silent sound card that keeps what it was sent on the left channel."""
+
+    def __init__(self):
+        gr.hier_block2.__init__(self, 'speaker', gr.io_signature(2, 2, gr.sizeof_float),
+                                gr.io_signature(0, 0, 0))
+        self.left, self.right = blocks.vector_sink_f(), blocks.null_sink(gr.sizeof_float)
+        self.connect((self, 0), self.left)
+        self.connect((self, 1), self.right)
+
+    def nitems_read(self, port):
+        return self.left.nitems_read(0)
+
+
+def receiver(band, station_hz, cnr_db=40.0, phase_tone=None):
     """The real receiver class, with the pretend dongle and a silent sound card."""
     from radio.am import AMReceiver
     from radio.fm.receiver import FMStereoReceiver
 
     class Rx(AMReceiver if band == 'AM' else FMStereoReceiver):
         def _make_source(self, args):
-            return FakeDongle(self.samp_rate, band, station_hz, cnr_db)
+            return FakeDongle(self.samp_rate, band, station_hz, cnr_db, phase_tone)
 
         def _make_audio_sink(self, rate, device):
-            return blocks.null_sink(gr.sizeof_float)
+            return Speaker()
     return Rx
 
 
@@ -104,12 +133,14 @@ def run(band, freq):
         tb.set_if_mode('auto')
         tb.set_wide(False)
     tb.start()
-    t0, errors = time.monotonic(), []
+    t0, errors, widths = time.monotonic(), [], []
     while time.monotonic() - t0 < RUN_S:
         try:
             tb.update_blend()
         except Exception as e:
             errors.append(f"{type(e).__name__}: {e}")
+        if band == 'AM':
+            widths.append(tb.bw)
         time.sleep(0.02)
     secs = time.monotonic() - t0
     rate_in, rate_out = tb._samples_in() / secs, tb.audio_sink.nitems_read(0) / secs
@@ -131,6 +162,14 @@ def run(band, freq):
               f"offset {tb.carrier_hz:+.1f} Hz, locked {tb.locked}")
         check('C/N reads what was sent (40 dB)', 38 <= tb.cnr_db <= 42, f"{tb.cnr_db:.1f} dB")
         check('filter opens to the chosen 8 kHz', abs(tb.bw - 8000) < 300, f"{tb.bw / 1e3:.1f} kHz")
+        check('and starts at its narrowest', widths and widths[0] <= 2600, f"{widths[0] / 1e3:.1f} kHz first")
+        x = np.asarray(tb.audio_sink.left.data())
+        w = tb.audio_rate // 10
+        rms = [20 * math.log10(max(float(np.sqrt(np.mean(x[i:i + w] ** 2))), 1e-9))
+               for i in range(0, len(x) - w, w)]
+        steady = float(np.median(rms[-20:])) if len(rms) > 30 else 0.0
+        check('starts quietly, fading in', len(rms) > 30 and max(rms[:20]) <= steady + 1.0 and rms[0] < steady - 20,
+              f"first {rms[0] - steady:+.0f} dB, loudest {max(rms[:20]) - steady:+.1f} dB re steady" if rms else 'no sound')
         check('no stereo pilot on a mono station', not tb.pilot_on, f"pilot {tb.pilot_on}")
     else:
         check('signal quality reads clean', tb.cnr_db > 15, f"{tb.cnr_db:.1f} dB")
@@ -139,10 +178,36 @@ def run(band, freq):
     tb.wait()
 
 
+def pilot(name, phase_tone, want, system=None, mono_hint=False):
+    """An AM station with a steady tone on its carrier's phase: is it taken for a stereo pilot?"""
+    tb = receiver('AM', 1080e3, phase_tone=phase_tone)(freq=1080e3, agc=False)
+    tb.set_mute(False)
+    tb.set_stereo_system('auto')
+    if mono_hint:
+        tb.station['mono'] = True                  # as an add-on would report it
+    tb.start()
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 5.0:
+        tb.update_blend()
+        time.sleep(0.02)
+    got = tb.pilot_on and (system is None or tb.stereo_system == system)
+    check(name, got == want, f"pilot {'found' if tb.pilot_on else 'not found'} ({tb.stereo_system}, "
+          f"{100 * tb.pilot_level:.1f}%, {tb.pilot_ratio_db:+.0f} dB)")
+    tb.stop()
+    tb.wait()
+
+
 def main():
     print('GNU Radio', gr.version())
     run('AM', 1080e3)
     run('FM', 90.5e6)
+    print('AM stereo pilots')
+    pilot('C-QUAM pilot (25 Hz, 4%) found', [(25.0, 0.04)], True, 'cquam')
+    pilot('Kahn pilot (15 Hz, 4%) found', [(15.0, 0.04)], True, 'kahn')
+    pilot('found even when an add-on says mono', [(25.0, 0.04)], True, 'cquam', mono_hint=True)
+    pilot('a strong tone 1.5 Hz below 25 Hz is not one', [(23.5, 0.15)], False)
+    pilot('nor broad energy around 25 Hz', [(21.3, 0.06), (22.6, 0.06), (24.8, 0.07), (26.2, 0.06),
+                                             (27.7, 0.06), (28.9, 0.06)], False)
     print('\nAll passed.' if not failed else f'\n{failed} failed.')
     return 1 if failed else 0
 

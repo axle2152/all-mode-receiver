@@ -122,7 +122,7 @@ whatever an add-on reports stays in `rx.station`.
 | `rate`, `bler` | `rds_rate`, `rds_bler` | data groups per second, share lost (%) |
 | `ms`, `ptyn` | `rds_ms`, `rds_ptyn` | music or speech, program type name |
 | `alert` | (kept in `rx.station`) | 0 none, 1 test, 2 emergency |
-| `mono` | (kept in `rx.station`) | True: the station is mono, so the AM receiver ignores anything that looks like a stereo pilot and stays mono. Report it only when you're sure (a real stereo station must never lose its stereo to it). |
+| `mono` | (kept in `rx.station`) | True: the add-on believes the station is mono. Kept for information only: a stereo pilot the AM receiver hears always wins, so a false report can't lock out a real stereo station. (The receiver takes as a pilot only a steady tone at exactly 25 or 15 Hz.) |
 
 On FM:
 
