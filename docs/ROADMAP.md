@@ -8,8 +8,9 @@ sound as good as the signal allows, clean up what it can, play at a correct, con
 and have meters and visuals for casual listeners, broadcast people, and hams and shortwave
 listeners alike.
 
-**Next up: the owner's bench test of Phase 4** (frequency display and S-meter, built and in one
-pull request). Then Phase 5 or 6: SSB and CW come before the band row. Phases 0 to 3 are done.
+**Next up:** a mock-up of modes on the face (mode keys and legends, the filter key, the fine-tune
+keys), then Phase 6's HF receiver with SSB, CW, DSB and synchronous AM, then the rest of
+Phase 5 (band plan, regions, band row, preset pages). Phases 0 to 4 are done.
 
 ## Phase 0: Linux and the README (done)
 
@@ -91,12 +92,15 @@ the blanker row), and clicking Noise reduction switched static cut on.
   fits the 40 kHz and 26% measured. With `rf_rate` matching, everything came out where it should.
   The bench separation, and the signal quality a dongle shows on a Crosby station (the
   simulation tops out at 23 to 24 dB), are still to be written down.
-- [ ] A gentle start on AM. Today the tuner starts in AM loud and at its widest IF, a jump scare.
-  Probable causes: the audio level is the envelope divided by a carrier estimate smoothed over
-  0.25 s, and that estimate starts at zero, so the first half second is far too loud; and the IF
-  starts at 10.2 kHz and auto width only narrows it after the first C/N reading. Instead: start
-  muted, fade in over about a second once the carrier estimate has settled, and start the IF at
-  its narrowest (2.5 kHz) and let auto width open it up. Consider the same on every tune.
+- [x] A gentle start on AM. It started loud and at its widest IF, a jump scare: the audio level
+  is the envelope divided by a carrier estimate that started from zero (the first 100 ms played
+  56 dB over the station's level in GNU Radio), and the IF opened to the chosen width at once.
+  Now the estimate runs fast (10 ms) until it has the station's level, then at its usual pace
+  (250 ms); the sound fades in over a second at start; and AUTO starts at 2.5 kHz and opens as
+  the C/N allows (to 8 kHz in about two seconds on a clean station). The fast estimate also
+  runs after each retune: tuning to a station 20 dB stronger played +16.5 dB for 0.7 s, now one
+  50 ms tick at +8 dB. `tests/test_gnuradio.py` checks the start. Still to hear on the bench:
+  retunes on a real dongle, whose buffers delay the new station.
 - [ ] FM at a lower sample rate too, like AM (the RTL-SDR can drop samples at 2.4 Msps). Its gain
   control and quality thresholds were tuned at 2.4 Msps, so check them on the bench, or with
   `tests/test_gnuradio.py` and the trace tool, before and after.

@@ -20,8 +20,10 @@ Tuner (top unit)
     FM / AM         band; each band remembers its own frequency
     Wide            latching AM filter key: 12 kHz, with a 10 kHz notch for
                     adjacent-channel whistles. Off: the AM width chosen in Settings
-                    (2.5, 5, 8 or 10.2 kHz), narrowing from there on noise and loud
-                    neighbours unless AUTO is off there. Lights WIDE on AM.
+                    (2.5, 5, 8 or 10.2 kHz). With AUTO on there, it starts at 2.5 kHz
+                    when AM comes on, opens up as the signal allows, and narrows on
+                    noise and loud neighbours. Lights WIDE on AM. AM fades in over a
+                    second when it starts.
     Mono            latching Stereo key, both bands: FM mono, or AM with the
                     C-QUAM stereo ignored
     ADV / MON / SET the faint buttons bottom left: Advanced window (diagnostics),

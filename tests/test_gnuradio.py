@@ -18,6 +18,8 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.dirname(HERE))
 
+import numpy as np
+
 try:
     from gnuradio import gr, blocks, analog
 except ImportError:
@@ -74,6 +76,20 @@ class FakeDongle(gr.hier_block2):
         return lambda *a, **k: 0
 
 
+class Speaker(gr.hier_block2):
+    """A silent sound card that keeps what it was sent on the left channel."""
+
+    def __init__(self):
+        gr.hier_block2.__init__(self, 'speaker', gr.io_signature(2, 2, gr.sizeof_float),
+                                gr.io_signature(0, 0, 0))
+        self.left, self.right = blocks.vector_sink_f(), blocks.null_sink(gr.sizeof_float)
+        self.connect((self, 0), self.left)
+        self.connect((self, 1), self.right)
+
+    def nitems_read(self, port):
+        return self.left.nitems_read(0)
+
+
 def receiver(band, station_hz, cnr_db=40.0):
     """The real receiver class, with the pretend dongle and a silent sound card."""
     from radio.am import AMReceiver
@@ -84,7 +100,7 @@ def receiver(band, station_hz, cnr_db=40.0):
             return FakeDongle(self.samp_rate, band, station_hz, cnr_db)
 
         def _make_audio_sink(self, rate, device):
-            return blocks.null_sink(gr.sizeof_float)
+            return Speaker()
     return Rx
 
 
@@ -104,12 +120,14 @@ def run(band, freq):
         tb.set_if_mode('auto')
         tb.set_wide(False)
     tb.start()
-    t0, errors = time.monotonic(), []
+    t0, errors, widths = time.monotonic(), [], []
     while time.monotonic() - t0 < RUN_S:
         try:
             tb.update_blend()
         except Exception as e:
             errors.append(f"{type(e).__name__}: {e}")
+        if band == 'AM':
+            widths.append(tb.bw)
         time.sleep(0.02)
     secs = time.monotonic() - t0
     rate_in, rate_out = tb._samples_in() / secs, tb.audio_sink.nitems_read(0) / secs
@@ -131,6 +149,14 @@ def run(band, freq):
               f"offset {tb.carrier_hz:+.1f} Hz, locked {tb.locked}")
         check('C/N reads what was sent (40 dB)', 38 <= tb.cnr_db <= 42, f"{tb.cnr_db:.1f} dB")
         check('filter opens to the chosen 8 kHz', abs(tb.bw - 8000) < 300, f"{tb.bw / 1e3:.1f} kHz")
+        check('and starts at its narrowest', widths and widths[0] <= 2600, f"{widths[0] / 1e3:.1f} kHz first")
+        x = np.asarray(tb.audio_sink.left.data())
+        w = tb.audio_rate // 10
+        rms = [20 * math.log10(max(float(np.sqrt(np.mean(x[i:i + w] ** 2))), 1e-9))
+               for i in range(0, len(x) - w, w)]
+        steady = float(np.median(rms[-20:])) if len(rms) > 30 else 0.0
+        check('starts quietly, fading in', len(rms) > 30 and max(rms[:20]) <= steady + 1.0 and rms[0] < steady - 20,
+              f"first {rms[0] - steady:+.0f} dB, loudest {max(rms[:20]) - steady:+.1f} dB re steady" if rms else 'no sound')
         check('no stereo pilot on a mono station', not tb.pilot_on, f"pilot {tb.pilot_on}")
     else:
         check('signal quality reads clean', tb.cnr_db > 15, f"{tb.cnr_db:.1f} dB")
