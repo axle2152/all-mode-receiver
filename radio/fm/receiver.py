@@ -616,6 +616,7 @@ class FMStereoReceiver(Receiver):
         hz = min(top + self.DIP_NOISE_WIDTH / 2, self.mpx_rate / 2 - self.DIP_NOISE_WIDTH)
         self._stereo['entries'].append(dict(
             addon=addon, out=out, main_gain=gain, wide=bool(dec.get('wide', False)),
+            nr=bool(dec.get('noise_reduction', False)),
             dip=self._dip_noise_taps(hz) if top > edge else None,
             k=blocks.multiply_const_ff(0.0)))                # this add-on's L-R into the mix
 
@@ -1558,6 +1559,8 @@ class FMStereoReceiver(Receiver):
                 self._pilot_on = True
             elif self.pilot_level < self.PILOT_OFF or self._q_slow < self.PILOT_MIN_CNR_DB - 3.0:
                 self._pilot_on = False
+            if self._pilot_vetoed():               # an add-on's own pilot: what passes for 19 kHz isn't
+                self._pilot_on = False
             self.pilot_present = self._pilot_on
 
             if not blanked and self._rds_reset_pending:
@@ -1579,7 +1582,7 @@ class FMStereoReceiver(Receiver):
 
             # ---- noise reduction depth follows the CNR, like the blend ----
             depth = 0.0
-            if self.noise_reduction:
+            if self.noise_reduction and not self._nr_blind():
                 k = (self.NR_OFF_CNR_DB - self.cnr_db) / (self.NR_OFF_CNR_DB - self.NR_FULL_CNR_DB)
                 depth = self.NR_MAX_DB * min(max(k, 0.0), 1.0)
             self.nr.depth_db += max(-0.5, min(0.5, depth - self.nr.depth_db))   # eased
@@ -1691,6 +1694,18 @@ class FMStereoReceiver(Receiver):
                 if e['addon'].alive and e['addon'].data.get('stereo'):
                     return e
         return None
+
+    def _pilot_vetoed(self):
+        """An add-on says this station carries its own system's pilot (BTSC's, for one, whose
+        L-R can put energy right on 19 kHz), so whatever looks like a 19 kHz pilot isn't one."""
+        return any(a.alive and a.data.get('own_pilot') for a in self.addons)
+
+    def _nr_blind(self):
+        """The station uses a stereo add-on whose signal fills the 16-22 kHz stretches the noise
+        reduction measures the noise in (unless its decoder says otherwise): it would take
+        program for noise, so it stays out."""
+        src = self._stereo_source() if self._stereo is not None else None
+        return isinstance(src, dict) and not src['nr']
 
     def _stereo_wide(self):
         """The station uses a stereo add-on whose signal is wider than the channel."""

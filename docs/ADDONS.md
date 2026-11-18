@@ -8,7 +8,8 @@ Both receivers take add-ons. On AM an add-on can decode data carried on the stat
 the tuner station data to show: a station name, text, a program type, the same fields RDS
 fills on FM. On FM an add-on listens to the composite, and can bring a stereo system of its
 own, which the radio plays on stations without a 19 kHz pilot. `addons/crosby` (Crosby's 1958
-FM-FM stereo) is one, and a worked example of everything below.
+FM-FM stereo) and `addons/btsc` (BTSC, analog TV's stereo sound) are two, and worked examples
+of everything below.
 
 ## How the radio finds an add-on
 
@@ -134,6 +135,7 @@ On FM:
 | `stereo` | a stereo add-on: its stereo system is on the air on this station |
 | `stereo_quality` | a stereo add-on: how much of its L-R to blend in now, 0 (mono) to 1 (full stereo) |
 | `main_gain` | a stereo add-on that measures it: how much to raise the main channel now, in place of its decoder's `main_gain` (0.5 to 8; anything else is ignored) |
+| `own_pilot` | True: this station carries the add-on's own system's pilot, so whatever looks like a 19 kHz pilot isn't one, and the receiver ignores it. BTSC reports it: its L-R can put enough energy on 19 kHz to fool the FM stereo detector. Report it only when you're sure. |
 
 Any other key is kept in `rx.station`. A retune clears all of it.
 
@@ -149,6 +151,7 @@ joins the matrix, and a station plays through the one that reports `stereo`.
 | `main_gain` | how much to raise the main channel (L+R) while its stereo is on. Crosby: 2, since its L+R rides at 50%. 1 if left out. |
 | `mpx_top` | the highest composite frequency its signal uses, in Hz |
 | `wide` | True if its signal is wider than the receiver's 200 kHz channel (Crosby's is about 300 kHz): the echo canceller then stays out while its stereo plays. False if left out. |
+| `noise_reduction` | True if its signal leaves the composite's 16-18.5 kHz and 19.6-22 kHz empty, where the noise reduction measures the noise. False if left out: the noise reduction then stays out while its stereo plays (it would take the program for noise). |
 
 Its L-R must reach the matrix lined up with L+R, which arrives `len(rx.stereo_lowpass()) - 1`
 samples after the tap. Put L-R through those same taps and the two channels match exactly;

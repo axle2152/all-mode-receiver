@@ -126,6 +126,12 @@ class Stereo2(Stereo):
         return {'stereo': self.on, 'stereo_quality': 1.0, 'synced': self.on, 'main_gain': 3.0}
 
 
+class OwnPilot(Stereo):
+    """A stereo add-on whose system has a pilot of its own (as BTSC has)."""
+    def update(self, now):
+        return dict(Stereo.update(self, now), own_pilot=self.on)
+
+
 class StereoGain(Stereo):
     """...that measures the make-up gain it needs as it goes."""
     gain = 3.0
@@ -264,6 +270,30 @@ def stereo_tests(FM):
           and abs(tb._stereo['gain_db'] - 6.02) < 0.01, (tb.addon_stereo, tb._stereo['gain_db']))
     tb.stop()
     Stereo.on, Stereo2.on = True, False
+
+    install(EntryPoint('own', OwnPilot))
+    Stereo.on = True
+    tb, said = build(FM, freq=90.5e6)                 # the stand-in's probes pass for a 19 kHz pilot
+    run(tb, 1.0)
+    check("one with a pilot of its own: what passes for 19 kHz isn't a pilot, its stereo plays",
+          not tb.pilot_present and tb.addon_stereo == 'STX', (tb.pilot_present, tb.addon_stereo))
+    OwnPilot.on = False
+    run(tb, 1.0)
+    check("its pilot gone: the 19 kHz pilot counts again", tb.pilot_present and tb.addon_stereo is None)
+    tb.stop()
+    OwnPilot.on = True
+
+    install(EntryPoint('stx', Stereo))
+    tb, said = build(FM, pilot=False, freq=90.5e6)
+    tb.NR_OFF_CNR_DB, tb.NR_FULL_CNR_DB = 100.0, 90.0    # as if the signal were weak
+    run(tb, 1.0)
+    check("its stereo playing: the noise reduction stays out (it measures noise at 16-22 kHz)",
+          tb.addon_stereo == 'STX' and tb.nr.depth_db == 0.0, tb.nr.depth_db)
+    Stereo.on = False
+    run(tb, 1.0)
+    check("its stereo off: the noise reduction works again", tb.nr.depth_db > 0.0, tb.nr.depth_db)
+    tb.stop()
+    Stereo.on = True
 
     install(EntryPoint('bad', StereoBadDecoder))
     tb, said = build(FM, pilot=False, freq=90.5e6)
