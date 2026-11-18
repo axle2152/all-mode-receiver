@@ -202,6 +202,8 @@ class Receiver(gr.top_block):
         """Every station data field back to 'nothing decoded'. A receiver with RDS of its
         own keeps those fields to itself: add-on data there stays in self.station."""
         self.station = {}
+        for a in self.addons:
+            a.data = {}
         if self.has('rds'):
             return
         for attr, empty in _addons.STATION_DEFAULTS.items():
@@ -220,6 +222,7 @@ class Receiver(gr.top_block):
         for a in self.addons:
             data = a.update(now)
             if data:
+                a.data.update(data)                 # each add-on's own, for stereo add-ons
                 self.station.update(data)
                 if self.has('rds'):                 # the receiver's own RDS fills those
                     continue

@@ -114,6 +114,18 @@ class Stereo:
         return {'stereo': self.on, 'stereo_quality': self.quality, 'synced': self.on}
 
 
+class Stereo2(Stereo):
+    """A second stereo add-on, with a system of its own (wider than the channel)."""
+    NAME = 'STY'
+    on = False
+
+    def stereo_decoder(self):
+        return dict(Stereo.stereo_decoder(self), wide=True)
+
+    def update(self, now):
+        return {'stereo': self.on, 'stereo_quality': 1.0, 'synced': self.on, 'main_gain': 3.0}
+
+
 class StereoGain(Stereo):
     """...that measures the make-up gain it needs as it goes."""
     gain = 3.0
@@ -189,7 +201,7 @@ def stereo_tests(FM):
     check("a stereo add-on joins the matrix", tb._stereo is not None and said == '', said)
     run(tb, 1.0)
     check("no pilot, its stereo on: its L-R plays, blended as it says",
-          tb.addon_stereo == 'STX' and tb._stereo['route'] == 'addon' and tb.stereo_indicator
+          tb.addon_stereo == 'STX' and tb._stereo['route'] == 0 and tb.stereo_indicator
           and abs(tb.current_blend - 0.5) < 0.01, (tb.addon_stereo, tb.current_blend))
     check("and the main channel is raised by its make-up gain (6 dB)",
           abs(tb._stereo['gain_db'] - 6.02) < 0.01, tb._stereo['gain_db'])
@@ -205,14 +217,14 @@ def stereo_tests(FM):
     del tb.PILOT_ON, tb.PILOT_OFF                 # the stand-in's probes now pass for a pilot
     run(tb, 1.0)
     check("a pilot wins: the pilot decoder plays, the main channel back to normal",
-          tb.pilot_present and tb.addon_stereo is None and tb._stereo['route'] == 'own'
+          tb.pilot_present and tb.addon_stereo is None and tb._stereo['route'] is None
           and tb._stereo['gain_db'] == 0.0, (tb.pilot_present, tb._stereo))
     tb.PILOT_ON = tb.PILOT_OFF = 1.0
     run(tb, 1.0)
     check("pilot gone: back to the add-on's stereo", tb.addon_stereo == 'STX')
     tb.set_freq(98.1e6)
     check("a retune: the add-on starts over, the matrix and level go back at once",
-          tb.addons[0].obj.resets == 1 and tb._stereo['route'] == 'own'
+          tb.addons[0].obj.resets == 1 and tb._stereo['route'] is None
           and tb._stereo['gain_db'] == 0.0 and tb.station == {})
     Stereo.on = False
     run(tb, 1.0)
@@ -232,6 +244,27 @@ def stereo_tests(FM):
           abs(tb._stereo['gain_db'] - 6.02) < 0.01, tb._stereo['gain_db'])
     tb.stop()
 
+    install(EntryPoint('stx', Stereo), EntryPoint('sty', Stereo2))
+    Stereo.on, Stereo2.on = False, True
+    tb, said = build(FM, pilot=False, freq=90.5e6)
+    check("two stereo add-ons: both join the matrix",
+          tb._stereo is not None and len(tb._stereo['entries']) == 2 and said == '', said)
+    run(tb, 1.0)
+    check("the one whose stereo is on plays, with its own make-up gain, whatever the order",
+          tb.addon_stereo == 'STY' and tb._stereo['route'] == 1
+          and abs(tb._stereo['gain_db'] - 20 * math.log10(3.0)) < 0.01, (tb.addon_stereo, tb._stereo['route']))
+    check("each keeps its own report (the other's 'stereo: off' doesn't hide it)",
+          tb.addons[0].data.get('stereo') is False and tb.addons[1].data.get('stereo') is True)
+    check("one wider than the channel keeps the echo canceller out; the other wouldn't",
+          tb._stereo_wide() and not tb._stereo['entries'][0]['wide'])
+    Stereo.on, Stereo2.on = True, False
+    run(tb, 1.5)
+    check("the station changes system: the other plays",
+          tb.addon_stereo == 'STX' and tb._stereo['route'] == 0
+          and abs(tb._stereo['gain_db'] - 6.02) < 0.01, (tb.addon_stereo, tb._stereo['gain_db']))
+    tb.stop()
+    Stereo.on, Stereo2.on = True, False
+
     install(EntryPoint('bad', StereoBadDecoder))
     tb, said = build(FM, pilot=False, freq=90.5e6)
     check("a stereo decoder that can't be used: one line, the add-on runs on without it",
@@ -249,7 +282,7 @@ def stereo_tests(FM):
     said = run(tb, 1.0)
     check("a stereo add-on that stops: one line, and stereo goes back to the pilot decoder",
           ok_before and said.count('\n') == 1 and "Add-on 'dies' stopped" in said
-          and tb.addon_stereo is None and tb._stereo['route'] == 'own'
+          and tb.addon_stereo is None and tb._stereo['route'] is None
           and tb._stereo['gain_db'] == 0.0, (ok_before, said, tb._stereo))
     tb.stop()
 

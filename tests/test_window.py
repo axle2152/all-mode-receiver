@@ -148,7 +148,7 @@ def child(appdir, band, fonts, secs):
     def stereo_checks_2():
         if 'TEST STEREO' not in app._id_var.get() or 'Pretend stereo: subcarrier' not in app._rdsd_var.get():
             problems.append(f'stereo add-on: Advanced shows {app._id_var.get()!r} / {app._rdsd_var.get()!r}')
-        if 'data' not in (app._meters._keys or []):
+        if 'data0' not in (app._meters._keys or []):
             problems.append('stereo add-on: no meter in the Advanced window')
         app._toggle_advanced()
         real_print('INFO stereo add-on:', 'ok' if not problems else '; '.join(problems))

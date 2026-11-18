@@ -140,13 +140,15 @@ Any other key is kept in `rx.station`. A retune clears all of it.
 ## A stereo system of its own (FM)
 
 An FM add-on whose `stereo_decoder()` returns a dict brings a stereo decoder the radio can
-play instead of its own (the first such add-on, if more than one is installed):
+play instead of its own. Several can be installed together (Crosby and BTSC, say): each
+joins the matrix, and a station plays through the one that reports `stereo`.
 
 | Key | What it is |
 |---|---|
 | `out` | `(block, port)`: its L-R, real, at `rx.mpx_rate`, at the scale of the main channel: (L-R)/2 x `MPX_FULL`, where L and R are 1 at full deviation |
 | `main_gain` | how much to raise the main channel (L+R) while its stereo is on. Crosby: 2, since its L+R rides at 50%. 1 if left out. |
 | `mpx_top` | the highest composite frequency its signal uses, in Hz |
+| `wide` | True if its signal is wider than the receiver's 200 kHz channel (Crosby's is about 300 kHz): the echo canceller then stays out while its stereo plays. False if left out. |
 
 Its L-R must reach the matrix lined up with L+R, which arrives `len(rx.stereo_lowpass()) - 1`
 samples after the tap. Put L-R through those same taps and the two channels match exactly;
@@ -167,8 +169,11 @@ What the radio does with it:
 - The L-R source changes only at full mono, so switching between decoders can't click.
 - If `mpx_top` reaches past 67 kHz, static cut listens for noise bursts above it instead of
   above 72 kHz, so the add-on's program can't pass for bursts.
-- The echo canceller stays out (in auto): it judges by how round the FM circle is, which a
-  signal wider than the receiver's 200 kHz channel never is.
+- For a `wide` decoder, the echo canceller stays out (in auto): it judges by how round the FM
+  circle is, which a signal wider than the receiver's 200 kHz channel never is, and would
+  "fix" the trimmed sidebands away.
+- Each add-on's reports are kept apart (`stereo`, `stereo_quality`, `main_gain` and `synced`
+  are read from its own), so one reporting `stereo: False` can't hide another's stereo.
 - A retune puts the radio's own decoder back and the level back to normal at once, and the
   add-on starts over. If the add-on stops (raises), the same happens for good.
 
