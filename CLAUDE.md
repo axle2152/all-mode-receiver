@@ -30,6 +30,10 @@ more modes and amateur digital modes (see `docs/ROADMAP.md`). Owner: Michael Fol
   `test_crosby.py` runs it through the real FM receiver in GNU Radio; `crosby_check.py` is
   the bench check to ask for when it doesn't play Crosby (verdict in plain words; `--record`
   saves raw IQ that `--replay` plays back here through the real receiver).
+- `addons/btsc/`: the BTSC (analog TV sound) stereo add-on, built the same way, with
+  `btsc_check.py` and `test_btsc.py`. Its dbx-TV expander (`btsc_stereo/dbx.py`, numpy and
+  scipy only) is the inverse of the reference transmitter in gr-flowgraphs/ntsc-btsc-tx.
+  Needs scipy (GNU Radio recommends it on Ubuntu; radioconda has it).
 
 ## How the pieces talk
 
@@ -65,6 +69,7 @@ Run before every commit:
     python3 tests/test_window.py          # needs a screen; headless Linux: xvfb-run -a ...
     python3 tests/test_gnuradio.py        # needs GNU Radio (apt install gnuradio gr-osmosdr)
     python3 addons/crosby/test_crosby.py  # needs GNU Radio; after changing radio/fm/ or add-ons
+    python3 addons/btsc/test_btsc.py      # needs GNU Radio and scipy; the same
 
 `test_window.py --fonts <folder>` limits the window to one folder of fonts (Ubuntu's basic
 DejaVu set, or an empty folder). The stand-in tests and the trace tool ignore installed add-ons
@@ -121,9 +126,11 @@ The cloud container is Ubuntu 24.04. What worked:
   (GNU Radio 3.10.9, system Python 3.12). `python3` may be another Python: run GNU Radio
   things with `/usr/bin/python3.12`. Python blocks in a hier block must stay referenced
   from Python, or the flowgraph segfaults on start.
-- Test signals for FM: don't use tones on whole kHz. The receiver tunes 2 kHz off the
-  station, so a sideband lands on 0 Hz and the DC canceller removes it (it looked like a
-  broken Crosby decoder). Use 997 Hz and the like, and not harmonics of each other.
+- Test signals for FM: the receiver tunes 2 kHz off the station, and its DC canceller eats FM
+  spectral lines that land within a few tens of Hz of 2 kHz: a whole-kHz tone (exactly), 997 Hz
+  (its 2nd line 6 Hz away) or 1033 Hz on a loud enough tone. It looked like broken decoders
+  twice. Use a tone whose multiples land at least 100 Hz from 2 kHz (1100 Hz: 2200), and tones
+  that aren't harmonics of each other.
 - The window: `apt-get install -y python3-tk python3-pil python3-pil.imagetk xvfb` and run under
   `xvfb-run -a`; `fonts-urw-base35` adds Nimbus Sans.
 - Ubuntu 22.04's versions: `uv venv -p 3.10.12` with `pillow==9.0.1` and `numpy==1.21.5` for

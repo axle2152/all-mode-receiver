@@ -1,0 +1,5 @@
+# The package itself is described in setup.py, which every pip and setuptools can read
+# (Ubuntu 22.04's can't read a description here).
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

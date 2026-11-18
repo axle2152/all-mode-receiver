@@ -78,6 +78,19 @@ the blanker row), and clicking Noise reduction switched static cut on.
   stereo and mono, ordinary stereo and SCA stations untouched. Without the add-on, the FM receiver's
   trace and the window's screenshots are identical to before. Found on the way:
   `crosby_tx.grc` sends L-R half a sample early (fix in the add-on's README).
+- [x] BTSC stereo (analog TV sound, channel 6 at 87.75 MHz and elsewhere) as an optional add-on
+  (`addons/btsc`). Pilot at 15.734 kHz, L-R on 2fH with dbx-TV expansion written from FCC
+  OET-60, as the reference transmitter in gr-flowgraphs/ntsc-btsc-tx compresses it; L+R raised
+  9.5 dB; the pilot is the level reference. The FM receiver now takes several stereo add-ons at
+  once (Crosby and BTSC), each with its own reports; BTSC's pilot vetoes the 19 kHz detector,
+  which its L-R can fool; noise reduction stands down during add-on stereo. Checked in GNU Radio
+  through the real FM receiver: separation 57 dB (loud) and 62 dB (quiet, -30 dB) at 60 dB C/N,
+  41 and 38 dB at 30 dB C/N, 44 dB at 10 kHz; as loud as FM broadcast; a station at 80%
+  deviation still balanced; TV mono and FM stereo not taken for BTSC. Found on the way: the
+  expander's detectors must not hear the pilot (band-limited like the compressor's), its noise
+  must be allowed for (measured on the carrier's other phase), and the pilot PLL must not see
+  the pilot's mirror (a complex band-pass): each cost 10 to 30 dB of separation.
+- [ ] BTSC on the bench: the NTSC transmitter on channel 6, a dongle on 87.7.
 - [ ] Crosby on the bench: the HackRF sending the fixed `crosby_tx.grc`, a dongle receiving.
   Check the subcarrier reading (about 50% at 50.0 kHz), the separation, and the signal quality
   a dongle shows on a Crosby station (the simulation tops out at 23 to 24 dB). First bench try:

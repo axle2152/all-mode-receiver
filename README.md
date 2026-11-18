@@ -41,6 +41,10 @@ arrives. This one handles a weak or difficult signal the way a good car radio do
   add-on in `addons/crosby` installed, the radio plays it on a station with no stereo pilot
   that carries that subcarrier, and shows CROSBY STEREO. Nobody broadcasts it today, so it's for
   a transmitter of your own; the add-on's README explains.
+- **TV stereo sound (BTSC), as an add-on.** Analog TV sound was FM, and from 1984 it could be
+  stereo, by the BTSC system, with dbx noise reduction on the stereo channel. Channel 6's sound
+  sits at 87.75 MHz (tuned as 87.7). With the add-on in `addons/btsc` installed, the radio
+  plays it in stereo, as loud as an FM station, and shows BTSC STEREO.
 
 **RDS and RBDS.** Station name, RadioText, program type and program type name, call letters
 worked out from the station's code (even when a station's encoder is set to the international
@@ -156,6 +160,7 @@ so `git pull` won't touch your presets.
 | `docs/ROADMAP.md` | Where the project is going, phase by phase |
 | `docs/ADDONS.md` | How a decoder that isn't part of this program can plug into it |
 | `addons/crosby/` | The Crosby FM stereo add-on, installed separately (its README says how) |
+| `addons/btsc/` | The BTSC (TV sound) stereo add-on, installed separately (its README says how) |
 
 Inside `radio/`:
 
@@ -184,6 +189,7 @@ test stations:
 
     python3 tests/test_gnuradio.py
     python3 addons/crosby/test_crosby.py   # the Crosby add-on: plays Crosby stereo, and only that
+    python3 addons/btsc/test_btsc.py       # the BTSC add-on: plays TV stereo, and only that
 
 On Linux without a screen, run the window check as `xvfb-run -a python3 tests/test_window.py`.
 
