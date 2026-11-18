@@ -80,12 +80,19 @@ TIPS = dict(
             "tail beyond the cliff is rare overshoots or stray spikes; a cliff past 75 kHz is a station "
             "running hot. Amber: peaks of frequent recurrence (reached at least once a second). Red: the "
             "highest peak seen.",
+    smeter="Calibrates the S-meter (S on the keyboard, or METER, switches the tuner's bar between S "
+           "units and signal quality). Feed the dongle a signal of known strength, from a signal "
+           "generator or a transmitter through known attenuators, tune to it, type its level in dBm "
+           "and press CALIBRATE. Direct sampling, the tuner below 30 MHz and the tuner from 30 MHz up "
+           "each keep their own calibration; CLEAR forgets the one in use. Until then the meter "
+           "guesses and lights UNCAL. On AM through the tuner, the tuner's own AGC hides the gain, "
+           "so turn AGC off there for real S units.",
     override="Tune anywhere the dongle can reach instead of stopping at the band edges, 100 kHz to "
              "1766 MHz. With direct sampling (AM source direct_q), both bands cross over at 28.8 MHz: "
              "direct sampling below, the quadrature tuner above, and crossing restarts the receiver for "
              "a moment. AM above 28.8 MHz covers the aircraft band; FM is still wideband FM anywhere. "
-             "Up/Down steps past the band edge, FREQ entry accepts any of it, and the dot matrix spells "
-             "out the exact frequency whenever you're off the band.",
+             "Up/Down steps past the band edge, FREQ entry accepts any of it, and the frequency "
+             "display reads the exact frequency there too.",
     amstereo="Which AM stereo decoder. AUTO picks by the pilot, like the multi-system radios did: 25 Hz is "
              "Motorola C-QUAM, 15 Hz is Kahn/Hazeltine ISB (left on the lower sideband, right on the upper). "
              "Forcing one decodes with it whatever the station sends.",
@@ -102,8 +109,9 @@ TIPS = dict(
             "of a crowded band; 5 kHz is what most AM radios do; 8 kHz is AMAX-class wideband; "
             "10.2 kHz is everything a US station may send (NRSC-1), with the 10 kHz whistle from "
             "neighbouring stations notched out. The Wide key opens it to 12 kHz.",
-    amauto="AUTO: the AM filter narrows by itself on noisy stations or when the stations next door "
-           "are loud, and never opens wider than the width chosen here. Off: it stays at that width.",
+    amauto="AUTO: the AM filter starts at its narrowest when the radio comes on and opens up as the "
+           "signal allows, narrows by itself on noisy stations or when the stations next door are "
+           "loud, and never opens wider than the width chosen here. Off: it stays at that width.",
     nrsc="Undo the treble boost that AM stations following NRSC-1 transmit (a modified 75 \u00b5s "
          "curve, +10 dB at 10 kHz), so the full-width AM filter sounds natural instead of bright. "
          "Not every station uses it: if a station sounds dull with this on, it probably doesn't. "

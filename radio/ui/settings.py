@@ -1,6 +1,7 @@
 """
 radio/ui/settings.py - The Settings window: reception, panel, and the display colours.
 """
+import time
 import tkinter as tk
 
 from . import fonts
@@ -141,6 +142,25 @@ class SettingsWindow:
         self.gain_label = tk.Label(r, text='', font=('Courier', 9), fg='#7fbfb3', bg=P, width=11, anchor='w')
         self.gain_label.pack(side=tk.LEFT, padx=(6, 0))
         self._update_gain_label(self.rf_gain)
+        r = row(t, 'S-METER')
+        w = tk.Label(r, text='Signal of known strength', **lab)
+        w.pack(side=tk.LEFT)
+        tips.bind(w, TIPS['smeter'])
+        self._cal_var = tk.StringVar(value='-73')
+        e = tk.Entry(r, textvariable=self._cal_var, width=7, bg='#2a2a2a', fg='#cfcfcf', justify=tk.RIGHT,
+                     insertbackground='#cfcfcf', relief=tk.FLAT)
+        e.pack(side=tk.LEFT, padx=(8, 3))
+        e.bind('<Return>', lambda ev: self._cal_press())
+        tips.bind(e, TIPS['smeter'])
+        tk.Label(r, text='dBm', **lab).pack(side=tk.LEFT, padx=(0, 10))
+        for text, cmd in (('CALIBRATE', self._cal_press), ('CLEAR', self._cal_clear)):
+            w = tk.Button(r, text=text, font=fonts.FACE_FONT, fg='#cfcfcf', bg='#2a2a2a', relief=tk.FLAT,
+                          activebackground='#3a3a3a', activeforeground='#ffffff', command=cmd)
+            w.pack(side=tk.LEFT, padx=1)
+            tips.bind(w, TIPS['smeter'])
+        r = row(t, '')
+        self._cal_label = tk.Label(r, text='', font=('Courier', 8), fg='#6f8f8a', bg=P, anchor='w')
+        self._cal_label.pack(side=tk.LEFT)
 
         # ---- panel
         t = tabs['panel']
@@ -226,6 +246,20 @@ class SettingsWindow:
         body.grid_columnconfigure(0, minsize=max(f.winfo_reqwidth() for f in tabs.values()))
         body.grid_rowconfigure(0, minsize=max(f.winfo_reqheight() for f in tabs.values()))
         show()
+
+    def _cal_press(self):
+        """Settings > S-meter > CALIBRATE: the station tuned now is the level typed."""
+        try:
+            known = float(self._cal_var.get().replace('\u2212', '-'))
+        except ValueError:
+            msg = 'Type the signal\'s level in dBm, for example -73.'
+        else:
+            msg = (self._smeter_calibrate(known) if -150 <= known <= 30
+                   else 'That level is out of range: -150 to +30 dBm.')
+        self._cal_msg = (msg, time.monotonic() + 6.0)
+
+    def _cal_clear(self):
+        self._cal_msg = (self._smeter_clear(), time.monotonic() + 6.0)
 
     def _toggle_settings(self):
         if self._set_visible:

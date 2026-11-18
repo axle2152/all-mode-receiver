@@ -8,7 +8,9 @@ sound as good as the signal allows, clean up what it can, play at a correct, con
 and have meters and visuals for casual listeners, broadcast people, and hams and shortwave
 listeners alike.
 
-**Next up: Phase 4** (frequency display and S-meter), mock-ups first. Phases 0 to 3 are done.
+**Next up:** a mock-up of modes on the face (mode keys and legends, the filter key, the fine-tune
+keys), then Phase 6's HF receiver with SSB, CW, DSB and synchronous AM, then the rest of
+Phase 5 (band plan, regions, band row, preset pages). Phases 0 to 4 are done.
 
 ## Phase 0: Linux and the README (done)
 
@@ -83,7 +85,8 @@ the blanker row), and clicking Noise reduction switched static cut on.
   OET-60, as the reference transmitter in gr-flowgraphs/ntsc-btsc-tx compresses it; L+R raised
   9.5 dB; the pilot is the level reference. The FM receiver now takes several stereo add-ons at
   once (Crosby and BTSC), each with its own reports; BTSC's pilot vetoes the 19 kHz detector,
-  which its L-R can fool; noise reduction stands down during add-on stereo. Checked in GNU Radio
+  which its L-R can fool; noise reduction stands down while an add-on's stereo fills the
+  stretches it measures the noise in (BTSC's does, Crosby's doesn't). Checked in GNU Radio
   through the real FM receiver: separation 57 dB (loud) and 62 dB (quiet, -30 dB) at 60 dB C/N,
   41 and 38 dB at 30 dB C/N, 44 dB at 10 kHz; as loud as FM broadcast; a station at 80%
   deviation still balanced; TV mono and FM stereo not taken for BTSC. Found on the way: the
@@ -91,22 +94,35 @@ the blanker row), and clicking Noise reduction switched static cut on.
   must be allowed for (measured on the carrier's other phase), and the pilot PLL must not see
   the pilot's mirror (a complex band-pass): each cost 10 to 30 dB of separation.
 - [ ] BTSC on the bench: the NTSC transmitter on channel 6, a dongle on 87.7.
-- [ ] Crosby on the bench: the HackRF sending the fixed `crosby_tx.grc`, a dongle receiving.
-  Check the subcarrier reading (about 50% at 50.0 kHz), the separation, and the signal quality
-  a dongle shows on a Crosby station (the simulation tops out at 23 to 24 dB). First bench try:
-  no Crosby. `addons/crosby/crosby_check.py` found the add-on working (CROSBY STEREO from the
-  first second, subcarrier steady at 50.0 kHz) but not installed. Ubuntu 22.04's pip can't read
-  a package described in `pyproject.toml`, and its editable installs need `--no-build-isolation`
-  (tried on a real 22.04: the add-on is now described in `setup.py`, and `crosby_check.py`
-  prints the right command for the machine's pip). It also showed
-  the station at about half its deviation (subcarrier 26%, peaks 40 kHz), which would have
-  left 10 dB of separation: L+R is now balanced to the measured subcarrier.
-  Second bench try, installed with `--user --no-build-isolation`: CROSBY STEREO from the first
-  second, subcarrier 50% at 50.0 kHz with C/N 26 to 27 dB, peaks 61 to 70 kHz (the transmitter
-  at full deviation now), L+R raised 6.0 dB, signal quality 23 dB (the simulation's ceiling
-  for a Crosby signal in a 200 kHz channel). The half deviation was the transmitter: the Soapy
-  HackRF sink doesn't take 3.84 Msps (3 or 4 Msps work; noted in the add-on's README). Still to
-  do: the tuner window, and listening for the separation.
+- [x] Crosby on the bench: the HackRF sending the fixed `crosby_tx.grc`, a dongle receiving.
+  First try: no Crosby. `addons/crosby/crosby_check.py` found the add-on working (CROSBY STEREO
+  from the first second, subcarrier steady at 50.0 kHz) but not installed: Ubuntu 22.04's pip had
+  installed it as "UNKNOWN" (now described in `setup.py`, which every pip reads). It also showed
+  the station at about half its deviation (subcarrier 26%, peaks 40 kHz); L+R is now balanced to
+  the measured subcarrier, which still helps on any station off its deviation. The half deviation
+  was the transmitter: the HackRF sink had been set to 2 Msps (the Soapy HackRF sink runs only
+  whole-MHz rates, 2 to 20 Msps; 2.4 and 3.84 don't work) while the flowgraph's `rf_rate` was
+  still 3.84 Msps, so its FM was worked out for 3.84 and sent at 2: 52% of the deviation, which
+  fits the 40 kHz and 26% measured. With `rf_rate` matching, everything came out where it should.
+  The bench separation, and the signal quality a dongle shows on a Crosby station (the
+  simulation tops out at 23 to 24 dB), are still to be written down.
+- [x] A gentle start on AM. It started loud and at its widest IF, a jump scare: the audio level
+  is the envelope divided by a carrier estimate that started from zero (the first 100 ms played
+  56 dB over the station's level in GNU Radio), and the IF opened to the chosen width at once.
+  Now the estimate runs fast (10 ms) until it has the station's level, then at its usual pace
+  (250 ms); the sound fades in over a second at start; and AUTO starts at 2.5 kHz and opens as
+  the C/N allows (to 8 kHz in about two seconds on a clean station). The fast estimate also
+  runs after each retune: tuning to a station 20 dB stronger played +16.5 dB for 0.7 s, now one
+  50 ms tick at +8 dB. `tests/test_gnuradio.py` checks the start. Still to hear on the bench:
+  retunes on a real dongle, whose buffers delay the new station.
+- [x] AM stereo pilots: an add-on can't lock them out, and data can't pass for one. An add-on
+  that reported a station as mono held stereo off, and on the bench a false report on a real
+  C-QUAM station cost it its stereo. Now a pilot the receiver hears always wins, and the pilot
+  test is stricter: the strongest line within 2.5 Hz of 25 Hz (15 Hz for Kahn) must sit within
+  0.5 Hz of it and stand 10 dB over the spectrum 3 to 4.5 Hz either side. Before, the
+  strongest energy anywhere from 23 to 27.5 Hz counted. `tests/test_gnuradio.py` checks real
+  pilots (found as before, down to 12 dB C/N), one with an add-on saying mono, a strong tone
+  1.5 Hz off, and broad energy around 25 Hz; the old test failed the last three.
 - [ ] FM at a lower sample rate too, like AM (the RTL-SDR can drop samples at 2.4 Msps). Its gain
   control and quality thresholds were tuned at 2.4 Msps, so check them on the bench, or with
   `tests/test_gnuradio.py` and the trace tool, before and after.
@@ -136,20 +152,46 @@ and text at several data rates, with and without an alert.
 
 ## Phase 4: Frequency display and S-meter
 
-- [ ] A frequency display with enough digits for any frequency the dongle reaches, down to
-  1 Hz (up to 1766.000.000 MHz). How many digits it shows follows the tuning step: broadcast
-  bands keep their familiar look (90.5 MHz, 1080 kHz), AM and narrowband FM on the shortwave
-  and amateur bands show kHz, SSB and CW show down to 10 Hz or 1 Hz. Off-band frequencies no
-  longer spill into the dot matrix, which stays free for station data text.
-- [ ] An S-meter in place of the generic signal ladder: a longer bar with an S scale under it,
+- [x] A frequency display with enough digits for any frequency up to 9.99 GHz, down to 1 Hz
+  (9999.999.999 MHz), so SDRs that reach further than the RTL-SDR fit too. Ten digits don't
+  fit beside today's signal ladder, so the ladder moves right, where the S-meter goes. How
+  many digits it shows follows the tuning step (and the exact frequency, when it's off the
+  step): broadcast bands keep their familiar look (90.5 MHz, 1080 kHz), AM and narrowband FM
+  on the shortwave and amateur bands show kHz, SSB and CW show down to 10 Hz or 1 Hz.
+  Off-band frequencies no longer spill into the dot matrix, which stays free for station
+  data text.
+  Done as layout A (below), with kHz up to 30 MHz: seven big digits down to 1 kHz, three
+  small ones below that, the number against its unit (1080 kHz, 90.5 MHz, 9580 kHz,
+  14230.50 kHz, 146.520 MHz, 9999.999.999 MHz). The rules are in `radio/ui/frequency.py`,
+  checked by `tests/test_display.py`. The signal bar moved right into the S-meter's place,
+  15 bars long; it still shows signal quality, labelled SIGNAL, until the S-meter lands.
+- [x] An S-meter in place of the generic signal ladder: a longer bar with an S scale under it,
   S1 to S9 and then decibels over S9, to the IARU convention (S9 = -73 dBm below 30 MHz,
   -93 dBm above, 6 dB per S unit).
   The dongle reports levels relative to its own full scale, not in dBm, so this needs a
   calibration per dongle (from a known signal) that allows for the tuner gain and for direct
   sampling. It reads "uncalibrated" until then.
-- [ ] Signal quality (C/N) stays alongside it, since a strong signal isn't always a clean one.
+  Done: the receivers report the station's level (dBFS) and the tuner gain ahead of the
+  converter (`signal_level()`), and the window turns that into dBm: dBFS - gain + a
+  calibration, one per input path (direct sampling, the tuner below 30 MHz, the tuner from
+  30 MHz up), set in Settings > Reception > S-meter from a signal of known strength. UNCAL
+  lights until then, and while the tuner's own AGC hides the gain (AM through the tuner). The
+  arithmetic is in `radio/ui/smeter.py`; real GNU Radio reads the test stations' levels to
+  0.1 dB. Still to check on the bench: how close a calibration made at one frequency and gain
+  holds at others (the RTL-SDR's gain steps and frequency response aren't exact).
+- [x] Signal quality (C/N) stays alongside it, since a strong signal isn't always a clean one.
+  Done as the owner's option 2: one bar, S units or signal quality (POOR / FAIR / GOOD),
+  switched with S, the METER button or a click on the bar, remembered per band. MEMORY moved
+  over the channel number. Phase 5's band plan can give each band its starting view
+  (broadcast on quality, shortwave and amateur on S units).
 
-Mock-ups first, for the owner to pick from.
+Mock-ups first, for the owner to pick from. Two layouts were drawn, both with the S-meter as a
+longer bar to the right of the frequency and an S scale under it. The owner picked A, with
+kHz up to 30 MHz, and the S-meter where the mock-ups put it:
+- A, hi-fi: big digits down to 1 kHz and small digits below that, the number against its
+  unit (drawn with kHz below 2 MHz; built with kHz below 30 MHz).
+- B, communications receiver: ten equal digits in fixed groups, always in MHz (1.080 for
+  AM 1080).
 
 ## Phase 5: Bands, modes and presets
 
@@ -158,8 +200,29 @@ Mock-ups first, for the owner to pick from.
   the AM width and FM bandwidth rows in Settings).
 - [ ] A band plan: long and medium wave, the shortwave broadcast bands (120 to 11 m), the
   amateur bands, VHF and UHF. Each band has its default mode, tuning step and filter widths.
+- [ ] Regions, chosen in Settings, because band edges and channel spacing depend on where you
+  are:
+  - AM: 530 to 1700 kHz in 10 kHz steps in the Americas; 531 to 1602 kHz in 9 kHz steps in
+    Europe, Africa and most of Asia (to 1701 kHz in Australia); long wave, 153 to 279 kHz in
+    9 kHz steps, where it's still used.
+  - FM: 87.5 to 108 MHz in 100 kHz steps in most of the world; odd tenths in 200 kHz steps in
+    North America; 76 to 95 MHz in Japan; the old OIRT band, 65.8 to 74 MHz, in a few places
+    in Eastern Europe.
+  - Amateur bands differ by ITU region (40 m is 7.0 to 7.3 MHz in Region 2 and 7.0 to
+    7.2 MHz in Regions 1 and 3; 80 m is 3.5 to 4.0, 3.5 to 3.8 and 3.5 to 3.9 MHz in Regions
+    2, 1 and 3), and a few by country (60 m).
+  - Public service and utility bands differ by country too (airband channels 8.33 kHz apart
+    in much of Europe and 25 kHz in the US; CB on AM in the US and mostly FM in Europe).
+- [ ] A row of band keys on the face, grouped: broadcast (long wave, medium wave, the
+  shortwave bands, FM), amateur (160 m to 70 cm), public service and utility (air, marine,
+  weather and so on). Picking a band picks its usual mode: on the amateur bands LSB below
+  10 MHz and USB above (20 m is USB), AM on the airband, narrowband FM on marine and weather.
+  Needs SSB and CW first (Phase 6).
 - [ ] Tuning steps by mode, with a setting to change them: 5 kHz for AM and narrowband FM on
   the shortwave and amateur bands, 10 Hz or 1 Hz for SSB and CW.
+- [ ] Fine-tune keys: a pair of small keys that nudge the frequency by a fine amount whatever
+  the band's step (10 Hz on SSB and CW, 100 Hz or so on AM), to settle on a station or a
+  voice.
 - [ ] Presets store band, mode, frequency and filter, in pages of 24. Existing presets carry
   over.
 
