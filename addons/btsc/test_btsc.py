@@ -234,6 +234,17 @@ def listen(path, secs=4.0, with_crosby=False):
     return tb, found
 
 
+def music(n, seed=3):
+    """Two channels of pink noise to 15 kHz (a station's own band-limit), like busy music."""
+    x = np.random.default_rng(seed).standard_normal((2, n))
+    x = signal.lfilter([0.049922035, -0.095993537, 0.050612699, -0.004408786],
+                       [1, -2.494956002, 2.017265875, -0.522189400], x, axis=1)
+    x = signal.sosfilt(signal.iirdesign(15000.0, 16500.0, 0.1, 60.0, ftype='ellip', output='sos',
+                                        fs=FS_C), x, axis=1)
+    x *= 0.15 / np.std(x)
+    return x[0], x[1]
+
+
 def tone(x, f, rate=48000):
     n, w = np.arange(len(x)), np.hanning(len(x))
     return 2 * abs(np.sum(x * w * np.exp(-2j * np.pi * f * n / rate))) / np.sum(w)
@@ -314,6 +325,14 @@ def main():
     a = next(x.obj for x in tb.addons if x.name == 'btsc')
     check("the radio's own decoder; not BTSC", tb.pilot_present and tb.stereo_indicator
           and found is None, a.why_not())
+
+    print('FM stereo, weak (10 dB C/N), music-like program to 15 kHz')
+    left, right = music(len(l1))
+    tb, found = listen(station_file('gez', left, right, cnr_db=10.0))
+    a = next(x.obj for x in tb.addons if x.name == 'btsc')
+    check("keeps its stereo: BTSC never claims it", tb.pilot_present and found is None
+          and a.pilot is not None and a.pilot < 0.25,
+          f"BTSC pilot reads {a.pilot or 0:.2f} of 5 kHz (0.5 needed)")
 
     if os.path.isdir(os.path.join(CROSBY, 'crosby_stereo')):
         print('Crosby and BTSC installed together')
