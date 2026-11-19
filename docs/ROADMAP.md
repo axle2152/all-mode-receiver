@@ -222,7 +222,10 @@ the monitor, and modes on the tuner.
   122) to fit it, the monitor's rows spread out.
 - [ ] The window grows to fit the screen. Today it never goes past full size (1480 px wide),
   which leaves room on a 1080p screen and draws it at about half the size you'd expect on a 4K
-  screen with the desktop scaled 200%. A size choice in Settings too.
+  screen with the desktop scaled 200%. A size choice in Settings too. Must look right on the
+  owner's 4K laptop and on 1080p machines.
+- [ ] Later: a split layout for 720p and narrow screens, each panel cut in half and the halves
+  stacked, so nothing shrinks below readable.
 - [ ] The hint buttons become real keys: Power and Monitor (show the monitor), Advanced and
   Settings on the tuner's left; METER becomes "S units" (the signal bar in S units, or signal
   quality) beside Band info under the presets; FREQ moves to the Bands panel as Direct.
