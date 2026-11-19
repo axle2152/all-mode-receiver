@@ -65,6 +65,7 @@ class Attached:
     def __init__(self, name, obj):
         self.name, self.obj, self.alive = name, obj, True
         self.label = str(getattr(type(obj), 'NAME', name))     # for lamps and messages
+        self.data = {}                       # what it has reported since the last retune
 
     def _call(self, method, *args):
         if not self.alive:

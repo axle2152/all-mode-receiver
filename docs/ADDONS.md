@@ -8,7 +8,8 @@ Both receivers take add-ons. On AM an add-on can decode data carried on the stat
 the tuner station data to show: a station name, text, a program type, the same fields RDS
 fills on FM. On FM an add-on listens to the composite, and can bring a stereo system of its
 own, which the radio plays on stations without a 19 kHz pilot. `addons/crosby` (Crosby's 1958
-FM-FM stereo) is one, and a worked example of everything below.
+FM-FM stereo) and `addons/btsc` (BTSC, analog TV's stereo sound) are two, and worked examples
+of everything below.
 
 ## How the radio finds an add-on
 
@@ -23,9 +24,11 @@ setup(name='my-decoder', version='1.0', packages=['my_package'],
 ```
 
 with a `pyproject.toml` that only names the build system (`addons/crosby` has both). Declare it
-in `setup.py` rather than in `pyproject.toml`'s `[project]` table: Ubuntu 22.04's pip and
-setuptools can't read that table, and install the package as "UNKNOWN" with no entry point,
-so the radio never finds it.
+in `setup.py` rather than in `pyproject.toml`'s `[project]` table: Ubuntu 22.04's pip builds
+with the system's setuptools 59.6, which can't read that table, so the install fails (or, with
+some pips, the package comes out as "UNKNOWN" with no entry point and the radio never finds
+it). With that pip an editable install also needs `--no-build-isolation`;
+`addons/crosby/README.md` has the commands for each pip.
 
 The entry point names the add-on's class. Once a receiver of a band the add-on serves has
 built its own blocks, it creates the add-on.
@@ -132,19 +135,23 @@ On FM:
 | `stereo` | a stereo add-on: its stereo system is on the air on this station |
 | `stereo_quality` | a stereo add-on: how much of its L-R to blend in now, 0 (mono) to 1 (full stereo) |
 | `main_gain` | a stereo add-on that measures it: how much to raise the main channel now, in place of its decoder's `main_gain` (0.5 to 8; anything else is ignored) |
+| `own_pilot` | True: this station carries the add-on's own system's pilot, so whatever looks like a 19 kHz pilot isn't one, and the receiver ignores it. BTSC reports it: its L-R can put enough energy on 19 kHz to fool the FM stereo detector. Report it only when you're sure. |
 
 Any other key is kept in `rx.station`. A retune clears all of it.
 
 ## A stereo system of its own (FM)
 
 An FM add-on whose `stereo_decoder()` returns a dict brings a stereo decoder the radio can
-play instead of its own (the first such add-on, if more than one is installed):
+play instead of its own. Several can be installed together (Crosby and BTSC, say): each
+joins the matrix, and a station plays through the one that reports `stereo`.
 
 | Key | What it is |
 |---|---|
 | `out` | `(block, port)`: its L-R, real, at `rx.mpx_rate`, at the scale of the main channel: (L-R)/2 x `MPX_FULL`, where L and R are 1 at full deviation |
 | `main_gain` | how much to raise the main channel (L+R) while its stereo is on. Crosby: 2, since its L+R rides at 50%. 1 if left out. |
 | `mpx_top` | the highest composite frequency its signal uses, in Hz |
+| `wide` | True if its signal is wider than the receiver's 200 kHz channel (Crosby's is about 300 kHz): the echo canceller then stays out while its stereo plays. False if left out. |
+| `noise_reduction` | True if its signal leaves the composite's 16-18.5 kHz and 19.6-22 kHz empty, where the noise reduction measures the noise. False if left out: the noise reduction then stays out while its stereo plays (it would take the program for noise). |
 
 Its L-R must reach the matrix lined up with L+R, which arrives `len(rx.stereo_lowpass()) - 1`
 samples after the tap. Put L-R through those same taps and the two channels match exactly;
@@ -165,8 +172,11 @@ What the radio does with it:
 - The L-R source changes only at full mono, so switching between decoders can't click.
 - If `mpx_top` reaches past 67 kHz, static cut listens for noise bursts above it instead of
   above 72 kHz, so the add-on's program can't pass for bursts.
-- The echo canceller stays out (in auto): it judges by how round the FM circle is, which a
-  signal wider than the receiver's 200 kHz channel never is.
+- For a `wide` decoder, the echo canceller stays out (in auto): it judges by how round the FM
+  circle is, which a signal wider than the receiver's 200 kHz channel never is, and would
+  "fix" the trimmed sidebands away.
+- Each add-on's reports are kept apart (`stereo`, `stereo_quality`, `main_gain` and `synced`
+  are read from its own), so one reporting `stereo: False` can't hide another's stereo.
 - A retune puts the radio's own decoder back and the level back to normal at once, and the
   add-on starts over. If the add-on stops (raises), the same happens for good.
 

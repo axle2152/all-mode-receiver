@@ -487,11 +487,11 @@ class AdvancedWindow:
             return
 
         data = [a for a in tb.addons if a.alive]          # add-ons running on this receiver
-        meter = data[0].meter() if data else None
+        meters = [(i, m) for i, m in enumerate(a.meter() for a in data) if m]   # (index, meter)
         self._lamps.set_lamps([
             ('stereo', 'STEREO', SEG_ON['help'], TIPS['lamp_stereo']),
             ('rds', 'RDS', SEG_ON['help'], TIPS['lamp_rds'])]
-            + ([('data', data[0].label, SEG_ON['help'], TIPS['lamp_fm_addon'])] if data else [])
+            + [(f'data{i}', a.label, SEG_ON['help'], TIPS['lamp_fm_addon']) for i, a in enumerate(data)]
             + [('echo', 'ECHO FIX', SEG_ON['good'], TIPS['lamp_echo']),
             ('nr', 'NOISE RED', SEG_ON['good'], TIPS['lamp_nr']),
             ('mp', 'MULTIPATH', SEG_ON['fair'], TIPS['lamp_mp']),
@@ -503,8 +503,8 @@ class AdvancedWindow:
         mp = max(0.0, tb.mp_excess_db, tb.eq_gain_db if tb.eq_active else 0.0)
         self._lamps.show('stereo', tb.stereo_indicator)
         self._lamps.show('rds', tb.rds_synced)
-        if data:
-            self._lamps.show('data', bool(tb.station.get('synced')))
+        for i, a in enumerate(data):                      # each lit by its own report
+            self._lamps.show(f'data{i}', bool(a.data.get('synced')))
         self._lamps.show('echo', tb.eq_active)
         self._lamps.show('nr', nr > 0.5)
         self._lamps.show('mp', tb.eq_gate or mp >= tb.EQ_MP_ON_DB)
@@ -519,7 +519,7 @@ class AdvancedWindow:
             ('nr', 'Noise reduction', 'help', TIPS['nr'], None),
             ('dip', 'Static cut', 'help', TIPS['static'], None),
             ('st', 'Stereo', 'help', TIPS['stereo'], None)]
-            + ([('data', meter[0], 'help', TIPS['fm_addon'], None)] if meter else [])
+            + [(f'data{i}', m[0], 'help', TIPS['fm_addon'], None) for i, m in meters]
             + [('tr', 'Treble', 'help', TIPS['treble'], None),
                ('bw', 'Bandwidth', 'help', TIPS['bw'], None),
                ('mod', 'Modulation', 'limit', TIPS['mod'], 0.75)])
@@ -537,8 +537,8 @@ class AdvancedWindow:
         self._meters.show('dip', dip, f"{100 * dip:3.0f}%" if getattr(tb, 'dip_hicut', False) else 'off')
         self._meters.show('st', tb.current_blend if tb.stereo_indicator else 0,
                           f"{100 * tb.current_blend:3.0f}%" if tb.stereo_indicator else 'mono')
-        if meter:
-            self._meters.show('data', meter[1], meter[2])
+        for i, m in meters:
+            self._meters.show(f'data{i}', m[1], m[2])
         self._meters.show('tr', tb.current_treble, f"{100 * tb.current_treble:3.0f}%")
         ifk = tb.if_khz or tb.IF_WIDE_KHZ
         occ = tb.occupied_khz

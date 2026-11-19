@@ -130,7 +130,11 @@ class Addon:
         self.reset()
 
     def stereo_decoder(self):
-        return {'out': (self.align, 0), 'main_gain': self.MAIN_GAIN, 'mpx_top': self.MPX_TOP_HZ}
+        # wide: about 300 kHz, wider than the receiver's 200 kHz channel (the echo canceller
+        # would take the trimmed sidebands for echoes). noise_reduction: the subcarrier sits at
+        # 25-75 kHz and leaves 16-22 kHz empty, where the noise reduction measures the noise
+        return {'out': (self.align, 0), 'main_gain': self.MAIN_GAIN, 'mpx_top': self.MPX_TOP_HZ,
+                'wide': True, 'noise_reduction': True}
 
     def reset(self):
         self._m2 = self._m4 = self._f = None

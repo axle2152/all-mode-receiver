@@ -1,11 +1,11 @@
 """
-Install the Crosby add-on (from the all-mode-receiver folder):
-
-    pip install -e addons/crosby
+Install the Crosby add-on: see README.md for the command for your pip (from the
+all-mode-receiver folder, `pip install -e addons/crosby` on Windows; Ubuntu 22.04's own pip
+needs `python3 -m pip install --user --no-build-isolation -e addons/crosby`).
 
 Everything is described here rather than in pyproject.toml on purpose: Ubuntu 22.04's pip
-and setuptools can't read a package's name and entry point from pyproject.toml, and install it
-as "UNKNOWN" with no entry point, so the radio never finds it. setup.py works everywhere.
+builds with setuptools 59.6, which can't read a package's name and entry point from
+pyproject.toml. setup.py works with every pip.
 """
 from setuptools import setup
 

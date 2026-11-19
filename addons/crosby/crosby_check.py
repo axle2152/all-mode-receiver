@@ -29,9 +29,31 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, REPO)
 
 
+def install_command():
+    """The pip command that installs this folder in the Python running this. Tested on Ubuntu
+    22.04 with its own pip and with an upgraded one, on Ubuntu 24.04, and in virtual
+    environments; radioconda on Windows is a conda environment like the last."""
+    import sysconfig
+    try:
+        import pip
+        ver = tuple(int(x) for x in pip.__version__.split('.')[:2])
+    except Exception:
+        ver = (99, 0)
+    env = sys.prefix != sys.base_prefix or os.path.isdir(os.path.join(sys.prefix, 'conda-meta'))
+    opts = []
+    if not env:
+        opts.append('--user')                    # the system's Python: into your own folder
+        if ver < (23, 0):                        # Ubuntu 22.04's pip runs the old install
+            opts.append('--no-build-isolation')  # method in a sandbox that switches --user off
+        elif os.path.exists(os.path.join(sysconfig.get_path('stdlib'), 'EXTERNALLY-MANAGED')):
+            opts.append('--break-system-packages')   # Ubuntu 23.04 and newer ask for it
+    return f'"{sys.executable}" -m pip install {" ".join(opts + ["-e"])} "{HERE}"'
+
+
 def strays():
-    """Installs that point at this folder under another name: Ubuntu 22.04's pip installed the
-    first version of this add-on as "UNKNOWN", with no entry point."""
+    """Installs that point at this folder under another name ("UNKNOWN"): some pip and
+    setuptools pairs can't read a package described in pyproject.toml, and the first version
+    of this add-on was."""
     from importlib import metadata
     here, out = os.path.realpath(HERE), []
     for d in metadata.distributions():
@@ -210,14 +232,14 @@ def main():
         print(f"- The add-on isn't running ({said}).")
     for name in stray:
         print(f"- This folder is installed under the name {name!r}, with nothing that tells the radio\n"
-              "  it's there (Ubuntu 22.04's pip does that with the first version's packaging). Remove\n"
-              f"  it with   \"{sys.executable}\" -m pip uninstall {name}")
+              "  it's there (the first version's packaging, with some pips). Remove it with\n"
+              f"      \"{sys.executable}\" -m pip uninstall {name}")
     if 'NOT INSTALLED' in said:
         print("- The add-on isn't installed in this Python, so the tuner runs without it: a Crosby\n"
-              "  station plays in mono, 6 dB quieter than other stations. Install it with\n"
-              f"      \"{sys.executable}\" -m pip install -e \"{HERE}\"\n"
-              "  (on Ubuntu add --user, and on 23.04 or newer --break-system-packages), then\n"
-              "  restart the tuner. The rest below is with this folder's copy.")
+              "  station plays in mono, 6 dB quieter than other stations. Install it with this,\n"
+              "  the command for this machine's Python and pip:\n"
+              f"      {install_command()}\n"
+              "  then restart the tuner. The rest below is with this folder's copy.")
     found = [r['found'] for r in late]
     q = median([r['q'] for r in late])
     pil = sum(r['has_pilot'] for r in late) / len(late)

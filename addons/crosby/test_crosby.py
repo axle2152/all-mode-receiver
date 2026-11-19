@@ -214,7 +214,7 @@ def main():
     stereo_sum = tone(L + R, 997.0)
     tb.set_freq(90.7e6)                             # away: nothing there
     check('retuned away: let go at once', tb.addon_stereo is None and tb._stereo['gain_db'] == 0.0
-          and tb._stereo['route'] == 'own', f"main channel {tb._stereo['gain_db']:+.1f} dB")
+          and tb._stereo['route'] is None, f"main channel {tb._stereo['gain_db']:+.1f} dB")
     play(tb, 1.5)
     check('nothing there: not Crosby', not a.found and tb.addon_stereo is None, f"found {a.found}")
     tb.set_freq(90.5e6)
@@ -239,7 +239,7 @@ def main():
     tb, found = station('gez')
     a = tb.addons[0].obj
     check('the pilot decoder plays', tb.pilot_present and tb.stereo_indicator
-          and tb._stereo['route'] == 'own', f"pilot {tb.pilot_level:.3f}")
+          and tb._stereo['route'] is None, f"pilot {tb.pilot_level:.3f}")
     check('not Crosby', found is None and not a.found and tb.addon_stereo is None,
           f"offset {a.offset_hz / 1e3:+.1f} kHz")
     tb.stop()

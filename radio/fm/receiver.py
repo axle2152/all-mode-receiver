@@ -147,7 +147,7 @@ class FMStereoReceiver(Receiver):
     INDICATOR_OFF     = 0.001  # and goes out at full mono (0.0 / 0.0 = pilot only)
     INDICATOR_DWELL_S = 0.05   # minimum time between indicator changes
     STEREO_GAIN_DB_S  = 30.0   # a stereo add-on's main-channel make-up eases in this fast
-    _stereo           = None   # a stereo add-on joined to the matrix (_wire_stereo)
+    _stereo           = None   # stereo add-ons joined to the matrix (_wire_stereo)
 
     AGC_CLIP_FRAC     = 1e-4   # fraction of samples at the rails that counts as overload
     AGC_TARGET_HI     = -8.0   # composite dBFS: above this, back off
@@ -582,8 +582,8 @@ class FMStereoReceiver(Receiver):
         return (self.fm_demod, 0)
 
     def _attach_addons(self):
-        """Start the installed add-ons. The first one that brings a stereo decoder joins
-        the matrix; a decoder that can't be used costs one line and the add-on runs on."""
+        """Start the installed add-ons. Each one that brings a stereo decoder joins the
+        matrix; a decoder that can't be used costs one line and the add-on runs on."""
         Receiver._attach_addons(self)
         for a in self.addons:
             dec = a.stereo_decoder()
@@ -591,7 +591,6 @@ class FMStereoReceiver(Receiver):
                 continue
             try:
                 self._wire_stereo(a, dec)
-                break
             except Exception as e:
                 print(f"Add-on '{a.name}' stereo not used: {type(e).__name__}: {e}")
 
@@ -605,17 +604,21 @@ class FMStereoReceiver(Receiver):
         if not 0.5 <= gain <= 4.0:
             raise ValueError(f"main_gain {gain} is out of range")
         top = float(dec.get('mpx_top', 0.0))
+        if self._stereo is None:                 # what every stereo add-on shares
+            self.lmr_k_own = blocks.multiply_const_ff(1.0)   # the pilot decoder's L-R...
+            self.lmr_mix   = blocks.add_ff(1)                # ...or one add-on's
+            self.lpr_k     = blocks.multiply_const_ff(1.0)   # main channel make-up
+            self._stereo = dict(entries=[], route=None, gain_db=0.0, dip_on=False,
+                                dip_own=self._dip_noise_taps(self.DIP_NOISE_HZ))
         # The static cut listens for noise bursts above DIP_NOISE_HZ; if the add-on's signal
         # reaches up there, its program would sound like bursts, so it listens above it
         edge = self.DIP_NOISE_HZ - self.DIP_NOISE_WIDTH / 2
         hz = min(top + self.DIP_NOISE_WIDTH / 2, self.mpx_rate / 2 - self.DIP_NOISE_WIDTH)
-        self.lmr_k_own   = blocks.multiply_const_ff(1.0)     # the pilot decoder's L-R...
-        self.lmr_k_addon = blocks.multiply_const_ff(0.0)     # ...or the add-on's
-        self.lmr_mix     = blocks.add_ff(1)
-        self.lpr_k       = blocks.multiply_const_ff(1.0)     # main channel make-up
-        self._stereo = dict(addon=addon, out=out, main_gain=gain, route='own', gain_db=0.0,
-                            dip_own=self._dip_noise_taps(self.DIP_NOISE_HZ) if top > edge else None,
-                            dip_addon=self._dip_noise_taps(hz) if top > edge else None)
+        self._stereo['entries'].append(dict(
+            addon=addon, out=out, main_gain=gain, wide=bool(dec.get('wide', False)),
+            nr=bool(dec.get('noise_reduction', False)),
+            dip=self._dip_noise_taps(hz) if top > edge else None,
+            k=blocks.multiply_const_ff(0.0)))                # this add-on's L-R into the mix
 
     def _ref_phasor(self):
         """2 x e^(j(90 deg + trim)), times a small droop correction.
@@ -705,9 +708,10 @@ class FMStereoReceiver(Receiver):
         c(self.ref_to_real, (self.lmr_demod, 1))
         c(self.lmr_demod, self.lmr_lp_filter)
         lpr, lmr = self.lpr_delay, self.lmr_lp_filter      # what the matrix takes
-        if self._stereo is not None:                       # a stereo add-on joins in
+        if self._stereo is not None:                       # stereo add-ons join in
             c(self.lmr_lp_filter, self.lmr_k_own, (self.lmr_mix, 0))
-            c(self._stereo['out'], self.lmr_k_addon, (self.lmr_mix, 1))
+            for i, e in enumerate(self._stereo['entries'], 1):
+                c(e['out'], e['k'], (self.lmr_mix, i))
             c(self.lpr_delay, self.lpr_k)
             lpr, lmr = self.lpr_k, self.lmr_mix
 
@@ -930,11 +934,12 @@ class FMStereoReceiver(Receiver):
 
     @property
     def addon_stereo(self):
-        """The stereo add-on's label while this station uses its system, or None."""
-        st = self._stereo
-        if st is None or st['route'] != 'addon' or self._stereo_source() != 'addon':
+        """The label of the stereo add-on whose system this station uses, or None."""
+        st, src = self._stereo, self._stereo_source()
+        if st is None or not isinstance(src, dict) or st['route'] is None \
+                or st['entries'][st['route']] is not src:
             return None
-        return st['addon'].label
+        return src['addon'].label
 
     @property
     def pilot_snr(self):          # legacy read-out names
@@ -1119,7 +1124,7 @@ class FMStereoReceiver(Receiver):
             self.eq_gate, self._gate_t = False, now
             self._reset_addons()
             if self._stereo is not None:          # a new station: the pilot decoder, level as is
-                self._stereo_set_route('own')
+                self._stereo_set_route(None)
                 self._stereo['gain_db'] = 0.0
                 self.lpr_k.set_k(1.0)
 
@@ -1422,7 +1427,7 @@ class FMStereoReceiver(Receiver):
                         self._learn_adv >= self.EQ_LEARN_PROOF_DB if not self.eq_gate
                         else self._learn_adv > self.EQ_LEARN_PROOF_DB / 2)
                     want = want or proven
-                    if self._stereo is not None and self._stereo_source() == 'addon':
+                    if self._stereo is not None and self._stereo_wide():
                         want = False              # a stereo add-on's subcarrier, not echoes (below)
                     if want != self.eq_gate:
                         if now - self._gate_t >= (1.0 if want else 2.0):
@@ -1512,7 +1517,7 @@ class FMStereoReceiver(Receiver):
                 eq_t = 0.0
             elif not self.eq_gate:                # no multipath to fix: leave the signal alone
                 eq_t = 0.0
-            elif self._stereo is not None and self._stereo_source() == 'addon':
+            elif self._stereo is not None and self._stereo_wide():
                 # A stereo add-on's subcarrier spills past the channel, so the circle never
                 # closes: the equalizer would take it for echoes and "fix" the subcarrier away
                 eq_t = 0.0
@@ -1559,6 +1564,8 @@ class FMStereoReceiver(Receiver):
                 self._pilot_on = True
             elif self.pilot_level < self.PILOT_OFF or self._q_slow < self.PILOT_MIN_CNR_DB - 3.0:
                 self._pilot_on = False
+            if self._pilot_vetoed():               # an add-on's own pilot: what passes for 19 kHz isn't
+                self._pilot_on = False
             self.pilot_present = self._pilot_on
 
             if not blanked and self._rds_reset_pending:
@@ -1580,7 +1587,7 @@ class FMStereoReceiver(Receiver):
 
             # ---- noise reduction depth follows the CNR, like the blend ----
             depth = 0.0
-            if self.noise_reduction:
+            if self.noise_reduction and not self._nr_blind():
                 k = (self.NR_OFF_CNR_DB - self.cnr_db) / (self.NR_OFF_CNR_DB - self.NR_FULL_CNR_DB)
                 depth = self.NR_MAX_DB * min(max(k, 0.0), 1.0)
             self.nr.depth_db += max(-0.5, min(0.5, depth - self.nr.depth_db))   # eased
@@ -1622,7 +1629,7 @@ class FMStereoReceiver(Receiver):
             elif src == 'pilot':
                 blend_t = smoothstep(q, self.STEREO_MONO_DB, self.STEREO_FULL_DB)
             else:                                 # the add-on knows where its system gets noisy
-                blend_t = self._addon_quality()
+                blend_t = self._addon_quality(src)
             if self._stereo is not None:
                 blend_t = self._stereo_route(src, blend_t, dt)
             treble_t = (smoothstep(q, self.TREBLE_FULL_DB, self.TREBLE_START_DB)
@@ -1682,50 +1689,77 @@ class FMStereoReceiver(Receiver):
     # Stereo from an add-on
     # ------------------------------------------------------------------
     def _stereo_source(self):
-        """The stereo this station carries: 'pilot' (FM stereo as everyone knows it),
-        'addon' (a stereo add-on's own system, only ever without a pilot) or None."""
+        """The stereo this station carries: 'pilot' (FM stereo as everyone knows it), the
+        entry of a stereo add-on whose system it uses (only ever without a pilot), or None."""
         if self._pilot_on:
             return 'pilot'
         st = self._stereo
-        if st is not None and st['addon'].alive and self.station.get('stereo'):
-            return 'addon'
+        if st is not None:
+            for e in st['entries']:
+                if e['addon'].alive and e['addon'].data.get('stereo'):
+                    return e
         return None
 
-    def _addon_quality(self):
+    def _pilot_vetoed(self):
+        """An add-on says this station carries its own system's pilot (BTSC's, for one, whose
+        L-R can put energy right on 19 kHz), so whatever looks like a 19 kHz pilot isn't one."""
+        return any(a.alive and a.data.get('own_pilot') for a in self.addons)
+
+    def _nr_blind(self):
+        """The station uses a stereo add-on whose signal fills the 16-22 kHz stretches the noise
+        reduction measures the noise in (unless its decoder says otherwise): it would take
+        program for noise, so it stays out."""
+        src = self._stereo_source() if self._stereo is not None else None
+        return isinstance(src, dict) and not src['nr']
+
+    def _stereo_wide(self):
+        """The station uses a stereo add-on whose signal is wider than the channel."""
+        src = self._stereo_source()
+        return isinstance(src, dict) and src['wide']
+
+    def _addon_quality(self, e):
         """How much of the add-on's L-R to blend in (it reports 0..1)."""
         try:
-            return min(max(float(self.station.get('stereo_quality', 0.0)), 0.0), 1.0)
+            return min(max(float(e['addon'].data.get('stereo_quality', 0.0)), 0.0), 1.0)
         except (TypeError, ValueError):
             return 0.0
 
     def _stereo_set_route(self, route):
+        """The matrix's L-R from the pilot decoder (None) or from add-on number route."""
         st = self._stereo
         st['route'] = route
-        addon = route == 'addon'
-        self.lmr_k_own.set_k(0.0 if addon else 1.0)
-        self.lmr_k_addon.set_k(1.0 if addon else 0.0)
-        if st['dip_addon'] is not None:
-            self.nb_hp.set_taps(st['dip_addon'] if addon else st['dip_own'])
+        self.lmr_k_own.set_k(1.0 if route is None else 0.0)
+        for i, e in enumerate(st['entries']):
+            e['k'].set_k(1.0 if i == route else 0.0)
+        dip = st['entries'][route]['dip'] if route is not None else None
+        if dip is not None:
+            self.nb_hp.set_taps(dip)
+            st['dip_on'] = True
+        elif st['dip_on']:
+            self.nb_hp.set_taps(st['dip_own'])
+            st['dip_on'] = False
 
     def _stereo_route(self, src, blend_t, dt):
-        """Point the matrix at the pilot decoder's L-R or the add-on's, and ease the main
+        """Point the matrix at the pilot decoder's L-R or an add-on's, and ease the main
         channel to the level the add-on's system needs while the station uses it. The L-R
         source changes only at full mono, so it can't click: until then the blend comes down."""
         st = self._stereo
-        gain = st['main_gain']
-        if src == 'addon':                        # the add-on may measure the gain it needs now
-            try:
-                g = float(self.station.get('main_gain', gain))
+        e = src if isinstance(src, dict) else None
+        tgt = 0.0
+        if e is not None:
+            gain = e['main_gain']
+            try:                                  # the add-on may measure the gain it needs now
+                g = float(e['addon'].data.get('main_gain', gain))
                 gain = g if 0.5 <= g <= 8.0 else gain
             except (TypeError, ValueError):
                 pass
-        tgt = 20 * math.log10(gain) if src == 'addon' else 0.0
+            tgt = 20 * math.log10(gain)
         step = self.STEREO_GAIN_DB_S * dt
         g = st['gain_db'] + max(-step, min(step, tgt - st['gain_db']))
         if g != st['gain_db']:
             st['gain_db'] = g
             self.lpr_k.set_k(10 ** (g / 20))
-        want = 'addon' if src == 'addon' else 'own'
+        want = st['entries'].index(e) if e is not None else None
         if want != st['route']:
             if self.current_blend > 0.01:
                 return 0.0
