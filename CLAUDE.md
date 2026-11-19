@@ -55,6 +55,9 @@ more modes and amateur digital modes (see `docs/ROADMAP.md`). Owner: Michael Fol
 - Windows (radioconda) and Ubuntu 22.04 or newer. On 22.04 that means Python 3.10, Pillow
   9.0 (no `getlength` on the bitmap font, no `Image.Resampling`), Tk 8.6, numpy 1.21 and
   GNU Radio 3.10.1. Fonts: Windows fonts first, then Nimbus Sans, Liberation or DejaVu.
+  GNU Radio 3.10.1 lacks some Python methods 3.10.9 has (a PLL's `get_frequency()`), and its
+  `hier_block2` reaches its own methods through `__getattr__`: a stand-in block with a
+  catch-all `__getattr__` must ask `self._impl` first.
 - The runnable scripts stay executable (mode 100755) with Unix line endings
   (`.gitattributes`), so `./quartz_tuner_ui.py` works on Linux.
 
@@ -144,6 +147,11 @@ The cloud container is Ubuntu 24.04. What worked:
   with `tests/test_window.py --fonts /usr/share/fonts/truetype/dejavu`.
 - Screenshots for before/after comparisons: Pillow's `ImageGrab.grab(bbox=..., xdisplay=...)`
   on the system Python under Xvfb.
+- GNU Radio 3.10.1 itself (Ubuntu 22.04's): in the 22.04 chroot described next, with
+  `https://archive.ubuntu.com` in its sources.list (the proxy refuses plain HTTP),
+  `apt-get install --no-install-recommends gnuradio gr-osmosdr python3-scipy` with
+  https_proxy set, `/dev/shm` bind-mounted as well as `/dev` (or GNU Radio runs out of
+  buffers), and the repository bind-mounted inside.
 - Installs on Ubuntu 22.04 (pip quirks a venv can't show): a real 22.04 in a chroot.
   `debootstrap --variant=minbase jammy <dir>` (about 15 minutes), jammy-updates and
   jammy-security in its sources.list, `apt-get install python3-pip ca-certificates sudo`,
