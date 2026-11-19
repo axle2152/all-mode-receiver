@@ -8,9 +8,10 @@ sound as good as the signal allows, clean up what it can, play at a correct, con
 and have meters and visuals for casual listeners, broadcast people, and hams and shortwave
 listeners alike.
 
-**Next up:** a mock-up of modes on the face (mode keys and legends, the filter key, the fine-tune
-keys), then Phase 6's HF receiver with SSB, CW, DSB and synchronous AM, then the rest of
-Phase 5 (band plan, regions, band row, preset pages). Phases 0 to 4 are done.
+**Next up:** the new face the owner chose (Phase 5 below): bigger text and a window that grows to
+fit the screen first, with the hint buttons as real keys; then the Bands panel and the mode keys;
+then Phase 6's HF receiver with SSB, CW, DSB and synchronous AM, and narrowband FM. FM at a lower
+sample rate can go in any time. Phases 0 to 4 are done.
 
 ## Phase 0: Linux and the README (done)
 
@@ -93,7 +94,8 @@ the blanker row), and clicking Noise reduction switched static cut on.
   expander's detectors must not hear the pilot (band-limited like the compressor's), its noise
   must be allowed for (measured on the carrier's other phase), and the pilot PLL must not see
   the pilot's mirror (a complex band-pass): each cost 10 to 30 dB of separation.
-- [ ] BTSC on the bench: the NTSC transmitter on channel 6, a dongle on 87.7.
+- [x] BTSC on the bench: the NTSC transmitter, a dongle receiving it (channel 24, 535.75 MHz, since
+  channel 6 is in use locally).
   First try (channel 24, 535.75 MHz with the band limits overridden, on the Ubuntu 22.04
   laptop): no BTSC, and now and then a segfault on start. Both found and fixed. GNU Radio
   3.10.1 offers no `get_frequency()` on its PLL block in Python, so the add-on never saw its
@@ -103,8 +105,10 @@ the blanker row), and clicking Noise reduction switched static cut on.
   (15 times in 15 on 3.10.1 and on 3.10.9 when forced); they're read only after `start()`
   now, and `test_gnuradio.py` forces the race. The reference transmitter's own output (15
   Msps, 8-bit, as sent to the HackRF) plays BTSC through the receiver at 535.75 MHz, up to
-  25 kHz off-centre. Still to fix: an off-centre carrier puts a steady offset on L+R that
-  BTSC's 9.5 dB raises into the final clipper (2 dB lost at 25 kHz off, silence at 50).
+  25 kHz off-centre. Second try, after those fixes: BTSC STEREO, and it plays well. The
+  off-centre clipping (an off-centre carrier puts a steady offset on L+R that BTSC's 9.5 dB
+  raises into the final clipper: 2 dB lost at 25 kHz off, silence at 50) is on the back burner:
+  nothing audible on the bench.
 - [x] Crosby on the bench: the HackRF sending the fixed `crosby_tx.grc`, a dongle receiving.
   First try: no Crosby. `addons/crosby/crosby_check.py` found the add-on working (CROSBY STEREO
   from the first second, subcarrier steady at 50.0 kHz) but not installed: Ubuntu 22.04's pip had
@@ -134,7 +138,9 @@ the blanker row), and clicking Noise reduction switched static cut on.
   strongest energy anywhere from 23 to 27.5 Hz counted. `tests/test_gnuradio.py` checks real
   pilots (found as before, down to 12 dB C/N), one with an add-on saying mono, a strong tone
   1.5 Hz off, and broad energy around 25 Hz; the old test failed the last three.
-- [ ] FM at a lower sample rate too, like AM (the RTL-SDR can drop samples at 2.4 Msps). Its gain
+- [ ] FM at a lower sample rate too, like AM (the RTL-SDR can drop samples at 2.4 Msps; the owner
+  suspects it costs RDS more than is noticed: the RDS error rate in the Advanced window is the
+  measure, before and after). Its gain
   control and quality thresholds were tuned at 2.4 Msps, so check them on the bench, or with
   `tests/test_gnuradio.py` and the trace tool, before and after.
 
@@ -206,11 +212,46 @@ kHz up to 30 MHz, and the S-meter where the mock-ups put it:
 
 ## Phase 5: Bands, modes and presets
 
-- [ ] Modes are chosen on the radio's face, not in Settings, with the mode shown on the
-  display. A filter key on the face steps through the current mode's widths (taking over from
-  the AM width and FM bandwidth rows in Settings).
-- [ ] A band plan: long and medium wave, the shortwave broadcast bands (120 to 11 m), the
-  amateur bands, VHF and UHF. Each band has its default mode, tuning step and filter widths.
+The face the owner chose (version 2 of the mock-ups): a third panel, Bands, between the tuner and
+the monitor, and modes on the tuner.
+
+- [ ] Bigger text: nothing on the tuner or the monitor under 7-8 pt. At full size (pixels):
+  display legends 13 (were 9.5), the signal scale 11 (8), the monitor's meter labels and scales
+  11-12 (7-8), the scope's lettering 9.5-10.5 (6-7), printed labels 11.5-13 (9.5-11), key
+  legends 13 (11-12). The tuner's and the monitor's displays grow taller (about 154 px, from
+  122) to fit it, the monitor's rows spread out.
+- [ ] The window grows to fit the screen. Today it never goes past full size (1480 px wide),
+  which leaves room on a 1080p screen and draws it at about half the size you'd expect on a 4K
+  screen with the desktop scaled 200%. A size choice in Settings too.
+- [ ] The hint buttons become real keys: Power and Monitor (show the monitor), Advanced and
+  Settings on the tuner's left; METER becomes "S units" (the signal bar in S units, or signal
+  quality) beside Band info under the presets; FREQ moves to the Bands panel as Direct.
+- [ ] The Bands panel, a key for every band, grouped under printed headings:
+  - Shortwave (metres): 120, 90, 75, 60, 49, 41, 31, 25, 22, 19, 16, 15, 13, 11; with
+    Broadcast (LW, MW, FM) at the right of that row
+  - Amateur (metres): 160, 80, 60, 40, 30, 20, 17, 15, 12, 10, 6, 2, 1.25, 70 cm, 33 cm,
+    23 cm, its keys the same width as the shortwave keys so the columns line up; with
+    Frequency (Direct: type it on the preset keys) at the right
+  - Public service: Air, Marine, Weather, Police/Fire; Personal: CB, FRS/GMRS, MURS;
+    Repeater: Rev and Tone
+- [ ] A band plan behind those keys: each band's edges, default mode, tuning step and filter
+  widths, and the parts of a band with a mode of their own.
+- [ ] Mode keys on the tuner: AM, FM, SSB, CW. Pressing one again steps to its next kind: AM,
+  synchronous AM on USB or LSB; FM broadcast, narrow (+/-5 kHz), narrow (+/-2.5 kHz); SSB on
+  USB or LSB. Width steps the mode's filters (the CW filters too, taking over from the AM width
+  and FM bandwidth rows in Settings); Squelch for narrow FM; Fine tune (two small keys) nudges
+  by less than the band's step (10 Hz on SSB and CW, 100 Hz or so on AM).
+- [ ] Each band picks its usual mode, and so does tuning into a part of a band with its own: AM
+  on medium wave, shortwave and the airband; narrow FM on 2 m, marine and weather; on the
+  amateur HF bands LSB below 10 MHz and USB above (20 m is USB), and CW in their CW parts.
+  Where there's no usual mode, the radio stays on the one it's on. SSB and CW need Phase 6.
+- [ ] The tuner display: legends AM, FM, USB, LSB, CW; AUTO, STEREO, MONO, RDS, TONE; TUNED,
+  MEMORY. A second dot-matrix line. Band info (a latching key) switches the text between the
+  band information (band, kind of mode, filter, repeater offset, tone) and the station's own
+  data (RDS, RBDS, PMDS: a shortwave station could carry PMDS); on modes that can carry no data
+  (SSB, CW) it stays on band information.
+- [ ] Repeaters: Rev listens on the input, at the band's usual offset (2 m +/-600 kHz, 1.25 m
+  -1.6 MHz, 70 cm +/-5 MHz); CTCSS (PL) and DCS decoded and shown, and tone squelch.
 - [ ] Regions, chosen in Settings, because band edges and channel spacing depend on where you
   are:
   - AM: 530 to 1700 kHz in 10 kHz steps in the Americas; 531 to 1602 kHz in 9 kHz steps in
@@ -224,16 +265,8 @@ kHz up to 30 MHz, and the S-meter where the mock-ups put it:
     2, 1 and 3), and a few by country (60 m).
   - Public service and utility bands differ by country too (airband channels 8.33 kHz apart
     in much of Europe and 25 kHz in the US; CB on AM in the US and mostly FM in Europe).
-- [ ] A row of band keys on the face, grouped: broadcast (long wave, medium wave, the
-  shortwave bands, FM), amateur (160 m to 70 cm), public service and utility (air, marine,
-  weather and so on). Picking a band picks its usual mode: on the amateur bands LSB below
-  10 MHz and USB above (20 m is USB), AM on the airband, narrowband FM on marine and weather.
-  Needs SSB and CW first (Phase 6).
 - [ ] Tuning steps by mode, with a setting to change them: 5 kHz for AM and narrowband FM on
   the shortwave and amateur bands, 10 Hz or 1 Hz for SSB and CW.
-- [ ] Fine-tune keys: a pair of small keys that nudge the frequency by a fine amount whatever
-  the band's step (10 Hz on SSB and CW, 100 Hz or so on AM), to settle on a station or a
-  voice.
 - [ ] Presets store band, mode, frequency and filter, in pages of 24. Existing presets carry
   over.
 
