@@ -248,9 +248,11 @@ the monitor, and modes on the tuner.
     Repeater: Rev and Tone
   Done: a third unit between the tuner and the monitor. Each band key tunes to its band in its
   usual receiver and remembers where it was left; Police/Fire steps through VHF, UHF and
-  800 MHz; Direct finds the band a typed frequency is in; presets find theirs. FM/AM and
-  Direct left the tuner. Bands that need narrow FM, SSB or CW say NOT YET until those
-  receivers exist, and so do Rev and Tone.
+  800 MHz; Direct finds the band a typed frequency is in; presets find theirs. FM/AM left the
+  tuner; Direct sits under the Tuning keys (the owner's choice), beside Wide. A Bands key (and
+  Settings > Panel) shows or hides the panel. A band change across 28.8 MHz reopens the dongle
+  (direct sampling below, the tuner above), and says so. Bands that need narrow FM, SSB or CW
+  say NOT YET until those receivers exist, and so do Rev and Tone.
 - [x] A band plan behind those keys: each band's edges, default mode, tuning step and filter
   widths, and the parts of a band with a mode of their own. Done (radio/ui/bandplan.py,
   tests/test_bandplan.py), for the Americas; filter widths come with the receivers.

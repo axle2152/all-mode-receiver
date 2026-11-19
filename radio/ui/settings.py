@@ -178,6 +178,10 @@ class SettingsWindow:
                                variable=self._size_var, width=6, command=self._size_changed, **rb)
             w.pack(side=tk.LEFT, padx=1)
             tips.bind(w, TIPS['ui_size'])
+        r = row(t, 'BANDS PANEL')
+        self._bands_var = tk.BooleanVar(value=self.bands_on)
+        tk.Checkbutton(r, text='Show under the tuner', variable=self._bands_var, command=self._toggle_bands,
+                       **cb).pack(side=tk.LEFT)
         r = row(t, 'MONITOR UNIT')
         self._mon_var = tk.BooleanVar(value=self.monitor_on)
         tk.Checkbutton(r, text='Show under the tuner', variable=self._mon_var, command=self._toggle_monitor,

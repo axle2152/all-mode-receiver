@@ -95,19 +95,21 @@ LABEL_PX, SMALL_PX = 13.0, 11.5       # printed labels, and the softer notes
 KEY_PX, PAD_PX = 13.0, 16.0           # key legends, and the preset keys' digits
 
 # Tuner layout (base coordinates): three rows of keys either side of the display
-POWER_KEY  = (30, 107, 98, 133)
-MONITOR_KEY = (108, 107, 184, 133)      # shows or hides the monitor unit
-ADV_KEY    = (30, 159, 112, 185)        # the Advanced window
-SET_KEY    = (120, 159, 184, 185)       # Settings
-WIN        = (200, 20, 800, 180)
-VFD_BOX    = (203, 23, 797, 177)
-PAD_X, PAD_W, PAD_GAP = 836, 56, 10
+POWER_KEY  = (30, 107, 86, 133)
+BANDS_KEY  = (96, 107, 148, 133)        # shows or hides the Bands panel
+MONITOR_KEY = (154, 107, 216, 133)      # shows or hides the monitor unit
+ADV_KEY    = (30, 159, 120, 185)        # the Advanced window
+SET_KEY    = (128, 159, 216, 185)       # Settings
+WIN        = (230, 20, 830, 180)
+VFD_BOX    = (233, 23, 827, 177)
+PAD_X, PAD_W, PAD_GAP = 866, 52, 8
 PAD_ROWS   = ((51, 87), (97, 133))
-MEM_KEY    = (836, 159, 906, 185)
-MONO_KEY   = (914, 159, 978, 185)
-METER_KEY  = (1002, 159, 1068, 185)     # S units (or signal quality) on the signal bar
+MEM_KEY    = (866, 159, 930, 185)
+MONO_KEY   = (938, 159, 998, 185)
+METER_KEY  = (1006, 159, 1070, 185)     # S units (or signal quality) on the signal bar
 TUNE_DOWN  = (1192, 51, 1314, 83)
 TUNE_UP    = (1328, 51, 1450, 83)
+DIRECT_KEY = (1316, 107, 1384, 133)     # type a frequency on the preset keys
 WIDE_KEY   = (1392, 107, 1450, 133)     # AM filter: Wide
 LABEL_Y, LOWER_LABEL_Y, ROW3_LABEL_Y = 43, 99, 151
 

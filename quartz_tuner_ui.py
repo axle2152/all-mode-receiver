@@ -15,6 +15,7 @@ The panels are drawn to fit the screen (Settings > Panel > Size: FIT, or a fixed
 
 Tuner (top unit)
     Power           latching; off mutes at once and frees the dongle after 60 s
+    Bands           latching: shows or hides the Bands panel
     Monitor         latching: shows or hides the monitor unit
     Advanced        the Advanced window (diagnostics); down while it's open
     Settings        reception, panel (nameplate, size, monitor) and display colours;
@@ -34,6 +35,13 @@ Tuner (top unit)
                     second when it starts.
     Mono            latching Stereo key, both bands: FM mono, or AM with the
                     C-QUAM stereo ignored
+    Direct          direct frequency entry, down while you type:
+                    then digits (preset keys, keyboard or keypad),
+                    Enter to tune, Esc to cancel, Backspace to correct. FM: 885 =
+                    88.5 MHz, or type a decimal (162.55); AM: kHz (1720), or a
+                    decimal for MHz (5.905). It goes to the band the frequency is in
+                    (9580 = 31 m shortwave, in AM); outside every band it needs
+                    Band limits: Override.
     Display         TUNED = the retune has settled and there is a carrier the
                     receiver can hold; STEREO = the back end's stereo indicator.
                     The bar shows signal quality (POOR / FAIR / GOOD, from the
@@ -52,14 +60,8 @@ Bands (middle unit)
     Personal        CB (AM), FRS/GMRS, MURS
     Repeater        Rev (listen on the input) and Tone (CTCSS)
                     Each band remembers where you left it. Bands that need narrow FM,
-                    SSB or CW say NOT YET until those receivers are built.
-    Direct          direct frequency entry, down while you type:
-                    then digits (preset keys, keyboard or keypad),
-                    Enter to tune, Esc to cancel, Backspace to correct. FM: 885 =
-                    88.5 MHz, or type a decimal (162.55); AM: kHz (1720), or a
-                    decimal for MHz (5.905). It goes to the band the frequency is in
-                    (9580 = 31 m shortwave, in AM); outside every band it needs
-                    Band limits: Override.
+                    SSB or CW say NOT YET until those receivers are built. Crossing
+                    28.8 MHz the dongle reopens: direct sampling below, its tuner above.
 
 Monitor (bottom unit; needs rx_meters.py next to fm_stereo.py)
     L / R           station audio level after de-emphasis, ahead of volume:

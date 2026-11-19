@@ -288,7 +288,16 @@ def child(appdir, band, fonts, secs):
         root.winfo_screenwidth, root.winfo_screenheight = sw, sh
         # the Bands panel: a band key tunes there in its usual receiver, remembers where it was
         # left; Direct finds the band a frequency is in; a band whose receiver isn't built says so
-        kb = {kid: key_for_band(kid) for kid in ('SW41', 'FM', 'MW', 'HAM2')}
+        kbnd = key_for(app._toggle_bands)
+        if kbnd is None:
+            mine.append('no Bands key')
+        else:
+            for _ in range(2):                          # hide the Bands panel, then show it again
+                press(kbnd)
+                if kbnd._down != app.bands_on or bool(app.bcanvas.winfo_ismapped()) != app.bands_on:
+                    mine.append(f'Bands key: shown {app.bands_on}, mapped {app.bcanvas.winfo_ismapped()}, '
+                                f'key down {kbnd._down}')
+        kb = {kid: key_for_band(kid) for kid in ('SW41', 'FM', 'MW', 'HAM2', 'AIR')}
         if None in kb.values():
             mine.append(f'band keys missing: {[k for k, v in kb.items() if v is None]}')
         else:
@@ -308,11 +317,16 @@ def child(appdir, band, fonts, secs):
             msg = (app._dm_msg or ('',))[0]
             if app.bandkey != 'SW41' or 'NOT YET' not in msg:
                 mine.append(f'2 m (no narrow FM yet): band {app.bandkey}, message {msg!r}')
+            press(kb['AIR'])                            # above 28.8 MHz: the dongle's tuner
+            msg = (app._dm_msg or ('',))[0]
+            if (app.bandkey, app.band, msg) != ('AIR', 'AM', 'QUADRATURE TUNER'):
+                mine.append(f'41 m to Air: band {app.bandkey} on {app.band}, message {msg!r}')
             app._direct_start()
             app._direct = '9580'
-            app._direct_enter()
-            if (app.bandkey, app.band, round(app.freq)) != ('SW31', 'AM', 9580000):
-                mine.append(f'typed 9580: band {app.bandkey} on {app.band} at {app.freq / 1e3:g} kHz')
+            app._direct_enter()                         # and back below: direct sampling
+            msg = (app._dm_msg or ('',))[0]
+            if (app.bandkey, app.band, round(app.freq), msg) != ('SW31', 'AM', 9580000, 'DIRECT SAMPLING'):
+                mine.append(f'typed 9580: band {app.bandkey} on {app.band} at {app.freq / 1e3:g} kHz, message {msg!r}')
             press(kb['MW' if band == 'AM' else 'FM'])     # back where this run started
         problems.extend(mine)
         real_print('INFO keys and size:', 'ok' if not mine else '; '.join(mine))

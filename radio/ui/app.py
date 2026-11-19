@@ -37,7 +37,7 @@ from .monitor import DelayLine, MonitorLogic
 from .settings import SettingsWindow
 from . import bandplan as BP
 from .theme import (
-    ADV_KEY, BAND_GAP, BAND_KEY_H, BAND_ROWS, BAND_W, BAND_X0, BAND_X1, BANDS_H, BASE_H, BASE_W,
+    ADV_KEY, BANDS_KEY, DIRECT_KEY, BAND_GAP, BAND_KEY_H, BAND_ROWS, BAND_W, BAND_X0, BAND_X1, BANDS_H, BASE_H, BASE_W,
     COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, GROUP_GAP, HEADING_PX,
     DOT_FIELDS, ECHO_KEY, FREEZE_KEY, HOLD_KEY, IF_KEY, KEY_PX, LABEL_PX, LABEL_Y, LIP,
     LOWER_LABEL_Y, MEM_KEY, METER_KEY, MONITOR_KEY, MONO_KEY, MPX_KEY, PAD_GAP, PAD_PX, PAD_ROWS,
@@ -101,6 +101,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.pi_calls   = dict(pick('pi_calls', {}))
         self.badge      = saved.get('badge', BADGE_DEFAULT)
         self.monitor_on = bool(saved.get('monitor', True))
+        self.bands_on = bool(saved.get('bands', True))
         self.meter_mode = saved.get('meter_mode', 'ppm')
         self.peak_hold  = bool(saved.get('peak_hold', True))
         self.scope_mode = saved.get('scope_mode', 'IF')
@@ -123,6 +124,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.lmr_gain   = lmr_gain
         self._backend_args = dict(lmr_gain=lmr_gain, log_path=log_path, record_iq=record_iq)
         self._run_mode = None                           # (band, AM source, FM device args) running now
+        self._pending_mode = None                       # what a queued restart will open
 
         self.tb = None
         self.running, self._radio_run, self._restart_req = True, True, False
@@ -239,7 +241,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         chans = raw.get('channels')
         if isinstance(chans, list) and len(chans) == N_CHANNELS:
             out['channels'] = [self._parse_channel(c) for c in chans]
-        for key in ('fm_mono', 'power', 'agc', 'monitor', 'peak_hold'):
+        for key in ('fm_mono', 'power', 'agc', 'monitor', 'bands', 'peak_hold'):
             if isinstance(raw.get(key), bool):
                 out[key] = raw[key]
         for key, name in (('stereo_blend', 'blend'), ('hi_cut', 'hicut'), ('dip_hicut', 'dip_hicut'),
@@ -356,6 +358,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             'noise_reduction': bool(self.noise_red),
             'badge': self.badge,
             'monitor': bool(self.monitor_on),
+            'bands': bool(self.bands_on),
             'ui_size': self.ui_size,
             'bandkey': self.bandkey,
             'band_freqs': {key: round(v, 1) for key, v in self._band_freqs_now().items()},
@@ -573,7 +576,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.canvas = c = tk.Canvas(self.root, width=W, height=H, highlightthickness=0, bd=0)
         c.pack()
         self.bcanvas = bc = tk.Canvas(self.root, width=W, height=round(BANDS_H * s), highlightthickness=0, bd=0)
-        bc.pack(pady=(round(RACK_GAP * s), 0))
+        if self.bands_on:
+            bc.pack(pady=(round(RACK_GAP * s), 0))
         self.mcanvas = mc = tk.Canvas(self.root, width=W, height=H, highlightthickness=0, bd=0)
         if self.monitor_on:
             mc.pack(pady=(round(RACK_GAP * s), 0))
@@ -599,6 +603,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.keys = []
         K = lambda cv, *a, **kw: self.keys.append(Key(cv, *a, s=s, **kw)) or self.keys[-1]
         K(c, POWER_KEY, on_press=self._toggle_power, latched=lambda: self.power_on)
+        K(c, BANDS_KEY, legend='Bands', size=KEY_PX, on_press=self._toggle_bands,
+          latched=lambda: self.bands_on)
         K(c, MONITOR_KEY, legend='Monitor', size=KEY_PX, on_press=self._toggle_monitor,
           latched=lambda: self.monitor_on)
         K(c, ADV_KEY, legend='Advanced', size=KEY_PX, on_press=self._toggle_advanced,
@@ -618,12 +624,11 @@ class TunerApp(SettingsWindow, AdvancedWindow):
           on_press=lambda: self._tune_press(-1), on_release=self._tune_release)
         K(c, TUNE_UP, legend='Up', icon='right', size=KEY_PX,
           on_press=lambda: self._tune_press(+1), on_release=self._tune_release)
+        K(c, DIRECT_KEY, legend='Direct', size=KEY_PX, on_press=self._direct_toggle,
+          latched=lambda: self._direct is not None)
         K(c, WIDE_KEY, legend='Wide', size=KEY_PX, on_press=self._toggle_wide, latched=lambda: self.am_wide)
         for kid, label, box in self._band_layout()[0]:
-            if kid == 'DIRECT':
-                K(bc, box, legend=label, size=KEY_PX, on_press=self._direct_toggle,
-                  latched=lambda: self._direct is not None)
-            elif kid in ('REV', 'TONE'):                 # narrow FM's, when it's built
+            if kid in ('REV', 'TONE'):                 # narrow FM's, when it's built
                 K(bc, box, legend=label, size=KEY_PX, on_press=lambda: self._message('NARROW FM NOT YET'))
             else:
                 K(bc, box, legend=label, size=KEY_PX, on_press=lambda kid=kid: self._band_key(kid),
@@ -713,19 +718,20 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         lab, small = font('label', LABEL_PX * k), font('label', SMALL_PX * k)
         self._nameplate(d, self.badge)
         self._draw_bezel(d, WIN)
-        boxes = [POWER_KEY, MONITOR_KEY, ADV_KEY, SET_KEY, MEM_KEY, MONO_KEY, METER_KEY,
-                 TUNE_DOWN, TUNE_UP, WIDE_KEY]
+        boxes = [POWER_KEY, BANDS_KEY, MONITOR_KEY, ADV_KEY, SET_KEY, MEM_KEY, MONO_KEY, METER_KEY,
+                 TUNE_DOWN, TUNE_UP, DIRECT_KEY, WIDE_KEY]
         for i in range(10):
             row, col = divmod(i, 5)
             xa = PAD_X + col * (PAD_W + PAD_GAP)
             boxes.append((xa, PAD_ROWS[row][0], xa + PAD_W, PAD_ROWS[row][1]))
         self._draw_wells(d, boxes)
         pad_r = PAD_X + 5 * PAD_W + 4 * PAD_GAP
-        for x, y, text in ((POWER_KEY[0], LOWER_LABEL_Y, 'Power'), (MONITOR_KEY[0], LOWER_LABEL_Y, 'Show'),
+        for x, y, text in ((POWER_KEY[0], LOWER_LABEL_Y, 'Power'), (BANDS_KEY[0], LOWER_LABEL_Y, 'Show'),
                            (ADV_KEY[0], ROW3_LABEL_Y, 'Open'),
-                           (PAD_X, LABEL_Y, 'Preset channels 1-24'),
+                           (PAD_X, LABEL_Y, 'Presets 1-24'),
                            (MONO_KEY[0], ROW3_LABEL_Y, 'Stereo'), (METER_KEY[0], ROW3_LABEL_Y, 'Display'),
                            (TUNE_DOWN[0], LABEL_Y, 'Tuning'),
+                           (DIRECT_KEY[0], LOWER_LABEL_Y, 'Frequency'),
                            (WIDE_KEY[0], LOWER_LABEL_Y, 'AM filter')):
             draw_text(d, x * k, y * k, text, lab, PRINT)
         draw_text(d, pad_r * k, LABEL_Y * k, 'To store: Memory, then channel', small, PRINT_SOFT, align='r')
@@ -752,8 +758,6 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         bc = group('broadcast')
         run(BAND_X1 - sum(wide(l) for _, l in bc) - BAND_GAP * (len(bc) - 1), y0, bc, BP.GROUPS['broadcast'][0])
         run(BAND_X0, y1, group('amateur'), BP.GROUPS['amateur'][0], BAND_W)
-        dw = wide('Direct') + 12
-        run(BAND_X1 - dw, y1, [('DIRECT', 'Direct')], 'FREQUENCY', dw)
         x = run(BAND_X0, y2, group('public'), BP.GROUPS['public'][0]) + GROUP_GAP
         x = run(x, y2, group('personal'), BP.GROUPS['personal'][0]) + GROUP_GAP
         run(x, y2, [('REV', 'Rev'), ('TONE', 'Tone')], 'REPEATER')
@@ -767,9 +771,6 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         hf = font('badge', HEADING_PX * k)
         for x, y, text in heads:
             draw_text(d, x * k, y * k, text, hf, PRINT, tracking=0.8 * k)
-        direct = next(box for kid, _, box in keys if kid == 'DIRECT')
-        draw_text(d, (direct[0] - 12) * k, (direct[1] + 20) * k, 'Type it on the preset keys',
-                  font('label', SMALL_PX * k), PRINT_SOFT, align='r')
 
     def _draw_monitor_panel(self, d):
         k = self.s * SS
@@ -929,7 +930,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._tuned_t = time.monotonic()
         self._q_on = False
         self._mon_retuned()
-        self._restart_req = True
+        self._restart_req, self._pending_mode = True, (band,) + self._source_for(band, self.freq)
         if self._adv_visible:
             self._spec_reset()
         self._save_settings()
@@ -1034,11 +1035,13 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._q_on = False
         self._mon_retuned()
         mode = (self.band,) + self._source_for(self.band, self.freq)
-        if self._run_mode is not None and mode != self._run_mode:
-            below = self.freq < XOVER_HZ                 # across 28.8 MHz: reopen the dongle
-            self._message('DIRECT SAMPLING' if below else 'QUADRATURE TUNER')
-            self._restart_req = True
-            return
+        if self._run_mode is not None:
+            pending = self._pending_mode if self._restart_req else None
+            if mode != (pending or self._run_mode):      # across 28.8 MHz (or back): reopen the dongle
+                self._message('DIRECT SAMPLING' if self.freq < XOVER_HZ else 'QUADRATURE TUNER')
+            if mode != self._run_mode or pending is not None:
+                self._restart_req, self._pending_mode = True, mode   # it opens at this frequency
+                return
         if self.tb:
             self.tb.set_freq(self.freq)
 
@@ -1540,6 +1543,18 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._mon_reset_req = True
         self._ifs, self._echo, self._mpx_avg, self._am_if_avg = None, None, None, None
         self._mpx_stats = {}
+
+    def _toggle_bands(self):
+        """The Bands key, or Settings > Panel: show or hide the Bands panel."""
+        self.bands_on = not self.bands_on
+        if self.bands_on:
+            self.bcanvas.pack(after=self.canvas, pady=(round(RACK_GAP * self.s), 0))
+        else:
+            self.bcanvas.pack_forget()
+        if getattr(self, '_bands_var', None) is not None:
+            self._bands_var.set(self.bands_on)
+        self._refresh_keys()
+        self._save_settings()
 
     def _toggle_monitor(self):
         self.monitor_on = not self.monitor_on
