@@ -27,7 +27,8 @@ from .constants import (
     OVER_LAMP_S, PILOT_COMP, POWER_SLEEP_S, RDS_CAL_STEREO_TOOL, RDS_COMP, RDS_CREST,
     RDS_RT_PAUSE_S, RDS_SCROLL_S, RTL_RANGE, SEEK_CONFIRM_N, SEEK_MIN_CNR_DB, SEEK_QUICK_N,
     SEEK_TIMEOUT_S, SETTINGS_FALLBACK, SETTINGS_NAME, SIG_FALL_PER_S, SIG_RANGE, SIG_STEPS,
-    TUNED_HYST_DB, TUNED_SETTLE_S, TUNER_MIN, UI_TICK_MS, XOVER_HZ, _ASSET_DIR)
+    TUNED_HYST_DB, TUNED_SETTLE_S, TUNER_MIN, UI_TICK_MS, XOVER_HZ, _ASSET_DIR,
+    FIT_WIDTH, SCALE_MAX, SCALE_MIN, UI_SIZES)
 from .crt import Crt
 from .fonts import draw_text, font, text_width, use_nimbus_in_tk
 from .frequency import as_text, freq_digits
@@ -35,13 +36,14 @@ from . import smeter
 from .monitor import DelayLine, MonitorLogic
 from .settings import SettingsWindow
 from .theme import (
-    AM_KEY, BASE_H, BASE_W, COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, DOT_FIELDS,
-    ECHO_KEY, FM_KEY, FREEZE_KEY, HINTS, HOLD_KEY, IF_KEY, LABEL_Y, LIP, LOWER_LABEL_Y,
-    MEM_KEY, MONO_KEY, MPX_KEY, PAD_GAP, PAD_ROWS, PAD_W, PAD_X, POWER_KEY, PPM_KEY, PRINT,
-    PRINT_SOFT, RACK_GAP, RESET_KEY, SCALE_Y, SIG_PITCH, SIG_X, SPEC_AVG, SS, TUNE_DOWN, TUNE_UP,
-    VFD_BOX, VU_KEY, WELL, WIDE_KEY, WIN)
+    ADV_KEY, AM_KEY, BASE_H, BASE_W, COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, DIRECT_KEY,
+    DOT_FIELDS, ECHO_KEY, FM_KEY, FREEZE_KEY, HOLD_KEY, IF_KEY, KEY_PX, LABEL_PX, LABEL_Y, LIP,
+    LOWER_LABEL_Y, MEM_KEY, METER_KEY, MONITOR_KEY, MONO_KEY, MPX_KEY, PAD_GAP, PAD_PX, PAD_ROWS,
+    PAD_W, PAD_X, POWER_KEY, PPM_KEY, PRINT, PRINT_SOFT, RACK_GAP, RESET_KEY, ROW3_LABEL_Y,
+    SCALE_Y, SET_KEY, SIG_BOT, SIG_H1, SIG_PITCH, SIG_X, SMALL_PX, SPEC_AVG, SS, TUNE_DOWN,
+    TUNE_UP, VFD_BOX, VU_KEY, WELL, WIDE_KEY, WIN)
 from .vfd import MonitorVfd, TunerVfd
-from .widgets import Hint, Key
+from .widgets import Key
 
 
 # ---------------------------------------------------------------------------
@@ -49,12 +51,17 @@ from .widgets import Hint, Key
 # ---------------------------------------------------------------------------
 
 class TunerApp(SettingsWindow, AdvancedWindow):
-    def __init__(self, root, scale=1.0, freq=None, rf_gain=None, agc=None, lmr_gain=1.0,
+    def __init__(self, root, scale=None, freq=None, rf_gain=None, agc=None, lmr_gain=1.0,
                  log_path=None, record_iq=None, am_source=None, upconverter_hz=None,
                  audio_device=''):
         self.root, self.s = root, scale
         self.override = False
         saved = self._load_settings()                   # sets self.override first
+        self.ui_size = saved.get('ui_size', 'fit')
+        if self.ui_size not in UI_SIZES:
+            self.ui_size = 'fit'
+        if scale is None:                               # --scale overrides Settings > Size
+            self.s = self._scale_for(self.ui_size)
         delco = self._load_delco_dsp()
 
         self.band    = saved.get('band', 'FM')
@@ -336,6 +343,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             'noise_reduction': bool(self.noise_red),
             'badge': self.badge,
             'monitor': bool(self.monitor_on),
+            'ui_size': self.ui_size,
             'meter_mode': self.meter_mode,
             'peak_hold': bool(self.peak_hold),
             'scope_mode': self.scope_mode,
@@ -520,6 +528,27 @@ class TunerApp(SettingsWindow, AdvancedWindow):
     # UI
     # ------------------------------------------------------------------
 
+    def _scale_for(self, size):
+        """The panels' scale for Settings > Size on this screen. 'fit': FIT_WIDTH of the screen's
+        width, within its height (a 1080p screen gets about 1.17, a 4K one about 2.3); a chosen
+        size, as given, unless the screen is too small for it."""
+        r = self.root
+        h = 2 * BASE_H + RACK_GAP                       # the tuner and the monitor
+        sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
+        room = min((sw - 20) / BASE_W, (sh - 100) / h)
+        want = FIT_WIDTH * sw / BASE_W if size == 'fit' else float(size)
+        return max(SCALE_MIN, min(SCALE_MAX, want, room))
+
+    def _rescale(self, s):
+        """Redraw the two panels at scale s (Settings > Size), in place."""
+        if abs(s - self.s) < 1e-3:
+            return
+        self.s = s
+        for cv in (self.canvas, self.mcanvas):
+            cv.destroy()
+        self._shown = self._mshown = None
+        self._build_ui()
+
     def _build_ui(self):
         s = self.s
         W, H = round(BASE_W * s), round(BASE_H * s)
@@ -552,36 +581,41 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.keys = []
         K = lambda cv, *a, **kw: self.keys.append(Key(cv, *a, s=s, **kw)) or self.keys[-1]
         K(c, POWER_KEY, on_press=self._toggle_power, latched=lambda: self.power_on)
-        K(c, WIDE_KEY, legend='Wide', size=11, on_press=self._toggle_wide, latched=lambda: self.am_wide)
+        K(c, MONITOR_KEY, legend='Monitor', size=KEY_PX, on_press=self._toggle_monitor,
+          latched=lambda: self.monitor_on)
+        K(c, ADV_KEY, legend='Advanced', size=KEY_PX, on_press=self._toggle_advanced,
+          latched=lambda: self._adv_visible)
+        K(c, SET_KEY, legend='Settings', size=KEY_PX - 1, on_press=self._toggle_settings,
+          latched=lambda: getattr(self, '_set_visible', False))
         for i, n in enumerate((1, 2, 3, 4, 5, 6, 7, 8, 9, 0)):
             row, col = divmod(i, 5)
             x0 = PAD_X + col * (PAD_W + PAD_GAP)
             y0, y1 = PAD_ROWS[row]
-            K(c, (x0, y0, x0 + PAD_W, y1), legend=str(n), size=15, on_press=lambda n=n: self._digit(n))
-        K(c, TUNE_DOWN, legend='Down', icon='left', size=12,
+            K(c, (x0, y0, x0 + PAD_W, y1), legend=str(n), size=PAD_PX, on_press=lambda n=n: self._digit(n))
+        K(c, MEM_KEY, legend='Memory', size=KEY_PX, on_press=self._memory)
+        K(c, MONO_KEY, legend='Mono', size=KEY_PX, on_press=self._toggle_mono, latched=lambda: self.fm_mono)
+        K(c, METER_KEY, legend='S units', size=KEY_PX - 1, on_press=self._meter_toggle,
+          latched=lambda: self.meter_view.get(self.band, 'Q') == 'S')
+        K(c, TUNE_DOWN, legend='Down', icon='left', size=KEY_PX,
           on_press=lambda: self._tune_press(-1), on_release=self._tune_release)
-        K(c, TUNE_UP, legend='Up', icon='right', size=12,
+        K(c, TUNE_UP, legend='Up', icon='right', size=KEY_PX,
           on_press=lambda: self._tune_press(+1), on_release=self._tune_release)
-        K(c, FM_KEY, legend='FM', size=11.5, on_press=lambda: self._band('FM'))
-        K(c, AM_KEY, legend='AM', size=11.5, on_press=lambda: self._band('AM'))
-        K(c, MEM_KEY, legend='Memory', size=11, on_press=self._memory)
-        K(c, MONO_KEY, legend='Mono', size=11, on_press=self._toggle_mono, latched=lambda: self.fm_mono)
-        self.hints = [Hint(c, HINTS[0][1], s, 'ADV', self._toggle_advanced),
-                      Hint(c, HINTS[1][1], s, 'MON', self._toggle_monitor),
-                      Hint(c, HINTS[2][1], s, 'SET', self._toggle_settings),
-                      Hint(c, HINTS[3][1], s, 'FREQ', self._direct_toggle),
-                      Hint(c, HINTS[4][1], s, 'METER', self._meter_toggle)]
+        K(c, FM_KEY, legend='FM', size=KEY_PX, on_press=lambda: self._band('FM'))
+        K(c, AM_KEY, legend='AM', size=KEY_PX, on_press=lambda: self._band('AM'))
+        K(c, WIDE_KEY, legend='Wide', size=KEY_PX, on_press=self._toggle_wide, latched=lambda: self.am_wide)
+        K(c, DIRECT_KEY, legend='Direct', size=KEY_PX, on_press=self._direct_toggle,
+          latched=lambda: self._direct is not None)
 
-        K(mc, RESET_KEY, legend='Reset', size=11, on_press=self._mon_reset)
-        K(mc, PPM_KEY, legend='PPM', size=11, on_press=lambda: self._set_meter_mode('ppm'),
+        K(mc, RESET_KEY, legend='Reset', size=KEY_PX, on_press=self._mon_reset)
+        K(mc, PPM_KEY, legend='PPM', size=KEY_PX, on_press=lambda: self._set_meter_mode('ppm'),
           latched=lambda: self.meter_mode == 'ppm')
-        K(mc, VU_KEY, legend='VU', size=11, on_press=lambda: self._set_meter_mode('vu'),
+        K(mc, VU_KEY, legend='VU', size=KEY_PX, on_press=lambda: self._set_meter_mode('vu'),
           latched=lambda: self.meter_mode == 'vu')
-        K(mc, HOLD_KEY, legend='Hold', size=11, on_press=self._toggle_hold, latched=lambda: self.peak_hold)
+        K(mc, HOLD_KEY, legend='Hold', size=KEY_PX, on_press=self._toggle_hold, latched=lambda: self.peak_hold)
         for box, mode, legend in ((IF_KEY, 'IF', 'IF'), (MPX_KEY, 'MPX', 'MPX'), (ECHO_KEY, 'ECHO', 'Echo')):
-            K(mc, box, legend=legend, size=11, on_press=lambda m=mode: self._set_scope(m),
+            K(mc, box, legend=legend, size=KEY_PX, on_press=lambda m=mode: self._set_scope(m),
               latched=lambda m=mode: self.scope_mode == m)
-        K(mc, FREEZE_KEY, legend='Freeze', size=11, on_press=self._toggle_freeze,
+        K(mc, FREEZE_KEY, legend='Freeze', size=KEY_PX, on_press=self._toggle_freeze,
           latched=lambda: self.freeze)
 
         r = self.root
@@ -653,29 +687,34 @@ class TunerApp(SettingsWindow, AdvancedWindow):
 
     def _draw_tuner_panel(self, d):
         k = self.s * SS
-        lab, small = font('label', 11 * k), font('label', 9.5 * k)
+        lab, small = font('label', LABEL_PX * k), font('label', SMALL_PX * k)
         self._nameplate(d, self.badge)
         self._draw_bezel(d, WIN)
-        boxes = [POWER_KEY, WIDE_KEY, TUNE_DOWN, TUNE_UP, FM_KEY, AM_KEY, MEM_KEY, MONO_KEY]
+        boxes = [POWER_KEY, MONITOR_KEY, ADV_KEY, SET_KEY, MEM_KEY, MONO_KEY, METER_KEY,
+                 TUNE_DOWN, TUNE_UP, FM_KEY, AM_KEY, WIDE_KEY, DIRECT_KEY]
         for i in range(10):
             row, col = divmod(i, 5)
             xa = PAD_X + col * (PAD_W + PAD_GAP)
             boxes.append((xa, PAD_ROWS[row][0], xa + PAD_W, PAD_ROWS[row][1]))
         self._draw_wells(d, boxes)
-        draw_text(d, POWER_KEY[0] * k, LOWER_LABEL_Y * k, 'Power', lab, PRINT)
-        draw_text(d, WIDE_KEY[0] * k, LOWER_LABEL_Y * k, 'AM filter', lab, PRINT)
-        draw_text(d, PAD_X * k, LABEL_Y * k, 'Preset channels 1-24', lab, PRINT)
-        draw_text(d, (PAD_X + 5 * PAD_W + 4 * PAD_GAP) * k, LABEL_Y * k,
-                  'To store: Memory, then channel', small, PRINT_SOFT, align='r')
-        draw_text(d, TUNE_DOWN[0] * k, LABEL_Y * k, 'Tuning', lab, PRINT)
+        pad_r = PAD_X + 5 * PAD_W + 4 * PAD_GAP
+        for x, y, text in ((POWER_KEY[0], LOWER_LABEL_Y, 'Power'), (MONITOR_KEY[0], LOWER_LABEL_Y, 'Show'),
+                           (ADV_KEY[0], ROW3_LABEL_Y, 'Open'),
+                           (PAD_X, LABEL_Y, 'Preset channels 1-24'),
+                           (MONO_KEY[0], ROW3_LABEL_Y, 'Stereo'), (METER_KEY[0], ROW3_LABEL_Y, 'Display'),
+                           (TUNE_DOWN[0], LABEL_Y, 'Tuning'), (FM_KEY[0], LOWER_LABEL_Y, 'Band'),
+                           (WIDE_KEY[0], LOWER_LABEL_Y, 'AM filter'),
+                           (DIRECT_KEY[0], ROW3_LABEL_Y, 'Frequency')):
+            draw_text(d, x * k, y * k, text, lab, PRINT)
+        draw_text(d, pad_r * k, LABEL_Y * k, 'To store: Memory, then channel', small, PRINT_SOFT, align='r')
         draw_text(d, TUNE_UP[2] * k, LABEL_Y * k, 'Tap for manual, hold for auto', small,
                   PRINT_SOFT, align='r')
-        draw_text(d, FM_KEY[0] * k, LOWER_LABEL_Y * k, 'Band', lab, PRINT)
-        draw_text(d, MONO_KEY[0] * k, LOWER_LABEL_Y * k, 'Stereo', lab, PRINT)
+        draw_text(d, TUNE_UP[2] * k, (DIRECT_KEY[1] + 17) * k, 'Type it on the preset keys', small,
+                  PRINT_SOFT, align='r')
 
     def _draw_monitor_panel(self, d):
         k = self.s * SS
-        lab, small = font('label', 11 * k), font('label', 9.5 * k)
+        lab, small = font('label', LABEL_PX * k), font('label', SMALL_PX * k)
         self._nameplate(d, 'Monitor')
         self._draw_bezel(d, WIN)
         self._draw_bezel(d, CRT_WIN)
@@ -684,7 +723,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         draw_text(d, PPM_KEY[0] * k, LABEL_Y * k, 'Meter', lab, PRINT)
         draw_text(d, HOLD_KEY[0] * k, LABEL_Y * k, 'Peak', lab, PRINT)
         draw_text(d, IF_KEY[0] * k, LOWER_LABEL_Y * k, 'Screen', lab, PRINT)
-        draw_text(d, FREEZE_KEY[2] * k, LOWER_LABEL_Y * k, 'Hold the trace', small, PRINT_SOFT,
+        draw_text(d, FREEZE_KEY[2] * k, ROW3_LABEL_Y * k, 'Freeze holds the trace', small, PRINT_SOFT,
                   align='r')
 
     def _wheel(self, e):
@@ -1109,7 +1148,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
 
     def _vfd_click(self, e):
         x, y = e.x / self.s - VFD_BOX[0], e.y / self.s - VFD_BOX[1]
-        if SIG_X - 12 <= x <= SIG_X + SIG_STEPS * SIG_PITCH and 18 <= y <= SCALE_Y + 4:
+        if SIG_X - 12 <= x <= SIG_X + SIG_STEPS * SIG_PITCH and SIG_BOT - SIG_H1 - 12 <= y <= SCALE_Y + 4:
             self._meter_toggle()
 
     def _smeter_calibrate(self, known_dbm):
@@ -1682,6 +1721,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if not self.running:
             return
         now = time.monotonic()
+        self._refresh_keys()                    # latches whose state changed elsewhere
         if self._direct is not None and now - self._direct_t > DIRECT_WAIT_S:
             self._direct = None
         self._lag_update(now)
@@ -1738,7 +1778,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
 def main():
     ap = argparse.ArgumentParser(description='Stereo tuner and monitor for the SDR receiver')
     ap.add_argument('--freq', type=float, default=None, help='frequency in Hz (default: last station played)')
-    ap.add_argument('--scale', type=float, default=None, help='panel size (default: 1.0, smaller to fit the screen)')
+    ap.add_argument('--scale', type=float, default=None,
+                    help='panel size, 1.0 = 1480 px wide (default: Settings > Panel > Size, which fits the screen)')
     ap.add_argument('--gain', type=float, default=None, help='manual gain, or AGC starting point (dB)')
     ap.add_argument('--no-agc', action='store_true', help='start in manual gain')
     ap.add_argument('--lmr-gain', type=float, default=1.0)
@@ -1751,11 +1792,7 @@ def main():
     a = ap.parse_args()
 
     root = tk.Tk()
-    scale = a.scale
-    if scale is None:
-        scale = min(1.0, (root.winfo_screenwidth() - 40) / BASE_W,
-                    (root.winfo_screenheight() - 120) / (2 * BASE_H + RACK_GAP))
-    TunerApp(root, scale=scale, freq=a.freq, rf_gain=a.gain,
+    TunerApp(root, scale=a.scale, freq=a.freq, rf_gain=a.gain,
              agc=False if a.no_agc else None, lmr_gain=a.lmr_gain,
              log_path=a.log, record_iq=a.record_iq,
              am_source=a.am_source, upconverter_hz=a.upconverter_hz,

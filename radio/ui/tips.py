@@ -19,6 +19,8 @@ def _pty_name(pty):
 
 
 TIPS = dict(
+    ui_size="How big the tuner and the monitor are drawn. FIT fills most of the screen's width, so "
+            "the lettering stays readable on any screen, 4K included; 100% is 1480 pixels wide.",
     quality="How clean the station sounds after all the processing, measured from the FM signal "
             "itself. The white tick shows where it was before the echo canceller. Above 20 dB is clean; "
             "below 10 dB you will hear noise.",

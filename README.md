@@ -78,7 +78,7 @@ It also shows how many data groups arrive each second and how many are lost.
   30 MHz and MHz above, with as many digits as the tuning step needs (1080 kHz, 90.5 MHz,
   14230.50 kHz).
 - A signal meter that shows either how clean the signal is (poor, fair, good) or how strong
-  it is in S units, the way ham and shortwave radios measure it. Press S or METER to switch.
+  it is in S units, the way ham and shortwave radios measure it. Press S units (or S) to switch.
   For true S units, calibrate it once in Settings against a signal of known strength; until
   then it says UNCAL.
 - Phone-style signal bars, STEREO / TUNED / RDS indicators, and a dot-matrix line for the
@@ -105,6 +105,8 @@ It also shows how many data groups arrive each second and how many are lost.
   - an echo profile that shows how far away the reflecting hills or buildings are
   - a 30-second history of signal quality
 - Meters and indicators are delayed to match the sound, so what you see is what you hear.
+- Panels that size themselves to your screen, so the lettering stays readable on a laptop, a
+  big monitor or a 4K screen (or pick a size in Settings).
 - An Advanced window with the full diagnostics.
 
 Hover the mouse over almost anything for a plain-words explanation of what it shows.
@@ -140,7 +142,7 @@ Some useful options; `--help` lists them all:
 | Option | What it does |
 |---|---|
 | `--freq 1080e3`, `--freq 90.5e6` | Start on this station (Hz) instead of the last one played |
-| `--scale 0.8` | Smaller (or larger) window |
+| `--scale 0.8` | A fixed size for this run (1.0 is 1480 pixels wide). Normally the window fits your screen: Settings > Panel > Size has FIT and fixed sizes. |
 | `--audio-device pulse` | Which sound output to use. On Linux, `pulse` or an ALSA name such as `plughw:0,0`. Leave it off for the system default. |
 | `--am-source native` | How the dongle reaches AM: `direct_q` (default), `native` (V4) or `upconverter` (with `--upconverter-hz`) |
 | `--log drive.csv` | FM: write the receiver's measurements to a spreadsheet file |

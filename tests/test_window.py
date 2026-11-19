@@ -9,7 +9,10 @@ test_window.py - does the tuner window build and run, on AM and on FM?
 Opens the real tuner window against the GNU Radio stand-in (tests/standin), with a pretend
 dongle sending a steady signal, for 12 seconds on each band, and fails on any error, crash or
 'Dongle lost'. On FM it also clicks Static cut and Noise reduction in Settings and checks each
-one changes only its own setting. A third run is AM with a pretend add-on installed: its
+one changes only its own setting. On AM and FM it presses the Monitor, Advanced, Direct and
+S units keys, changes Settings > Size (the panels must be rebuilt at the new scale, and the
+choice saved) and checks the scale 'fit' gives 1080p, 4K and 720p screens. A third run is AM
+with a pretend add-on installed: its
 station data must reach the dot matrix and the Advanced window, an alert must blink, and key I
 must open its window. A fourth is FM with a pretend stereo add-on (a station with no pilot
 that uses the add-on's own stereo system): STEREO must light, the dot matrix must name the
@@ -188,6 +191,78 @@ def child(appdir, band, fonts, secs):
         app._toggle_advanced()
         real_print('INFO add-on station data:', 'ok' if not problems else '; '.join(problems))
 
+    def key_checks():
+        """The keys that were hints (Monitor, Advanced, Direct, S units), and Settings > Size:
+        the panels rebuilt in place at the new scale, the choice saved, and 'fit' right for
+        1080p, 4K and 720p screens."""
+        import json
+        from radio.ui.theme import BASE_W
+        mine = []
+
+        def key_for(fn):
+            return next((k for k in app.keys if k.on_press == fn), None)
+
+        def press(k):
+            k._press(None)
+            k._release(None)
+            root.update()
+        km, ka, kd, ks = (key_for(f) for f in (app._toggle_monitor, app._toggle_advanced,
+                                                app._direct_toggle, app._meter_toggle))
+        if None in (km, ka, kd, ks):
+            mine.append('a key is missing: Monitor, Advanced, Direct or S units')
+        else:
+            on = app.monitor_on
+            for _ in range(2):                          # off and on again: the key follows both ways
+                press(km)
+                if km._down != app.monitor_on:
+                    mine.append(f'Monitor key: monitor {app.monitor_on}, key down {km._down}')
+            if app.monitor_on != on:
+                mine.append('Monitor key: two presses did not bring the monitor back')
+            press(ka)
+            if not app._adv_visible or not ka._down:
+                mine.append('Advanced key did not open the window, or did not stay down')
+            press(ka)
+            if app._adv_visible or ka._down:
+                mine.append('Advanced key did not close the window, or stayed down')
+            press(kd)
+            if app._direct is None or not kd._down:
+                mine.append('Direct key did not start frequency entry, or did not stay down')
+            app._direct_cancel()
+            app._refresh_keys()
+            if kd._down:
+                mine.append('Direct key stayed down after the entry was cancelled')
+            view = app.meter_view.get(app.band, 'Q')
+            for _ in range(2):
+                press(ks)
+                now_s = app.meter_view.get(app.band, 'Q') == 'S'
+                if ks._down != now_s:
+                    mine.append(f'S units key: meter {app.meter_view.get(app.band)!r}, key down {ks._down}')
+            if app.meter_view.get(app.band, 'Q') != view:
+                mine.append('S units key: two presses did not bring the meter back')
+        n, s0 = len(app.keys), app.s
+        for size in ('0.75', 'fit'):
+            app._size_var.set(size)
+            app._size_changed()
+            root.update()
+            want = app._scale_for('fit' if size == 'fit' else float(size))
+            if abs(app.s - want) > 1e-9 or abs(root.winfo_width() - round(BASE_W * want)) > 2 or len(app.keys) != n:
+                mine.append(f'Size {size}: scale {app.s:.3f} (want {want:.3f}), width {root.winfo_width()}, '
+                            f'{len(app.keys)} keys (had {n})')
+        if abs(app.s - s0) < 1e-9:
+            mine.append('Size never changed the scale')
+        with open(os.path.join(appdir, 'quartz_tuner_settings.json')) as f:
+            if json.load(f).get('ui_size') != 'fit':
+                mine.append('Size: the choice was not saved')
+        sw, sh = root.winfo_screenwidth, root.winfo_screenheight
+        for (w, h), want in (((1920, 1080), 1.168), ((3840, 2160), 2.335), ((1280, 720), 0.778)):
+            root.winfo_screenwidth, root.winfo_screenheight = (lambda w=w: w), (lambda h=h: h)
+            got = app._scale_for('fit')
+            if abs(got - want) > 0.002:
+                mine.append(f'fit on {w}x{h}: {got:.3f}, want {want}')
+        root.winfo_screenwidth, root.winfo_screenheight = sw, sh
+        problems.extend(mine)
+        real_print('INFO keys and size:', 'ok' if not mine else '; '.join(mine))
+
     def stereo_checks():
         """The pretend stereo add-on: STEREO, the system's name, its lamp, meter and line."""
         tb, now = app.tb, time.monotonic()
@@ -212,6 +287,7 @@ def child(appdir, band, fonts, secs):
         root.after(2000, settings_clicks)
     if not (addon or fm_addon):
         root.after(6000, meter_checks)
+        root.after(8500, key_checks)
     if addon:
         root.after(5000, addon_checks)
     if fm_addon:

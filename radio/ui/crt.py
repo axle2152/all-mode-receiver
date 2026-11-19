@@ -9,7 +9,7 @@ from PIL import Image, ImageDraw, ImageFilter
 from .art import down2d, glass_layers
 from .constants import GONIO_FILL, SCOPE_DECAY
 from .fonts import draw_text, font
-from .theme import COLOR_DEFAULTS, CRT_BG, CRT_BOX, SS, rgb_of
+from .theme import COLOR_DEFAULTS, CRT_BG, CRT_BOX, CRT_LAB_PX, CRT_SMALL_PX, SS, rgb_of
 
 
 # ---------------------------------------------------------------------------
@@ -20,9 +20,9 @@ from .theme import COLOR_DEFAULTS, CRT_BG, CRT_BOX, SS, rgb_of
 
 class Crt:
     BOX = CRT_BOX
-    GON = (9, 4, 105, 100)                # square, relative to CRT_BOX
-    CORR = (13, 106, 101, 111)            # correlation scale under it, -1 .. +1
-    PLOT = (128, 12, 306, 102)
+    GON = (9, 6, 121, 118)                # square, relative to CRT_BOX
+    CORR = (13, 126, 117, 131)            # correlation scale under it, -1 .. +1
+    PLOT = (142, 14, 306, 128)
 
     def __init__(self, s):
         self.s = s
@@ -35,8 +35,8 @@ class Crt:
         self.A = down2d(A)
         self.buf = np.zeros((self.h, self.w), np.float32)
         self.set_colors({})
-        self.f_lab = font('vfd', 7 * k)
-        self.f_small = font('vfd', 6 * k)
+        self.f_lab = font('vfd', CRT_LAB_PX * k)
+        self.f_small = font('vfd', CRT_SMALL_PX * k)
         self._grat = {}
 
     def set_colors(self, overrides):
@@ -77,8 +77,9 @@ class Crt:
             x = x0 + (v + 1) / 2 * (x1 - x0)
             line([(x, ya + (2 if abs(v) == 0.5 else 0)), (x, yb)], 130)
         for v, t in ((-1.0, '-1'), (0.0, '0'), (1.0, '+1')):
-            text(x0 + (v + 1) / 2 * (x1 - x0), 119.5, t, 230, 'm')
-        line([(116, 6), (116, 116)], 60)
+            text(x0 + (v + 1) / 2 * (x1 - x0), yb + 9.5, t, 230, 'm')
+        xdiv = (gx1 + self.PLOT[0]) / 2                 # between the two halves
+        line([(xdiv, 6), (xdiv, self.bh - 6)], 60)
 
         px0, py0, px1, py1 = self.PLOT
         div = 4 if mode == 'ECHO' else 6                # 10 dB steps: 40 dB for echoes, 60 otherwise

@@ -8,7 +8,7 @@ import numpy as np
 # Look
 # ---------------------------------------------------------------------------
 
-BASE_W, BASE_H = 1480, 168            # one unit at scale 1.0
+BASE_W, BASE_H = 1480, 200            # one unit at scale 1.0
 RACK_GAP = 4                          # dark gap between the stacked units
 SS = 2                                # supersampling for drawn artwork
 
@@ -22,7 +22,6 @@ KEY_DN_TOP, KEY_DN_BOT = (52, 53, 57), (36, 37, 40)
 KEY_SIDE   = (17, 18, 20)
 KEY_HI     = (104, 106, 112)
 KEY_TEXT   = (232, 232, 226)
-HINT_FILL, HINT_EDGE, HINT_INK, HINT_HOT = '#bfbfba', '#b3b3ae', '#9c9c97', '#2b2c2f'
 
 PHOSPHOR     = np.array((95, 243, 208), np.float32)    # VFD blue-green
 PHOSPHOR_HOT = np.array((255, 118, 84), np.float32)    # red-filtered segments
@@ -91,27 +90,34 @@ def ghost_of(rgb):
     return rgb * 0.11 + np.array((5, 4, 4), np.float32)
 
 
-# Tuner layout (base coordinates)
-POWER_KEY  = (30, 107, 104, 133)
-WIDE_KEY   = (116, 107, 176, 133)        # AM filter: Wide
-WIN        = (200, 20, 800, 148)
-VFD_BOX    = (203, 23, 797, 145)
+# Printed text and key legends, px at scale 1.0 (13 px is about 10 pt on a 96 dpi screen)
+LABEL_PX, SMALL_PX = 13.0, 11.5       # printed labels, and the softer notes
+KEY_PX, PAD_PX = 13.0, 16.0           # key legends, and the preset keys' digits
+
+# Tuner layout (base coordinates): three rows of keys either side of the display
+POWER_KEY  = (30, 107, 98, 133)
+MONITOR_KEY = (108, 107, 184, 133)      # shows or hides the monitor unit
+ADV_KEY    = (30, 159, 112, 185)        # the Advanced window
+SET_KEY    = (120, 159, 184, 185)       # Settings
+WIN        = (200, 20, 800, 180)
+VFD_BOX    = (203, 23, 797, 177)
 PAD_X, PAD_W, PAD_GAP = 836, 56, 10
 PAD_ROWS   = ((51, 87), (97, 133))
+MEM_KEY    = (836, 159, 906, 185)
+MONO_KEY   = (914, 159, 978, 185)
+METER_KEY  = (1002, 159, 1068, 185)     # S units (or signal quality) on the signal bar
 TUNE_DOWN  = (1192, 51, 1314, 83)
 TUNE_UP    = (1328, 51, 1450, 83)
-FM_KEY     = (1192, 107, 1246, 133)
-AM_KEY     = (1254, 107, 1308, 133)
-MEM_KEY    = (1324, 107, 1384, 133)
-MONO_KEY   = (1392, 107, 1450, 133)
-LABEL_Y, LOWER_LABEL_Y = 43, 99
-HINTS      = (('ADV', (30, 145, 56, 156)), ('MON', (61, 145, 87, 156)), ('SET', (92, 145, 118, 156)),
-              ('FREQ', (123, 145, 153, 156)), ('METER', (158, 145, 192, 156)))
+FM_KEY     = (1192, 107, 1250, 133)
+AM_KEY     = (1258, 107, 1316, 133)
+WIDE_KEY   = (1392, 107, 1450, 133)     # AM filter: Wide
+DIRECT_KEY = (1192, 159, 1272, 185)     # type a frequency on the preset keys
+LABEL_Y, LOWER_LABEL_Y, ROW3_LABEL_Y = 43, 99, 151
 
 # Monitor layout
-RESET_KEY  = POWER_KEY
-CRT_WIN    = (836, 20, 1156, 148)
-CRT_BOX    = (839, 23, 1153, 145)
+RESET_KEY  = (30, 107, 104, 133)
+CRT_WIN    = (836, 20, 1156, 180)
+CRT_BOX    = (839, 23, 1153, 177)
 PPM_KEY    = (1192, 51, 1250, 83)
 VU_KEY     = (1258, 51, 1316, 83)
 HOLD_KEY   = (1392, 51, 1450, 83)
@@ -124,46 +130,52 @@ FREEZE_KEY = (1392, 107, 1450, 133)
 # the signal meter and channel, and a dot-matrix row for RDS underneath.
 # The frequency (radio/ui/frequency.py): seven big digits down to 1 kHz, each with a decimal
 # point after it, then three small digits for what's below 1 kHz, against the unit.
-LEG_Y      = 16
-LEGENDS    = (('FM', 20), ('AM', 44), ('AUTO', 82), ('STEREO', 124), ('MONO', 178), ('RDS', 222),
-              ('WIDE', 252), ('TUNED', 300), ('MEMORY', 534))       # MEMORY over the channel
-DIG_TOP, DIG_H, DIG_W, DIG_T = 24, 46, 24, 4.4
+LEG_PX, UNIT_PX, SCALE_PX = 13.0, 14.0, 11.0    # legends, kHz / MHz, the signal scale
+LEG_Y      = 28
+LEGENDS    = (('FM', 14), ('AM', 44), ('AUTO', 80), ('STEREO', 130), ('MONO', 198), ('RDS', 254),
+              ('WIDE', 293), ('TUNED', 342), ('MEMORY', 512))       # MEMORY over the channel;
+                                                                    # room for DejaVu, the widest
+DIG_TOP, DIG_H, DIG_W, DIG_T = 38, 46, 24, 4.4
 DIG_SLANT  = 0.18                     # italic, about 10 degrees
 DIG_X      = tuple(10 + i * 35 for i in range(7))
-FINE_TOP, FINE_H, FINE_W, FINE_T = 42, 28, 14, 3.0
+FINE_TOP, FINE_H, FINE_W, FINE_T = 56, 28, 14, 3.0
 FINE_X     = (263, 282, 301)
 DP_GAP, DP_SIZE = 3.0, 4.4            # a decimal point sits this far right of its digit's foot
-UNIT_X, KHZ_Y, MHZ_Y = 324, 50, 70
-SIG_X, SIG_W, SIG_PITCH, SIG_H0, SIG_H1, SIG_BOT = 362, 7.5, 10.5, 8, 30, 62
+UNIT_X, KHZ_Y, MHZ_Y = 324, 64, 84
+SIG_X, SIG_W, SIG_PITCH, SIG_H0, SIG_H1, SIG_BOT = 362, 7.5, 10.5, 8, 30, 76
 SIG_RISE   = 9                        # the first 9 bars rise; the rest stand at full height
 # The signal meter shows S units or signal quality, its scale under it (label, bar it sits under)
 S_SCALE    = (('1', 0), ('3', 2), ('5', 4), ('7', 6), ('9', 8), ('+20', 10), ('+40', 12), ('+60', 14))
 Q_SCALE    = (('POOR', 2), ('FAIR', 7), ('GOOD', 12))
-SCALE_Y, UNCAL_Y = 74, 28             # baselines: the scale, and UNCAL over the end of the bar
+SCALE_Y, UNCAL_Y = 94, 42             # baselines: the scale, and UNCAL over the end of the bar
 CH_LABEL_X  = 529
-CH_TOP, CH_H, CH_W, CH_T = 44, 28, 13, 3.0
+CH_TOP, CH_H, CH_W, CH_T = 56, 28, 13, 3.0
 CH_X        = (548, 567)
-DOT_TOP, DOT_PITCH, DOT_SIZE = 86, 2.45, 1.9
+DOT_TOP, DOT_PITCH, DOT_SIZE = 112, 2.45, 1.9
 DOT_FIELDS  = (('call', 16, 4), ('ps', 96, 8), ('rt', 235, 23))   # name, x, characters (gaps between zones)
 DOT_BLUR    = 1.3                     # dots glow less than the big segments
 ALWAYS_LIT  = ('CH',)
 
 # Monitor VFD layout, relative to VFD_BOX
-MB_X0, MB_X1, MB_SEGS = 34, 392, 30
-MB_ROWS   = (('L', 9, 18), ('R', 22, 31), ('MOD', 51, 60), ('LUFS', 79, 88))
+MON_LAB_PX, MON_SMALL_PX = 12.0, 11.0     # row and readout labels; scales and units
+MB_X0, MB_X1, MB_SEGS = 46, 392, 30
+MB_ROWS   = (('L', 10, 20), ('R', 25, 35), ('MOD', 62, 72), ('LUFS', 99, 109))
 MB_SCALE  = {'L': 'dB', 'R': 'dB', 'MOD': 'MOD', 'LUFS': 'LUFS'}
-SCALES    = {'dB':   dict(lo=-42.0, step=1.5, marks=(-40, -30, -20, -10, -6, -3, 0), y=42, hot=0.0),
-             'MOD':  dict(lo=0.0, step=5.0, marks=(0, 25, 50, 75, 100, 125, 150), y=71, hot=100.0),
-             'LUFS': dict(lo=-41.0, step=1.2, marks=(-40, -30, -20, -10, -5), y=99, hot=None)}
-MON_STATS = (('PPM', 34), ('VU', 64), ('HOLD', 88), ('OVER', 128), ('NOISY', 168))
-STAT_Y    = 113
-NUM_W, NUM_H, NUM_T, NUM_PITCH = 10, 17, 2.6, 13
-NUMS      = (('int', 'INTEGRATED', 410, 15, ('LUFS',)),
-             ('short', 'SHORT TERM', 410, 53, ('LUFS',)),
-             ('lra', 'RANGE', 410, 91, ('LU',)),
-             ('tp', 'TRUE PEAK', 502, 15, ('dBTP',)),
-             ('mod', 'PEAK MOD', 502, 53, ('kHz', '%')),
-             ('pilot', 'PILOT', 502, 91, ('%',)))
+SCALES    = {'dB':   dict(lo=-42.0, step=1.5, marks=(-40, -30, -20, -10, -6, -3, 0), y=51, hot=0.0),
+             'MOD':  dict(lo=0.0, step=5.0, marks=(0, 25, 50, 75, 100, 125, 150), y=88, hot=100.0),
+             'LUFS': dict(lo=-41.0, step=1.2, marks=(-40, -30, -20, -10, -5), y=125, hot=None)}
+MON_STATS = (('PPM', 46), ('VU', 82), ('HOLD', 110), ('OVER', 158), ('NOISY', 206))
+STAT_Y    = 146
+NUM_W, NUM_H, NUM_T, NUM_PITCH = 10, 19, 2.6, 13
+NUMS      = (('int', 'INTEGRATED', 410, 22, ('LUFS',)),
+             ('short', 'SHORT TERM', 410, 72, ('LUFS',)),
+             ('lra', 'RANGE', 410, 122, ('LU',)),
+             ('tp', 'TRUE PEAK', 504, 22, ('dBTP',)),       # units end by 592 even in DejaVu
+             ('mod', 'PEAK MOD', 504, 72, ('kHz', '%')),
+             ('pilot', 'PILOT', 504, 122, ('%',)))
+
+# Scope (CRT) lettering
+CRT_LAB_PX, CRT_SMALL_PX = 10.5, 9.5
 
 # Advanced window (Delco's dimensions)
 SPEC_W, SPEC_H  = 512, 190

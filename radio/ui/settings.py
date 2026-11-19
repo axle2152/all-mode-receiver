@@ -6,7 +6,7 @@ import tkinter as tk
 
 from . import fonts
 from .backend import band_has
-from .constants import AM_WIDTHS, OUTPUT_DB_CHOICES
+from .constants import AM_WIDTHS, OUTPUT_DB_CHOICES, UI_SIZES
 from .theme import BUTTON_SMALL, COLOR_DEFAULTS, COLOR_ITEMS, COLOR_PANEL, FACE_FG
 from .tips import TIPS
 from .widgets import SilverButton
@@ -171,6 +171,13 @@ class SettingsWindow:
         be.pack(side=tk.LEFT)
         be.bind('<Return>', lambda e: self._badge_changed())
         be.bind('<FocusOut>', lambda e: self._badge_changed())
+        r = row(t, 'SIZE')
+        self._size_var = tk.StringVar(value=str(self.ui_size))
+        for size in UI_SIZES:
+            w = tk.Radiobutton(r, text='FIT' if size == 'fit' else f'{size * 100:.0f}%', value=str(size),
+                               variable=self._size_var, width=6, command=self._size_changed, **rb)
+            w.pack(side=tk.LEFT, padx=1)
+            tips.bind(w, TIPS['ui_size'])
         r = row(t, 'MONITOR UNIT')
         self._mon_var = tk.BooleanVar(value=self.monitor_on)
         tk.Checkbutton(r, text='Show under the tuner', variable=self._mon_var, command=self._toggle_monitor,
@@ -260,6 +267,12 @@ class SettingsWindow:
 
     def _cal_clear(self):
         self._cal_msg = (self._smeter_clear(), time.monotonic() + 6.0)
+
+    def _size_changed(self):
+        v = self._size_var.get()
+        self.ui_size = 'fit' if v == 'fit' else float(v)
+        self._save_settings()
+        self._rescale(self._scale_for(self.ui_size))
 
     def _toggle_settings(self):
         if self._set_visible:

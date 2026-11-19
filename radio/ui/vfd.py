@@ -11,14 +11,15 @@ from .art import SEGMENTS, down2d, glass_layers, segment_polys
 from .constants import (
     BLOOM_A1, BLOOM_A2, BLOOM_A3, BLOOM_R1, BLOOM_R2, BLOOM_R3, GLOW_DEFAULT, SIG_STEPS,
     _ASSET_DIR)
-from .fonts import draw_text, font
+from .fonts import draw_text, font, text_width
 from .theme import (
     ALWAYS_LIT, CH_H, CH_LABEL_X, CH_T, CH_TOP, CH_W, CH_X, COLOR_DEFAULTS, DIG_H, DIG_SLANT,
     DIG_T, DIG_TOP, DIG_W, DIG_X, DOT_BLUR, DOT_FIELDS, DOT_PITCH, DOT_SIZE, DOT_TOP, DP_GAP,
     DP_SIZE, FINE_H, FINE_T, FINE_TOP, FINE_W, FINE_X, GLASS_EDGE, GLASS_MID, KHZ_Y, LEGENDS,
     LEG_Y, MB_ROWS, MB_SCALE, MB_SEGS, MB_X0, MB_X1, MHZ_Y, MON_STATS, NUMS, NUM_H, NUM_PITCH,
     NUM_T, NUM_W, PHOSPHOR, Q_SCALE, SCALES, SCALE_Y, SIG_BOT, SIG_H0, SIG_H1, SIG_PITCH,
-    SIG_RISE, SIG_W, SIG_X, SS, STAT_Y, S_SCALE, UNCAL_Y, UNIT_X, VFD_BOX, ghost_of, rgb_of)
+    SIG_RISE, SIG_W, SIG_X, SS, STAT_Y, S_SCALE, UNCAL_Y, UNIT_X, VFD_BOX, ghost_of, rgb_of,
+    LEG_PX, MON_LAB_PX, MON_SMALL_PX, SCALE_PX, UNIT_PX)
 
 
 # 5x7 dot-matrix characters (the Delco's table)
@@ -228,9 +229,13 @@ class TunerVfd(VfdBase):
 
     def _setup(self):
         k = self.k
-        self.leg_font = font('vfd', 9.5 * k)
-        self.unit_font = font('vfd', 11.5 * k)
-        self.scale_font = font('vfd', 8.0 * k)
+        self.leg_font = font('vfd', LEG_PX * k)
+        self.unit_font = font('vfd', UNIT_PX * k)
+        self.scale_font = font('vfd', SCALE_PX * k)
+        px = SCALE_PX - 1                               # +20 +40 +60: three wide labels 21 px apart,
+        while px > 8 and text_width('+40', font('vfd', px * k)) / k > 2 * SIG_PITCH - 3:
+            px -= 0.5                                   # so smaller in a wide font (DejaVu)
+        self.plus_font = font('vfd', px * k)
         self.digit_masks = self._load_digit_images()
 
     def _load_digit_images(self):
@@ -354,7 +359,8 @@ class TunerVfd(VfdBase):
             elif key == ('stxt', 'S'):
                 draw_text(d, (SIG_X - 4) * k, SCALE_Y * k, 'S', self.scale_font, 255, align='r')
             elif kind == 'stxt':
-                draw_text(d, mid(dict(S_SCALE)[key[1]]), SCALE_Y * k, key[1], self.scale_font, 255, align='m')
+                f = self.plus_font if key[1].startswith('+') else self.scale_font
+                draw_text(d, mid(dict(S_SCALE)[key[1]]), SCALE_Y * k, key[1], f, 255, align='m')
             else:
                 draw_text(d, mid(dict(Q_SCALE)[key[1]]), SCALE_Y * k, key[1], self.scale_font, 255,
                           align='m', tracking=0.5 * k)
@@ -387,8 +393,8 @@ class MonitorVfd(VfdBase):
 
     def _setup(self):
         k = self.k
-        self.lab_font = font('vfd', 8 * k)
-        self.small_font = font('vfd', 7 * k)
+        self.lab_font = font('vfd', MON_LAB_PX * k)
+        self.small_font = font('vfd', MON_SMALL_PX * k)
         self.pitch = (MB_X1 - MB_X0) / MB_SEGS
 
     @staticmethod

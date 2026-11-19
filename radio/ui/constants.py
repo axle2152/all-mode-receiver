@@ -26,6 +26,9 @@ TUNER_MIN  = 24e6
 FM_DEVICE_ARGS = 'numchan=1 rtl=0'
 DIRECT_WAIT_S = 10.0                       # direct frequency entry gives up after this
 N_CHANNELS = 24
+UI_SIZES   = ('fit', 0.75, 1.0, 1.25, 1.5, 2.0)    # Settings > Panel > Size ('fit': to the screen)
+SCALE_MIN, SCALE_MAX = 0.5, 3.0
+FIT_WIDTH  = 0.9                           # 'fit' fills this share of the screen's width
 AM_WIDTHS  = (2500, 5000, 8000, 10200)     # Settings > AM width (Hz); the Wide key is 12 kHz
 
 SEEK_MIN_CNR_DB = 6.0      # FM; AM uses its receiver's own SEEK_MIN_DB

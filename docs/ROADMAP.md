@@ -8,8 +8,8 @@ sound as good as the signal allows, clean up what it can, play at a correct, con
 and have meters and visuals for casual listeners, broadcast people, and hams and shortwave
 listeners alike.
 
-**Next up:** the new face the owner chose (Phase 5 below): bigger text and a window that grows to
-fit the screen first, with the hint buttons as real keys; then the Bands panel and the mode keys;
+**Next up:** the rest of the new face the owner chose (Phase 5 below; bigger text, a window that fits
+the screen and the hint buttons as keys are done): the Bands panel and the mode keys;
 then Phase 6's HF receiver with SSB, CW, DSB and synchronous AM, and narrowband FM. FM at a lower
 sample rate can go in any time. Phases 0 to 4 are done.
 
@@ -215,20 +215,29 @@ kHz up to 30 MHz, and the S-meter where the mock-ups put it:
 The face the owner chose (version 2 of the mock-ups): a third panel, Bands, between the tuner and
 the monitor, and modes on the tuner.
 
-- [ ] Bigger text: nothing on the tuner or the monitor under 7-8 pt. At full size (pixels):
+- [x] Bigger text: nothing on the tuner or the monitor under 7-8 pt. At full size (pixels):
   display legends 13 (were 9.5), the signal scale 11 (8), the monitor's meter labels and scales
   11-12 (7-8), the scope's lettering 9.5-10.5 (6-7), printed labels 11.5-13 (9.5-11), key
   legends 13 (11-12). The tuner's and the monitor's displays grow taller (about 154 px, from
-  122) to fit it, the monitor's rows spread out.
-- [ ] The window grows to fit the screen. Today it never goes past full size (1480 px wide),
+  122) to fit it, the monitor's rows spread out. Done: both units are 200 px tall (were 168),
+  the scope too, its graticules laid out from its boxes; +20 +40 +60 on the S scale at 10 px,
+  three wide labels only 21 px apart. The tuner display keeps one dot-matrix row, centred,
+  until Band info brings the second.
+- [x] The window grows to fit the screen. Today it never goes past full size (1480 px wide),
   which leaves room on a 1080p screen and draws it at about half the size you'd expect on a 4K
   screen with the desktop scaled 200%. A size choice in Settings too. Must look right on the
-  owner's 4K laptop and on 1080p machines.
+  owner's 4K laptop and on 1080p machines. Done: FIT draws the panels 90% of the screen's
+  width (1080p: 1728 px, scale 1.17; 4K: 3456 px, scale 2.34; 720p: 0.78), within its height;
+  fixed sizes 75 to 200%; a change redraws the panels in place. --scale still wins for a run.
 - [ ] Later: a split layout for 720p and narrow screens, each panel cut in half and the halves
   stacked, so nothing shrinks below readable.
-- [ ] The hint buttons become real keys: Power and Monitor (show the monitor), Advanced and
+- [x] The hint buttons become real keys: Power and Monitor (show the monitor), Advanced and
   Settings on the tuner's left; METER becomes "S units" (the signal bar in S units, or signal
   quality) beside Band info under the presets; FREQ moves to the Bands panel as Direct.
+  Done, until the Bands panel exists: Direct sits on the tuner's third row (with the FM/AM
+  band keys and the AM filter's Wide key on the second), and Band info comes with the second
+  dot-matrix line. Monitor, Advanced, Settings, Direct and S units stay down while what they
+  turn on is on.
 - [ ] The Bands panel, a key for every band, grouped under printed headings:
   - Shortwave (metres): 120, 90, 75, 60, 49, 41, 31, 25, 22, 19, 16, 15, 13, 11; with
     Broadcast (LW, MW, FM) at the right of that row

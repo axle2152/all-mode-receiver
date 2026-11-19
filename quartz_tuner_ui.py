@@ -8,15 +8,24 @@ Run this file, not fm_stereo.py.
 
     python quartz_tuner_ui.py
     python quartz_tuner_ui.py --freq 90.5e6 --scale 1.2
+
+The panels are drawn to fit the screen (Settings > Panel > Size: FIT, or a fixed size;
+--scale overrides it for one run; 1.0 = 1480 px wide).
     python quartz_tuner_ui.py --no-agc --gain 7.7 --log drive.csv
 
 Tuner (top unit)
     Power           latching; off mutes at once and frees the dongle after 60 s
+    Monitor         latching: shows or hides the monitor unit
+    Advanced        the Advanced window (diagnostics); down while it's open
+    Settings        reception, panel (nameplate, size, monitor) and display colours;
+                    down while it's open
     Tuning down/up  tap: one channel. Hold: search to the next station.
                     Either key stops a search that is running.
     0 to 9          preset channels 1 to 24 (3-9 recall at once; 1 or 2 wait a
                     moment for a second digit; 0 then a digit = 01 to 09)
     Memory          then a channel number: stores the station you're on
+    S units         latching: the signal bar in S units, or (up) signal quality;
+                    see Display below
     FM / AM         band; each band remembers its own frequency
     Wide            latching AM filter key: 12 kHz, with a 10 kHz notch for
                     adjacent-channel whistles. Off: the AM width chosen in Settings
@@ -26,10 +35,8 @@ Tuner (top unit)
                     second when it starts.
     Mono            latching Stereo key, both bands: FM mono, or AM with the
                     C-QUAM stereo ignored
-    ADV / MON / SET the faint buttons bottom left: Advanced window (diagnostics),
-    / FREQ / METER  monitor unit, Settings (reception, panel, and display colours),
-                    the signal meter's view (below), and direct frequency entry:
-                    then digits (keyboard or keypad),
+    Direct          direct frequency entry, down while you type:
+                    then digits (preset keys, keyboard or keypad),
                     Enter to tune, Esc to cancel, Backspace to correct. FM: 885 =
                     88.5 MHz, or type a decimal (162.55); AM: kHz (1720), or a
                     decimal for MHz (5.905). Out-of-band needs Band limits: Override.
@@ -37,8 +44,8 @@ Tuner (top unit)
                     receiver can hold; STEREO = the back end's stereo indicator.
                     The bar shows signal quality (POOR / FAIR / GOOD, from the
                     carrier-to-noise) or signal strength in S units (S1 to S9, then
-                    +20 to +60; S9 = -73 dBm below 30 MHz, -93 dBm above). S, METER
-                    or a click on the bar switches; each band remembers. UNCAL
+                    +20 to +60; S9 = -73 dBm below 30 MHz, -93 dBm above). S units,
+                    S or a click on the bar switches; each band remembers. UNCAL
                     until calibrated in Settings > Reception > S-meter.
 
 Monitor (bottom unit; needs rx_meters.py next to fm_stereo.py)
