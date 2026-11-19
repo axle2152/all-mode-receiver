@@ -364,6 +364,32 @@ def child(appdir, band, fonts, secs):
             if round(app.freq) != 26995000 or ch():
                 mine.append(f'ordinary steps on CB from 26.985: {app.freq / 1e6:g} MHz, CH {ch()!r}')
             app.channel_steps, app.band_key_goes = True, 'home'
+            # presets are by band: the same number holds a different station on each
+            press(kb['FM'])
+            app._tune_to(90.9e6)
+            app._memory()
+            app._channel(3)
+            press(kb['MW'])
+            app._tune_to(1080e3)
+            app._memory()
+            app._channel(3)
+            press(kb['FM'])
+            app._tune_to(98.1e6)
+            app._channel(3)
+            fm3 = app.freq
+            press(kb['MW'])
+            app._tune_to(700e3)
+            app._channel(3)
+            if (round(fm3), round(app.freq)) != (90900000, 1080000):
+                mine.append(f'preset 3: FM {fm3 / 1e6:g} MHz (want 90.9), MW {app.freq / 1e3:g} kHz (want 1080)')
+            with open(os.path.join(appdir, 'quartz_tuner_settings.json')) as f:
+                saved = json.load(f).get('presets', {})
+            if saved.get('FM', [None] * 3)[2] != 'FM 90.9' or saved.get('MW', [None] * 3)[2] != 'AM 1080':
+                mine.append(f"presets saved as FM {saved.get('FM')!r}, MW {saved.get('MW')!r}")
+            old = [{'band': 'FM', 'freq': 90.5e6}, {'band': 'AM', 'freq': 1080e3}, {'band': 'AM', 'freq': 9580e3}]
+            got = app._presets_from(old + [None] * 21)
+            if [got.get(key, [None] * 3)[i] for key, i in (('FM', 0), ('MW', 1), ('SW31', 2))] != old:
+                mine.append(f'an older single list went to {sorted(got)}')
             press(kb['MW' if band == 'AM' else 'FM'])     # back where this run started
         problems.extend(mine)
         real_print('INFO keys and size:', 'ok' if not mine else '; '.join(mine))

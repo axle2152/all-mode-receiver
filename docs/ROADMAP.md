@@ -297,7 +297,9 @@ the monitor, and modes on the tuner.
 - [ ] Presets by band (the owner's choice over pages): 24 for each band, except the
   channelized ones; a preset stores band, mode, frequency and filter, and on narrow FM the
   repeater offset (or Rev) and the PL tone. Existing presets carry over (FM to FM, AM to the
-  band each is in).
+  band each is in). Done so far: 24 per band (the CH digits show the band's own), the first
+  run's seeds on FM 1-4 and MW 1-4, an older single list carried over slot for slot. Mode,
+  filter, offset and tone join each preset as those land.
 
 ## Phase 6: Shortwave, VHF/UHF and more analog modes
 

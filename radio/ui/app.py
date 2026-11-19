@@ -90,7 +90,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.bandkey = self._start_band_key(saved.get('bandkey'))
 
         pick = lambda key, default: saved.get(key, delco.get(key, default))
-        self.channels   = saved.get('channels') or self._seed_channels()
+        self.presets    = (saved.get('presets') or self._presets_from(saved.get('channels'))   # by band
+                           or self._seed_presets())
         self.fm_mono    = bool(saved.get('fm_mono', False))
         self.power_on   = bool(saved.get('power', True))
         self.output_db  = saved.get('output_db', OUTPUT_DB_DEFAULT)
@@ -215,19 +216,30 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                 if isinstance(k, str) and isinstance(v, str)
                 and re.fullmatch(r'[0-9A-Fa-f]{4}', k) and re.fullmatch(r'[A-Za-z]{3,4}', v)}
 
-    def _seed_channels(self):
-        """First run: the Delco's FM presets in 1-4 and AM presets in 5-8."""
-        ch = [None] * N_CHANNELS
+    def _seed_presets(self):
+        """First run: the Delco's FM presets on FM 1-4 and its AM presets on MW 1-4."""
         delco = self._read_json(DELCO_SETTINGS)
         fm = delco.get('presets_mhz') or [90.1, 90.5, 94.5, 96.1]
         am = delco.get('am_presets_khz') or [680, 750, 1380, 1690]
+        out = {'FM': [None] * N_CHANNELS, 'MW': [None] * N_CHANNELS}
         for i, v in enumerate(fm[:4]):
             if isinstance(v, (int, float)) and FM_MIN / 1e6 <= v <= FM_MAX / 1e6:
-                ch[i] = {'band': 'FM', 'freq': self._snap_in('FM', v * 1e6)}
+                out['FM'][i] = {'band': 'FM', 'freq': self._snap_in('FM', v * 1e6)}
         for i, v in enumerate(am[:4]):
             if isinstance(v, (int, float)) and AM_MIN / 1e3 <= v <= AM_MAX / 1e3:
-                ch[4 + i] = {'band': 'AM', 'freq': self._snap_in('AM', v * 1e3)}
-        return ch
+                out['MW'][i] = {'band': 'AM', 'freq': self._snap_in('AM', v * 1e3)}
+        return out
+
+    def _presets_from(self, chans):
+        """An older settings file's single list of 24 (FM and AM mixed): each preset goes to the
+        band it's in (FM, MW, a shortwave band...), in the same place."""
+        out = {}
+        for i, c in enumerate(chans or []):
+            if c:
+                b = self._band_for_family(c['freq'], c['band'])
+                key = b.key if b is not None else ('FM' if c['band'] == 'FM' else 'MW')
+                out.setdefault(key, [None] * N_CHANNELS)[i] = c
+        return out
 
     def _load_settings(self):
         raw = self._read_json([os.path.join(_ASSET_DIR, SETTINGS_NAME), SETTINGS_FALLBACK])
@@ -242,9 +254,13 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         v = raw.get('last_am_khz')
         if num(v) and RTL_RANGE[0] / 1e3 <= v <= RTL_RANGE[1] / 1e3:
             out['am_freq'] = v * 1e3
-        chans = raw.get('channels')
+        chans = raw.get('channels')                    # before presets were by band
         if isinstance(chans, list) and len(chans) == N_CHANNELS:
             out['channels'] = [self._parse_channel(c) for c in chans]
+        if isinstance(raw.get('presets'), dict):
+            out['presets'] = {key: [self._parse_channel(c) for c in lst]
+                              for key, lst in raw['presets'].items()
+                              if key in BP.BY_KEY and isinstance(lst, list) and len(lst) == N_CHANNELS}
         for key in ('fm_mono', 'power', 'agc', 'monitor', 'bands', 'peak_hold'):
             if isinstance(raw.get(key), bool):
                 out[key] = raw[key]
@@ -355,7 +371,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             'last_fm_mhz': round(fm / 1e6, 4),
             'override': bool(self.override),
             'last_am_khz': round(am / 1e3),
-            'channels': [self._channel_text(c) for c in self.channels],
+            'presets': {key: [self._channel_text(c) for c in lst] for key, lst in self.presets.items() if any(lst)},
             'fm_mono': bool(self.fm_mono),
             'power': bool(self.power_on),
             'output_db': float(self.output_db),
@@ -1265,12 +1281,12 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         now = time.monotonic()
         if self._memory_until > now:
             self._memory_until = 0.0
-            self.channels[n - 1] = {'band': self.band, 'freq': self.freq}
+            self._band_presets()[n - 1] = {'band': self.band, 'freq': self.freq}
             self._last_ch = n
             self._flash = (n, now + 1.2)
             self._save_settings()
             return
-        c = self.channels[n - 1]
+        c = self._band_presets()[n - 1]
         if not c:
             self._flash = (n, now + 1.2)
             return
@@ -1279,12 +1295,17 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._last_ch = n
         self._save_settings()
 
+    def _band_presets(self):
+        """This band's 24 presets (presets are by band)."""
+        return self.presets.setdefault(self.bandkey, [None] * N_CHANNELS)
+
     def _channel_now(self):
         here = (self.band, round(self.freq))
         match = lambda c: c and (c['band'], round(c['freq'])) == here
-        if self._last_ch and match(self.channels[self._last_ch - 1]):
+        lst = self.presets.get(self.bandkey) or [None] * N_CHANNELS
+        if self._last_ch and match(lst[self._last_ch - 1]):
             return self._last_ch
-        for i, c in enumerate(self.channels):
+        for i, c in enumerate(lst):
             if match(c):
                 return i + 1
         return None

@@ -22,9 +22,10 @@ Tuner (top unit)
                     down while it's open
     Tuning down/up  tap: one channel. Hold: search to the next station.
                     Either key stops a search that is running.
-    0 to 9          preset channels 1 to 24 (3-9 recall at once; 1 or 2 wait a
-                    moment for a second digit; 0 then a digit = 01 to 09)
-    Memory          then a channel number: stores the station you're on
+    0 to 9          presets 1 to 24, each band its own (3-9 recall at once; 1 or 2
+                    wait a moment for a second digit; 0 then a digit = 01 to 09). On
+                    a channelized band (CB, FRS/GMRS, Weather...) they pick channels.
+    Memory          then a preset number: stores the station you're on, on this band
     S units         latching: the signal bar in S units, or (up) signal quality;
                     see Display below
     Wide            latching AM filter key: 12 kHz, with a 10 kHz notch for
