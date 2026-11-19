@@ -240,11 +240,14 @@ def child(appdir, band, fonts, secs):
             if app.meter_view.get(app.band, 'Q') != view:
                 mine.append('S units key: two presses did not bring the meter back')
         n, s0 = len(app.keys), app.s
-        for size in ('0.75', 'fit'):
+        for size in ('1.25', '0.75', 'fit'):
             app._size_var.set(size)
             app._size_changed()
             root.update()
             want = app._scale_for('fit' if size == 'fit' else float(size))
+            back = app._load_settings().get('ui_size')
+            if back != ('fit' if size == 'fit' else float(size)):
+                mine.append(f'Size {size}: read back from the settings file as {back!r}')
             if abs(app.s - want) > 1e-9 or abs(root.winfo_width() - round(BASE_W * want)) > 2 or len(app.keys) != n:
                 mine.append(f'Size {size}: scale {app.s:.3f} (want {want:.3f}), width {root.winfo_width()}, '
                             f'{len(app.keys)} keys (had {n})')

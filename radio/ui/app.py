@@ -293,6 +293,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             out['gain'] = float(v)
         if isinstance(raw.get('badge'), str):
             out['badge'] = raw['badge'][:24]
+        v = raw.get('ui_size')
+        if v == 'fit' or (num(v) and v in UI_SIZES):
+            out['ui_size'] = v
         if isinstance(raw.get('pi_calls'), dict):
             out['pi_calls'] = self._clean_calls(raw['pi_calls'])
         return out
