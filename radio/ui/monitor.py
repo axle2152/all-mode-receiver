@@ -8,7 +8,7 @@ import numpy as np
 
 from .constants import (
     CORR_TAU_S, FREQ_PEAK_RATE, MOD_DIST_S, MOD_HOLD_S, OFFSET_AVG_S, PEAK_HOLD_S, PEAK_SPAN,
-    PEAK_STEP, PPM_FALL_DB_S, VU_TAU_S)
+    PEAK_STEP, PPM_FALL_DB_S, VU_TAU_S, AUDIO_GAP_S)
 from .loudness import Loudness, _db
 
 
@@ -53,6 +53,7 @@ class MonitorLogic:
         self.ppm = [-120.0, -120.0]
         self.vu = [[0.0, 0.0], [0.0, 0.0]]
         self.hold = [(-120.0, 0.0), (-120.0, 0.0)]
+        self._audio_t = None                  # when the last audio samples came in
         self.mod_bar, self.mod_bar_hold = 0.0, (0.0, 0.0)
         self.mod_valid = False
         self.corr, self.gonio = None, None
@@ -83,6 +84,11 @@ class MonitorLogic:
     def feed(self, m, now, dt, band, keep, mod_valid):
         a, md = m['audio'], m['mod']
         if a['n']:
+            # The ballistics step over the time since the last samples, not since the last tick:
+            # audio can come in chunks longer than a tick (AM's are 64 ms against 50 ms ticks).
+            if self._audio_t is not None:
+                dt = min(max(now - self._audio_t, dt), AUDIO_GAP_S)
+            self._audio_t = now
             al = 1 - math.exp(-dt / VU_TAU_S)
             for ch in (0, 1):
                 self.ppm[ch] = max(_db(a['peak'][ch]), self.ppm[ch] - PPM_FALL_DB_S * dt)
@@ -99,6 +105,9 @@ class MonitorLogic:
                 self.tp_max = tp if self.tp_max is None else max(self.tp_max, tp)
                 if tp > 0.0:
                     self.last_over = now
+        elif self._audio_t is not None and now - self._audio_t < AUDIO_GAP_S:
+            for ch in (0, 1):                 # nothing new yet, the next chunk is on its way: hold
+                self._hold_step(ch, now, dt)
         else:
             self.idle(now, dt)
         self.loud.feed(a['blocks'], keep)

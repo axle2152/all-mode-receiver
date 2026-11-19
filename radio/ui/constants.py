@@ -62,6 +62,8 @@ MON_SETTLE_S   = {'FM': 0.5, 'AM': 0.9}   # discard readings this long after a r
 PPM_FALL_DB_S  = 13.3                     # IEC 60268-10 type I: 20 dB in 1.5 s
 PEAK_HOLD_S    = 1.5
 VU_TAU_S       = 0.045                    # two poles: 99% in about 300 ms
+AUDIO_GAP_S    = 0.3                      # no audio samples this long: silence, the meters fall
+                                          # (AM's arrive in 64 ms chunks, so some 50 ms ticks get none)
 MOD_HOLD_S     = 2.0
 # PEAK MOD on the face (FM): "peaks of frequent recurrence", the FCC's wording in
 # 47 CFR 73.1570. Read here as the highest deviation the station reaches at least

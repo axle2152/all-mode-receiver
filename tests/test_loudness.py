@@ -111,8 +111,49 @@ def main():
              [(20, -50), (20, -35), (20, -20), (20, -35), (20, -50)], 15.0)]:
         check(name, play(seg).lra(big), want, 1.0)
 
+    chunked_meters()
+
     print('\nAll passed.' if not failed else f'\n{failed} failed.')
     return 1 if failed else 0
+
+
+def chunked_meters():
+    """AM's audio reaches the meters in 64 ms chunks against the window's 50 ms ticks, so some
+    ticks get no samples. The VU (and PPM) must hold through those, not fall as if the station
+    had gone quiet (the VU flickered on AM), and still fall when the audio really stops."""
+    from radio.ui.monitor import MonitorLogic
+    print('VU and PPM with the audio arriving in 64 ms chunks, ticks every 50 ms')
+    rms = 0.1
+    want = 20 * math.log10(rms)
+    no_mod = {'n': 0, 'max': 0.0, 'min': 0.0, 'mean': None, 'over': 0}
+
+    def reading(n):
+        p = rms * math.sqrt(2)
+        return {'audio': {'n': n, 'peak': [p, p] if n else [0.0, 0.0], 'ms': [rms * rms] * 2 if n else [0.0, 0.0],
+                          'corr': None, 'gonio': None, 'true_peak': [p, p] if n else [0.0, 0.0], 'blocks': []},
+                'mod': no_mod}
+    for mode in ('vu', 'ppm'):
+        ml = MonitorLogic(mode=mode)
+        due, levels, t = 0.0, [], 0.0
+        while t < 4.0:
+            t += 0.05
+            n = 0
+            while due <= t:                   # the chunks that have come in by this tick
+                n += 3072
+                due += 0.064
+            ml.feed(reading(n), t, 0.05, 'AM', True, False)
+            if t > 2.0:
+                levels.append(ml.level(0))
+        spread = max(levels) - min(levels)
+        check(f'{mode.upper()}: steady tone, spread over the ticks (dB)', spread, 0.0, 0.5 if mode == 'vu' else 1.0)
+        if mode == 'vu':
+            check('VU: reads the tone (dB)', sum(levels) / len(levels), want, 0.5)
+        for _ in range(20):                   # the audio stops: a second of empty ticks
+            t += 0.05
+            ml.feed(reading(0), t, 0.05, 'AM', True, False)
+        drop = levels[-1] - ml.level(0)
+        check(f'{mode.upper()}: a second after the audio stops, it has fallen (dB)', min(drop, 20.0), 20.0 if mode == 'vu' else 9.0,
+              0.0 if mode == 'vu' else 1.5)
 
 
 if __name__ == '__main__':
