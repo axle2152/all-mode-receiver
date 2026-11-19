@@ -192,6 +192,7 @@ samples:
     python3 tests/test_am_width.py       # the AM filter follows the width settings and the Wide key
     python3 tests/test_addons.py         # add-ons plug in; a missing or broken one stays harmless
     python3 tests/test_display.py        # the frequency display reads every band right
+    python3 tests/test_bandplan.py       # the bands, their usual modes, channels and repeater offsets
     python3 tests/test_window.py         # the whole window runs on AM and FM
 
 With GNU Radio installed (still no dongle needed), these run the real receivers on pretend
