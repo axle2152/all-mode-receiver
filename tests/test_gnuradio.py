@@ -8,11 +8,14 @@ Runs the real AM and FM receivers in your GNU Radio for 6 seconds each, with a p
 dongle (a test station: carrier, a 1 kHz tone and noise, at the frequency tuned) and a
 silent sound card, then checks samples flow at the right rates, the receivers' updates run
 without errors, and what they measure fits the test station (its level for the S-meter too). If GNU Radio isn't installed,
-it says so and stops.
+it says so and stops. Also starts each receiver while another thread asks it for the audio lag,
+as the window's timer can (that crashed GNU Radio outright).
 """
 import math
 import os
+import subprocess
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -86,7 +89,10 @@ class FakeDongle(gr.hier_block2):
     def __getattr__(self, name):               # the other osmosdr settings: accepted
         if name.startswith('__'):
             raise AttributeError(name)
-        return lambda *a, **k: 0
+        try:                # GNU Radio 3.10.1 finds its own methods (connect...) this way
+            return getattr(object.__getattribute__(self, '_impl'), name)
+        except AttributeError:
+            return lambda *a, **k: 0
 
 
 class Speaker(gr.hier_block2):
@@ -197,10 +203,45 @@ def pilot(name, phase_tone, want, system=None, mono_hint=False):
     tb.wait()
 
 
+def start_race(band):
+    """In a child process: the window's timer asking for the audio lag while the backend
+    thread is still inside start(). GNU Radio builds the sample counters audio_lag() reads
+    inside start(), and reading one too early crashed it (a segfault, on the bench too)."""
+    freq = 1080e3 if band == 'AM' else 90.5e6
+    tb = receiver(band, freq)(freq=freq, agc=False)
+    done = []
+
+    def ask():
+        while not done:
+            tb.audio_lag()
+    t = threading.Thread(target=ask, daemon=True)
+    t.start()
+    time.sleep(0.01)
+    tb.start()
+    time.sleep(0.2)
+    done.append(True)
+    t.join()
+    tb.stop()
+    tb.wait()
+
+
+def race(band):
+    r = subprocess.run([sys.executable, os.path.abspath(__file__), '--start-race', band],
+                       capture_output=True, text=True, timeout=120)
+    crashed = r.returncode in (-11, 139)
+    err = (r.stderr.strip().splitlines() or [''])[-1]
+    check(f'{band}: asked for the audio lag while starting', r.returncode == 0,
+          'no crash' if r.returncode == 0 else 'crashed (segfault)' if crashed
+          else f'exit {r.returncode}: {err}')
+
+
 def main():
     print('GNU Radio', gr.version())
     run('AM', 1080e3)
     run('FM', 90.5e6)
+    print('Starting while the window asks for the audio lag')
+    race('AM')
+    race('FM')
     print('AM stereo pilots')
     pilot('C-QUAM pilot (25 Hz, 4%) found', [(25.0, 0.04)], True, 'cquam')
     pilot('Kahn pilot (15 Hz, 4%) found', [(15.0, 0.04)], True, 'kahn')
@@ -213,4 +254,7 @@ def main():
 
 
 if __name__ == '__main__':
+    if len(sys.argv) > 2 and sys.argv[1] == '--start-race':
+        start_race(sys.argv[2])
+        sys.exit(0)
     sys.exit(main())

@@ -113,7 +113,10 @@ class Station(gr.hier_block2):
     def __getattr__(self, name):                    # the other osmosdr settings: accepted
         if name.startswith('__'):
             raise AttributeError(name)
-        return lambda *a, **k: 0
+        try:                # GNU Radio 3.10.1 finds its own methods (connect...) this way
+            return getattr(object.__getattribute__(self, '_impl'), name)
+        except AttributeError:
+            return lambda *a, **k: 0
 
 
 class Speakers(gr.sync_block):

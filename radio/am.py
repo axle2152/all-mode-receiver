@@ -550,6 +550,8 @@ class AMReceiver(Receiver):
         """How far the sound card trails what this receiver measures, in seconds:
         (meters, front end), from the samples queued between the audio low-pass
         (the meter tap) or the channel translator and the audio sink."""
+        if not self._counting():
+            return None
         try:
             played = self.audio_sink.nitems_read(0)
             tap = self.notch_l.nitems_written(0) * self.audio_rate / self.ch_rate

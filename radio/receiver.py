@@ -66,6 +66,7 @@ class Receiver(gr.top_block):
         self._wb_seen = time.monotonic()      # last time samples were seen arriving
         self._got_samples = False             # any since start()
         self._n_in = 0                        # samples taken from the dongle, at last look
+        self._flowing = False                 # start() has returned: see _counting()
         self.addons = []                      # add-ons running on this receiver
         self.station = {}                     # what they last reported (radio/addons.py)
 
@@ -99,8 +100,17 @@ class Receiver(gr.top_block):
         """The first block after the dongle, where samples are counted."""
         raise NotImplementedError
 
+    def _counting(self):
+        """True once start() has returned. GNU Radio builds the blocks' sample counters
+        (nitems_read, nitems_written) inside start(), and the window's timer can reach a new
+        receiver while that's still going on: reading a counter then crashed GNU Radio 3.10.1
+        outright (a segfault, which no try can catch). Read them only when this is True."""
+        return self._flowing
+
     def _samples_in(self):
         """Samples taken from the dongle so far, or None."""
+        if not self._counting():
+            return None
         try:
             return int(self._dongle_block().nitems_read(0))
         except Exception:
@@ -108,6 +118,8 @@ class Receiver(gr.top_block):
 
     def _flow(self):
         """Samples moved so far from the dongle and to the sound card, for stall reports."""
+        if not self._counting():
+            return "counters unavailable (not started yet)"
         try:
             return (f"from dongle {self._dongle_block().nitems_read(0)} samples, "
                     f"to sound card {self.audio_sink.nitems_read(0)} samples")
@@ -122,6 +134,7 @@ class Receiver(gr.top_block):
             self._wb_seen = time.monotonic()
             self._got_samples = False
             self._n_in = 0
+        self._flowing = True
 
     def _watchdog(self, now, fresh=False):
         """Call from update_blend(). fresh: the receiver's own snapshot shows new samples.

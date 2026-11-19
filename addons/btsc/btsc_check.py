@@ -122,7 +122,10 @@ def Replay(path, rate):
         def __getattr__(self, name):
             if name.startswith('__'):
                 raise AttributeError(name)
-            return lambda *a, **k: 0
+            try:                # GNU Radio 3.10.1 finds its own methods (connect...) this way
+                return getattr(object.__getattribute__(self, '_impl'), name)
+            except AttributeError:
+                return lambda *a, **k: 0
     return _Replay()
 
 
@@ -200,7 +203,9 @@ def main():
         rows.append(r)
         dev = 0.0
         pil = (f"{r['pilot'] * 5:4.2f} kHz at {r['hz']:7.1f} Hz" if r['pilot'] is not None
-               and r['hz'] is not None else '        --           ')
+               and r['hz'] is not None else
+               f"{r['pilot'] * 5:4.2f} kHz at    ?    Hz" if r['pilot'] is not None
+               else '        --           ')
         state = f"STEREO, blend {r['blend']:.2f}, L+R +{r['lpr']:.1f} dB" if r['st'] else r['why']
         print(f"  {sec:2d}  {r['q']:4.1f} dB {r['clip']:5.2f}% {r['gain']:4.1f}  "
               f"{r['p19']:.3f}{'*' if r['has19'] else ' '} {r['dev']:3.0f} kHz  {pil}  {state}", flush=True)
@@ -250,7 +255,10 @@ def main():
     elif pilot is None or pilot < 0.1:
         print("- No 15.734 kHz pilot: the station is in mono, or isn't TV sound"
               + (" (it has a 19 kHz pilot: an FM stereo station)." if has19 > 0.5 else "."))
-    elif hz is None or abs(hz - 15734.27) > 25:
+    elif hz is None:
+        print("- Something near 15.7 kHz, but the add-on can't tell what frequency its PLL is on.\n"
+              "  That's a fault in the add-on: please send this whole output.")
+    elif abs(hz - 15734.27) > 25:
         print(f"- Something near 15.7 kHz, but the add-on's PLL isn't locked to it (at {hz:.1f} Hz;\n"
               "  BTSC's pilot is 15734.3 Hz, the NTSC line rate). Check the transmitter's sample\n"
               "  rate matches what the hardware runs at.")

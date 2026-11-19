@@ -1328,6 +1328,8 @@ class FMStereoReceiver(Receiver):
         tap (de-emphasis) or the channel filter and the audio sink, plus the fixed
         delays after the tap (noise reducer, treble path). The sound card's own
         buffer, or Bluetooth, isn't included. None if the counters aren't there."""
+        if not self._counting():
+            return None
         try:
             played = self.audio_sink.nitems_read(0)
             to_audio = self.audio_rate / self.mpx_rate

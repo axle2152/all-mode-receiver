@@ -12,6 +12,7 @@ turns up elsewhere too. The composite:
 
 Signal path (at the receiver's composite rate, 240 kHz):
   composite -> fH band-pass -> PLL -> doubled -> 2fH carrier --.
+                               PLL -> its frequency, 10 ms at a time (is it on fH?)
   composite -> delay (= the band-pass's) -------------------- x -> the receiver's own 15 kHz
      low-pass -> level -> dbx-TV expansion -> 75 us pre-emphasis -> the receiver's matrix
   (and the same at the carrier's cosine phase, which carries only noise: the expander takes
@@ -146,6 +147,12 @@ class Addon:
         self.pmix = blocks.multiply_conjugate_cc(1)
         self.pint = blocks.integrate_cc(self._win)
         self.probe = blocks.probe_signal_c()
+        # the PLL's frequency, from how fast its output turns, 10 ms at a time. (Not
+        # pll.get_frequency(): GNU Radio 3.10.1, Ubuntu 22.04's, doesn't offer it in Python, so
+        # the PLL never looked locked there.)
+        self.pfm = analog.quadrature_demod_cf(fs / (2 * math.pi))     # in Hz
+        self.pfint = blocks.integrate_ff(self._win)
+        self.pfprobe = blocks.probe_signal_f()
 
         c = rx.connect
         tap = rx.addon_tap()
@@ -162,6 +169,7 @@ class Addon:
         c(self.bp, (self.pmix, 0))
         c(self.pll, (self.pmix, 1))
         c(self.pmix, self.pint, self.probe)
+        c(self.pll, self.pfm, self.pfint, self.pfprobe)
         self.reset()
 
     def stereo_decoder(self):
@@ -193,10 +201,7 @@ class Addon:
             lv = 2 * abs(p) / self._win / self._pilot_full
             a = 1 - math.exp(-self.WINDOW_S / self.AVG_S)
             self.pilot = lv if self.pilot is None else self.pilot + a * (lv - self.pilot)
-        try:
-            self.pilot_hz = self.pll.get_frequency() * rx.mpx_rate / (2 * math.pi)
-        except Exception:
-            self.pilot_hz = None
+        self.pilot_hz = self.pfprobe.level() / self._win if now >= self._settle else None
         locked = self.pilot_hz is not None and abs(self.pilot_hz - FH) <= self.LOCK_HZ
         ok = (self.pilot is not None and locked
               and self.pilot >= self.PILOT_MIN and rx.cnr_db >= self.MIN_CNR_DB)

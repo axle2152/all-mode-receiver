@@ -135,7 +135,10 @@ def Replay(path, rate):
         def __getattr__(self, name):                         # tuning, gain: nothing to do
             if name.startswith('__'):
                 raise AttributeError(name)
-            return lambda *a, **k: 0
+            try:                # GNU Radio 3.10.1 finds its own methods (connect...) this way
+                return getattr(object.__getattribute__(self, '_impl'), name)
+            except AttributeError:
+                return lambda *a, **k: 0
     return _Replay()
 
 

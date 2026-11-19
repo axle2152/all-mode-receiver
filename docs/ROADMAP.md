@@ -94,6 +94,17 @@ the blanker row), and clicking Noise reduction switched static cut on.
   must be allowed for (measured on the carrier's other phase), and the pilot PLL must not see
   the pilot's mirror (a complex band-pass): each cost 10 to 30 dB of separation.
 - [ ] BTSC on the bench: the NTSC transmitter on channel 6, a dongle on 87.7.
+  First try (channel 24, 535.75 MHz with the band limits overridden, on the Ubuntu 22.04
+  laptop): no BTSC, and now and then a segfault on start. Both found and fixed. GNU Radio
+  3.10.1 offers no `get_frequency()` on its PLL block in Python, so the add-on never saw its
+  PLL as locked (it now measures the PLL's frequency from its output, on every version). The
+  segfault: the window's timer asked the new receiver for its audio lag while the backend
+  thread was still inside `start()`, and reading GNU Radio's sample counters then crashes it
+  (15 times in 15 on 3.10.1 and on 3.10.9 when forced); they're read only after `start()`
+  now, and `test_gnuradio.py` forces the race. The reference transmitter's own output (15
+  Msps, 8-bit, as sent to the HackRF) plays BTSC through the receiver at 535.75 MHz, up to
+  25 kHz off-centre. Still to fix: an off-centre carrier puts a steady offset on L+R that
+  BTSC's 9.5 dB raises into the final clipper (2 dB lost at 25 kHz off, silence at 50).
 - [x] Crosby on the bench: the HackRF sending the fixed `crosby_tx.grc`, a dongle receiving.
   First try: no Crosby. `addons/crosby/crosby_check.py` found the add-on working (CROSBY STEREO
   from the first second, subcarrier steady at 50.0 kHz) but not installed: Ubuntu 22.04's pip had
