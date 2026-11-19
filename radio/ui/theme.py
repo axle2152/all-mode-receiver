@@ -54,7 +54,8 @@ COLOR_ITEMS = {
     'tuner': (('freq', 'Frequency digits', _PH), ('units', 'kHz / MHz', _PH),
               ('leg_FM', 'FM', _PH), ('leg_AM', 'AM', _PH), ('leg_AUTO', 'AUTO', _PH),
               ('leg_STEREO', 'STEREO', _PH), ('leg_MONO', 'MONO', _PH), ('leg_RDS', 'RDS', _PH),
-              ('leg_WIDE', 'WIDE', _PH),
+              ('leg_USB', 'USB', _PH), ('leg_LSB', 'LSB', _PH), ('leg_CW', 'CW', _PH),
+              ('leg_TONE', 'TONE', _PH),
               ('leg_TUNED', 'TUNED', _PH), ('leg_MEMORY', 'MEMORY', _PH),
               ('signal', 'Signal bar', _PH), ('sig_label', 'Meter scale, UNCAL', _PH),
               ('ch_label', 'CH label', _PH), ('ch_digits', 'Channel digits', _PH),
@@ -111,6 +112,10 @@ TUNE_DOWN  = (1192, 51, 1314, 83)
 TUNE_UP    = (1328, 51, 1450, 83)
 DIRECT_KEY = (1316, 107, 1384, 133)     # type a frequency on the preset keys
 WIDE_KEY   = (1392, 107, 1450, 133)     # AM filter: Wide
+FINE_DN    = (1192, 107, 1232, 133)     # fine tune: a small nudge down / up
+FINE_UP    = (1240, 107, 1280, 133)
+MODE_BOXES = tuple((1192 + i * 66.5, 159, 1250.5 + i * 66.5, 185) for i in range(4))   # AM FM SSB CW
+BANDINFO_KEY = (1078, 159, 1158, 185)   # the text: band information, or the station's own data
 LABEL_Y, LOWER_LABEL_Y, ROW3_LABEL_Y = 43, 99, 151
 
 # Bands layout (base coordinates): the shortwave and amateur keys share one width so their
@@ -139,27 +144,28 @@ FREEZE_KEY = (1392, 107, 1450, 133)
 # The frequency (radio/ui/frequency.py): seven big digits down to 1 kHz, each with a decimal
 # point after it, then three small digits for what's below 1 kHz, against the unit.
 LEG_PX, UNIT_PX, SCALE_PX = 13.0, 14.0, 11.0    # legends, kHz / MHz, the signal scale
-LEG_Y      = 28
-LEGENDS    = (('FM', 14), ('AM', 44), ('AUTO', 80), ('STEREO', 130), ('MONO', 198), ('RDS', 254),
-              ('WIDE', 293), ('TUNED', 342), ('MEMORY', 512))       # MEMORY over the channel;
-                                                                    # room for DejaVu, the widest
-DIG_TOP, DIG_H, DIG_W, DIG_T = 38, 46, 24, 4.4
+LEG_Y      = 19
+LEGENDS    = (('AM', 12), ('FM', 43), ('USB', 72), ('LSB', 110), ('CW', 146),
+              ('AUTO', 186), ('STEREO', 236), ('MONO', 303), ('RDS', 357), ('TONE', 396),
+              ('TUNED', 453), ('MEMORY', 514))      # MEMORY over the channel; room for DejaVu, the widest
+DIG_TOP, DIG_H, DIG_W, DIG_T = 32, 46, 24, 4.4
 DIG_SLANT  = 0.18                     # italic, about 10 degrees
 DIG_X      = tuple(10 + i * 35 for i in range(7))
-FINE_TOP, FINE_H, FINE_W, FINE_T = 56, 28, 14, 3.0
+FINE_TOP, FINE_H, FINE_W, FINE_T = 50, 28, 14, 3.0
 FINE_X     = (263, 282, 301)
 DP_GAP, DP_SIZE = 3.0, 4.4            # a decimal point sits this far right of its digit's foot
-UNIT_X, KHZ_Y, MHZ_Y = 324, 64, 84
-SIG_X, SIG_W, SIG_PITCH, SIG_H0, SIG_H1, SIG_BOT = 362, 7.5, 10.5, 8, 30, 76
+UNIT_X, KHZ_Y, MHZ_Y = 324, 58, 78
+SIG_X, SIG_W, SIG_PITCH, SIG_H0, SIG_H1, SIG_BOT = 362, 7.5, 10.5, 8, 30, 70
 SIG_RISE   = 9                        # the first 9 bars rise; the rest stand at full height
 # The signal meter shows S units or signal quality, its scale under it (label, bar it sits under)
 S_SCALE    = (('1', 0), ('3', 2), ('5', 4), ('7', 6), ('9', 8), ('+20', 10), ('+40', 12), ('+60', 14))
 Q_SCALE    = (('POOR', 2), ('FAIR', 7), ('GOOD', 12))
-SCALE_Y, UNCAL_Y = 94, 42             # baselines: the scale, and UNCAL over the end of the bar
+SCALE_Y, UNCAL_Y = 86, 36             # baselines: the scale, and UNCAL over the end of the bar
 CH_LABEL_X  = 529
-CH_TOP, CH_H, CH_W, CH_T = 56, 28, 13, 3.0
+CH_TOP, CH_H, CH_W, CH_T = 50, 28, 13, 3.0
 CH_X        = (548, 567)
-DOT_TOP, DOT_PITCH, DOT_SIZE = 112, 2.45, 1.9
+DOT_TOP, DOT_PITCH, DOT_SIZE = 104, 2.45, 1.9
+LINE2_X, LINE2_TOP, LINE2_N = 16, 128, 39      # the second dot-matrix row: one field, 39 characters
 DOT_FIELDS  = (('call', 16, 4), ('ps', 96, 8), ('rt', 235, 23))   # name, x, characters (gaps between zones)
 DOT_BLUR    = 1.3                     # dots glow less than the big segments
 ALWAYS_LIT  = ('CH',)

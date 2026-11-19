@@ -35,6 +35,8 @@ MODE_LEGEND = {'AM': 'AM', 'SAM_U': 'AM', 'SAM_L': 'AM', 'FM': 'FM', 'NFM': 'FM'
 MODE_TEXT = {'AM': 'AM', 'SAM_U': 'SYNC AM USB', 'SAM_L': 'SYNC AM LSB', 'FM': 'FM',
              'NFM': 'FM NARROW', 'NFM2': 'FM NARROW 2.5', 'USB': 'USB', 'LSB': 'LSB', 'CW': 'CW'}
 DATA_MODES = ('AM', 'SAM_U', 'SAM_L', 'FM')             # can carry station data (RDS, PMDS...)
+FINE_STEP = {'AM': 100, 'SAM_U': 10, 'SAM_L': 10, 'FM': 5000, 'NFM': 500, 'NFM2': 500,   # Hz, Fine tune
+             'USB': 10, 'LSB': 10, 'CW': 10}
 
 # group: (title on the panel, its row)
 GROUPS = {'shortwave': ('SHORTWAVE (METRES)', 0), 'broadcast': ('BROADCAST', 0),

@@ -28,6 +28,16 @@ Tuner (top unit)
     Memory          then a preset number: stores the station you're on, on this band
     S units         latching: the signal bar in S units, or (up) signal quality;
                     see Display below
+    Band info       latching: the text shows the band, mode and filter, not the
+                    station's own data (RDS, RBDS, PMDS); with no station data it shows
+                    them anyway. Locked down on modes that carry none (SSB, CW).
+    Mode            AM, FM, SSB, CW: that mode on the frequency you're on (it changes
+                    receiver if it needs to). Pressed again, its next kind: AM, then
+                    synchronous AM on USB or LSB; FM, then narrow FM (+/-5 and 2.5 kHz);
+                    SSB on USB or LSB. Kinds whose receiver isn't built yet say NOT YET.
+                    A band, or a part of a band with a mode of its own, picks that mode.
+    Fine tune       a small nudge off the band's steps (AM 100 Hz, SSB and CW 10 Hz,
+                    FM 5 kHz); the next ordinary step comes back onto them
     Wide            latching AM filter key: 12 kHz, with a 10 kHz notch for
                     adjacent-channel whistles. Off: the AM width chosen in Settings
                     (2.5, 5, 8 or 10.2 kHz). With AUTO on there, it starts at 2.5 kHz

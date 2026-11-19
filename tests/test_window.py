@@ -390,6 +390,49 @@ def child(appdir, band, fonts, secs):
             got = app._presets_from(old + [None] * 21)
             if [got.get(key, [None] * 3)[i] for key, i in (('FM', 0), ('MW', 1), ('SW31', 2))] != old:
                 mine.append(f'an older single list went to {sorted(got)}')
+            # modes: a mode key switches receiver on the same frequency; a kind not built says so
+            press(kb['FM'])
+            f0 = app.freq
+            app._mode_key('AM')
+            if (app.mode, app.band, round(app.freq)) != ('AM', 'AM', round(f0)):
+                mine.append(f'AM mode on FM: mode {app.mode} on {app.band} at {app.freq / 1e6:g} MHz')
+            app._memory()
+            app._channel(7)                             # a preset remembers its mode
+            for key in ('AM', 'SSB', 'CW'):
+                app._mode_key(key)
+                if app.mode != 'AM' or 'NOT YET' not in (app._dm_msg or ('',))[0]:
+                    mine.append(f'{key} key (not built): mode {app.mode}, message {app._dm_msg!r}')
+            app._mode_key('FM')
+            if (app.mode, app.band) != ('FM', 'FM'):
+                mine.append(f'FM key: mode {app.mode} on {app.band}')
+            app._channel(7)
+            if (app.mode, app.band, round(app.freq)) != ('AM', 'AM', round(f0)):
+                mine.append(f'preset 7 (stored in AM on FM): mode {app.mode} on {app.band}')
+            # the two text rows: the band, then the mode and filter; Band info
+            press(kb['MW'])
+            app._dm_msg = None                          # the DIRECT SAMPLING message takes the row a while
+            st = app._vfd_state()
+            if st['rds'][2] != 'MEDIUM WAVE' or not st['line2'].startswith('AM  FILTER') or 'AM' not in st['legends']:
+                mine.append(f"MW text {st['rds']!r} / {st['line2']!r}, legends {sorted(st['legends'])}")
+            info = app.band_info
+            app._toggle_band_info()
+            if app.band_info == info:
+                mine.append('Band info key did nothing on AM')
+            app._toggle_band_info()
+            # fine tune: off the raster; the next step comes back onto it
+            app._tune_to(1080e3)
+            app._fine(+1)
+            fine = app.freq
+            app._step(+1, manual=True)
+            if (round(fine), round(app.freq)) != (1080100, 1090000):
+                mine.append(f'fine tune from 1080 kHz: {fine:.0f} Hz, then a step: {app.freq:.0f} Hz')
+            # a part of a band with its own mode: 10 m's AM part; below it, USB (not built): stays AM
+            app._direct_start()
+            app._direct = '29100'
+            app._direct_enter()
+            app._tune_to(28.999e6)
+            if (app.bandkey, app.mode) != ('HAM10', 'AM'):
+                mine.append(f'10 m below its AM part: band {app.bandkey}, mode {app.mode} (want AM kept)')
             press(kb['MW' if band == 'AM' else 'FM'])     # back where this run started
         problems.extend(mine)
         real_print('INFO keys and size:', 'ok' if not mine else '; '.join(mine))

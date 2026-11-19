@@ -35,9 +35,10 @@ from .frequency import as_text, freq_digits
 from . import smeter
 from .monitor import DelayLine, MonitorLogic
 from .settings import SettingsWindow
+from .tips import _pty_name
 from . import bandplan as BP
 from .theme import (
-    ADV_KEY, BANDS_KEY, DIRECT_KEY, BAND_GAP, BAND_KEY_H, BAND_ROWS, BAND_W, BAND_X0, BAND_X1, BANDS_H, BASE_H, BASE_W,
+    ADV_KEY, BANDINFO_KEY, BANDS_KEY, DIRECT_KEY, FINE_DN, FINE_UP, MODE_BOXES, BAND_GAP, BAND_KEY_H, BAND_ROWS, BAND_W, BAND_X0, BAND_X1, BANDS_H, BASE_H, BASE_W,
     COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, GROUP_GAP, HEADING_PX,
     DOT_FIELDS, ECHO_KEY, FREEZE_KEY, HOLD_KEY, IF_KEY, KEY_PX, LABEL_PX, LABEL_Y, LIP,
     LOWER_LABEL_Y, MEM_KEY, METER_KEY, MONITOR_KEY, MONO_KEY, MPX_KEY, PAD_GAP, PAD_PX, PAD_ROWS,
@@ -88,6 +89,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.band_key_goes = saved.get('band_key_goes', 'home')      # their key: 'home' channel, or 'last'
         self._home_ask_until = 0.0
         self.bandkey = self._start_band_key(saved.get('bandkey'))
+        self.mode = self._start_mode(saved.get('mode'))
+        self.band_info = bool(saved.get('band_info', False))   # the text: band information, not the station's
 
         pick = lambda key, default: saved.get(key, delco.get(key, default))
         self.presets    = (saved.get('presets') or self._presets_from(saved.get('channels'))   # by band
@@ -261,7 +264,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             out['presets'] = {key: [self._parse_channel(c) for c in lst]
                               for key, lst in raw['presets'].items()
                               if key in BP.BY_KEY and isinstance(lst, list) and len(lst) == N_CHANNELS}
-        for key in ('fm_mono', 'power', 'agc', 'monitor', 'bands', 'peak_hold'):
+        for key in ('fm_mono', 'power', 'agc', 'monitor', 'bands', 'band_info', 'peak_hold'):
             if isinstance(raw.get(key), bool):
                 out[key] = raw[key]
         for key, name in (('stereo_blend', 'blend'), ('hi_cut', 'hicut'), ('dip_hicut', 'dip_hicut'),
@@ -331,6 +334,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             out['channel_steps'] = raw['channel_steps']
         if raw.get('band_key_goes') in ('home', 'last'):
             out['band_key_goes'] = raw['band_key_goes']
+        if raw.get('mode') in BP.MODES:
+            out['mode'] = raw['mode']
         if isinstance(raw.get('band_freqs'), dict):
             out['band_freqs'] = {key: float(v) for key, v in raw['band_freqs'].items()
                                  if isinstance(key, str) and key.split('#')[0] in BP.BY_KEY and num(v)
@@ -343,7 +348,10 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if not isinstance(c, str):
             return None
         parts = c.split()
-        if len(parts) != 2 or parts[0] not in BANDS:
+        if len(parts) not in (2, 3) or parts[0] not in BANDS:
+            return None
+        mode = parts[2] if len(parts) == 3 else None
+        if mode is not None and BP.MODE_RX.get(mode) != parts[0]:
             return None
         try:
             v = float(parts[1])
@@ -353,15 +361,20 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         lo, hi = RTL_RANGE
         if not lo <= hz <= hi:
             return None
-        return {'band': parts[0], 'freq': round(hz, -3)}   # exactly as stored (to 1 kHz)
+        out = {'band': parts[0], 'freq': round(hz, 1)}   # as stored (fine tuning keeps its Hz)
+        if mode is not None:
+            out['mode'] = mode
+        return out
 
     @staticmethod
     def _channel_text(c):
         if not c:
             return None
+        mode = c.get('mode')
+        tail = f' {mode}' if mode and mode != c['band'] else ''     # the plain mode needs no word
         if c['band'] == 'FM':
-            return 'FM ' + f"{c['freq'] / 1e6:.4f}".rstrip('0').rstrip('.')
-        return f"AM {round(c['freq'] / 1e3)}"
+            return 'FM ' + f"{c['freq'] / 1e6:.6f}".rstrip('0').rstrip('.') + tail
+        return f"AM {c['freq'] / 1e3:.3f}".rstrip('0').rstrip('.') + tail
 
     def _save_settings(self):
         fm = self.freq if self.band == 'FM' else self.fm_freq
@@ -388,6 +401,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             'bands': bool(self.bands_on),
             'ui_size': self.ui_size,
             'bandkey': self.bandkey,
+            'mode': self.mode,
+            'band_info': bool(self.band_info),
             'home_channels': {key: round(v, 1) for key, v in self.home_channels.items()},
             'channel_steps': bool(self.channel_steps),
             'band_key_goes': self.band_key_goes,
@@ -654,6 +669,13 @@ class TunerApp(SettingsWindow, AdvancedWindow):
           on_press=lambda: self._tune_press(-1), on_release=self._tune_release)
         K(c, TUNE_UP, legend='Up', icon='right', size=KEY_PX,
           on_press=lambda: self._tune_press(+1), on_release=self._tune_release)
+        K(c, FINE_DN, icon='left', size=KEY_PX, on_press=lambda: self._fine(-1))
+        K(c, FINE_UP, icon='right', size=KEY_PX, on_press=lambda: self._fine(+1))
+        for box, key in zip(MODE_BOXES, BP.MODE_KEYS):
+            K(c, box, legend=key, size=KEY_PX, on_press=lambda key=key: self._mode_key(key),
+              latched=lambda key=key: BP.MODE_KEY.get(self.mode) == key)
+        K(c, BANDINFO_KEY, legend='Band info', size=KEY_PX - 1, on_press=self._toggle_band_info,
+          latched=lambda: self.band_info or self.mode not in BP.DATA_MODES)
         K(c, DIRECT_KEY, legend='Direct', size=KEY_PX, on_press=self._direct_toggle,
           latched=lambda: self._direct is not None)
         K(c, WIDE_KEY, legend='Wide', size=KEY_PX, on_press=self._toggle_wide, latched=lambda: self.am_wide)
@@ -749,7 +771,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._nameplate(d, self.badge)
         self._draw_bezel(d, WIN)
         boxes = [POWER_KEY, BANDS_KEY, MONITOR_KEY, ADV_KEY, SET_KEY, MEM_KEY, MONO_KEY, METER_KEY,
-                 TUNE_DOWN, TUNE_UP, DIRECT_KEY, WIDE_KEY]
+                 BANDINFO_KEY, TUNE_DOWN, TUNE_UP, FINE_DN, FINE_UP, DIRECT_KEY, WIDE_KEY] + list(MODE_BOXES)
         for i in range(10):
             row, col = divmod(i, 5)
             xa = PAD_X + col * (PAD_W + PAD_GAP)
@@ -760,12 +782,15 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                            (ADV_KEY[0], ROW3_LABEL_Y, 'Open'),
                            (PAD_X, LABEL_Y, 'Presets 1-24'),
                            (MONO_KEY[0], ROW3_LABEL_Y, 'Stereo'), (METER_KEY[0], ROW3_LABEL_Y, 'Display'),
-                           (TUNE_DOWN[0], LABEL_Y, 'Tuning'),
+                           (TUNE_DOWN[0], LABEL_Y, 'Tuning'), (FINE_DN[0], LOWER_LABEL_Y, 'Fine tune'),
+                           (MODE_BOXES[0][0], ROW3_LABEL_Y, 'Mode'),
                            (DIRECT_KEY[0], LOWER_LABEL_Y, 'Frequency'),
                            (WIDE_KEY[0], LOWER_LABEL_Y, 'AM filter')):
             draw_text(d, x * k, y * k, text, lab, PRINT)
         draw_text(d, pad_r * k, LABEL_Y * k, 'To store: Memory, then channel', small, PRINT_SOFT, align='r')
         draw_text(d, TUNE_UP[2] * k, LABEL_Y * k, 'Tap for manual, hold for auto', small,
+                  PRINT_SOFT, align='r')
+        draw_text(d, TUNE_UP[2] * k, ROW3_LABEL_Y * k, 'Press again for the next kind', small,
                   PRINT_SOFT, align='r')
 
     def _band_layout(self):
@@ -867,6 +892,54 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         b = self._band_for_family(self.freq, self.band, prefer=saved)
         return b.key if b is not None else ('FM' if self.band == 'FM' else 'MW')
 
+    def _start_mode(self, saved):
+        """The mode to start in: the saved one if this receiver plays it, else the band's usual."""
+        if saved in BP.MODES and BP.MODE_RX[saved] == self.band:
+            return saved
+        m = BP.usual_mode(BP.band(self.bandkey), self.freq)
+        return m if m and BP.MODE_RX[m] == self.band else ('FM' if self.band == 'FM' else 'AM')
+
+    def _rx_ok(self, mode):
+        """A receiver for this mode is built (and AM's could be loaded)."""
+        rx = BP.MODE_RX.get(mode)
+        return rx == 'FM' or (rx == 'AM' and AMReceiver is not None)
+
+    def _mode_key(self, key):
+        """AM, FM, SSB, CW: that mode, or pressed again, its next kind (AM: synchronous on USB or
+        LSB; FM: broadcast, narrow, narrow 2.5; SSB: USB, LSB)."""
+        if not self.power_on:
+            return
+        kinds = BP.KEY_MODES[key]
+        mode = kinds[(kinds.index(self.mode) + 1) % len(kinds)] if BP.MODE_KEY.get(self.mode) == key else kinds[0]
+        if mode == self.mode:
+            return
+        if not self._rx_ok(mode):
+            self._message(f'{BP.MODE_TEXT[mode]} NOT YET')
+            return
+        self.mode = mode
+        if BP.MODE_RX[mode] != self.band:
+            self._switch_family(BP.MODE_RX[mode], self.freq)
+        self._save_settings()
+        self._refresh_keys()
+
+    def _fine(self, direction):
+        """Fine tune: a small nudge off the band's raster (AM 100 Hz, SSB and CW 10 Hz...)."""
+        if not self.power_on:
+            return
+        self._seek_cancel()
+        self._memory_until = 0.0
+        self._tune_to(self.freq + direction * BP.FINE_STEP[self.mode], snap=False)
+
+    def _toggle_band_info(self):
+        """Band info: the text shows the band and mode, not the station's own data. Modes that can
+        carry no data (SSB, CW, narrow FM) show band information only."""
+        if self.mode not in BP.DATA_MODES:
+            self._message(f'{BP.MODE_TEXT[self.mode]}: NO STATION DATA')
+            return
+        self.band_info = not self.band_info
+        self._refresh_keys()
+        self._save_settings()
+
     def _band_for_family(self, freq, family, prefer=None):
         """The band freq falls in that the receiver `family` ('AM', 'FM') plays in its usual mode:
         `prefer` if it qualifies, else the narrowest that does."""
@@ -890,10 +963,11 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                 out[f'{self.bandkey}#{self._range_index(b, self.freq)}'] = self.freq
         return out
 
-    def _band_key(self, key, freq=None):
+    def _band_key(self, key, freq=None, mode=None):
         """A key on the Bands panel (or a frequency typed or recalled that falls in band `key`):
-        tune there, in the band's usual mode. A band remembers where it was left; a key that
-        steps through ranges (Police/Fire) moves to its next range when pressed again."""
+        tune there, in the band's usual mode (or `mode`, a preset's). A band remembers where it was
+        left; a key that steps through ranges (Police/Fire) moves to its next range when pressed
+        again."""
         if not self.power_on:
             return False
         b = BP.band(key)
@@ -906,15 +980,18 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             else:
                 freq = self.band_freqs.get(key, BP.home(b))
         freq = BP.nearest_channel(b, freq) if b.channels and self.channel_steps else BP.snap(b, freq)
-        rx = BP.MODE_RX.get(BP.usual_mode(b, freq))
+        if mode not in BP.MODES or not self._rx_ok(mode):
+            mode = BP.usual_mode(b, freq)
+        rx = BP.MODE_RX.get(mode)
         if rx == 'AM' and AMReceiver is None:
             self._set_status(f'AM unavailable: {_AM_ERR}')
             return False
-        if rx not in ('AM', 'FM'):                     # its receiver isn't built yet
+        if not self._rx_ok(mode):                      # its receiver isn't built yet
             self._message('NARROW FM NOT YET' if rx == 'NFM' else 'SSB AND CW NOT YET')
             return False
         self.band_freqs = self._band_freqs_now()
         self.bandkey = key
+        self.mode = mode
         if rx != self.band:
             self._switch_family(rx, freq)
         else:
@@ -925,14 +1002,18 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._refresh_keys()
         return True
 
-    def _go_to(self, freq, family=None):
-        """Tune to a frequency typed or recalled: in the band it falls in, whose usual mode picks
-        the receiver (a preset keeps the receiver it was stored on); with Band limits: Override,
-        anywhere, on the receiver in use."""
-        b = (self._band_for_family(freq, family, prefer=self.bandkey) if family
-             else BP.band_for(freq, prefer=self.bandkey))
+    def _go_to(self, freq, family=None, mode=None):
+        """Tune to a frequency typed or recalled: in the band it falls in, in its usual mode (a
+        preset in the mode it was stored in); with Band limits: Override, anywhere, on the
+        receiver it was stored on (or the one in use)."""
+        if mode is None and family is not None:        # an older preset: its receiver's band
+            b = self._band_for_family(freq, family, prefer=self.bandkey)
+        else:
+            b = BP.band_for(freq, prefer=self.bandkey)
         if b is not None:
-            return self._band_key(b.key, freq)
+            return self._band_key(b.key, freq, mode=mode)
+        if mode in BP.MODES:
+            family = BP.MODE_RX[mode]
         if not self.override:
             self._message('OUT OF BAND')
             return False
@@ -941,6 +1022,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             self._switch_family(family, freq)
         else:
             self._tune_to(freq)
+        if mode in BP.MODES and self._rx_ok(mode) and BP.MODE_RX[mode] == self.band:
+            self.mode = mode
         self._save_settings()
         return True
 
@@ -958,6 +1041,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         else:
             self.am_freq = self.freq
         self.band = band
+        if BP.MODE_RX.get(self.mode) != band:          # the new receiver's plain mode
+            self.mode = 'FM' if band == 'FM' else 'AM'
         self.freq = self._snap(freq)
         self._tuned_t = time.monotonic()
         self._q_on = False
@@ -1072,12 +1157,21 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             freq = hi
         return BP.snap(b, freq)
 
-    def _tune_to(self, freq):
-        self.freq = self._snap(freq)
+    def _tune_to(self, freq, snap=True):
+        b0, old = self._plan(), self.freq
+        old_usual = BP.usual_mode(b0, old) if BP.in_band(b0, old) else None
+        self.freq = self._snap(freq) if snap else float(round(freq))
         if not self._in_band():                        # past its edge (Override): the band it's in now
             b = self._band_for_family(self.freq, self.band)
             if b is not None:
                 self.bandkey = b.key
+        b = self._plan()
+        usual = BP.usual_mode(b, self.freq) if BP.in_band(b, self.freq) else None
+        if usual and usual != old_usual and usual != self.mode and self._rx_ok(usual):
+            self.mode = usual                          # into a part of the band with a mode of its own
+            if BP.MODE_RX[usual] != self.band:
+                self._switch_family(BP.MODE_RX[usual], self.freq)
+                return
         self._tuned_t = time.monotonic()
         self._q_on = False
         self._mon_retuned()
@@ -1281,7 +1375,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         now = time.monotonic()
         if self._memory_until > now:
             self._memory_until = 0.0
-            self._band_presets()[n - 1] = {'band': self.band, 'freq': self.freq}
+            self._band_presets()[n - 1] = {'band': self.band, 'freq': self.freq, 'mode': self.mode}
             self._last_ch = n
             self._flash = (n, now + 1.2)
             self._save_settings()
@@ -1290,8 +1384,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if not c:
             self._flash = (n, now + 1.2)
             return
-        if not self._go_to(c['freq'], family=c['band']):   # out of band: stored with the override on
-            return
+        if not self._go_to(c['freq'], family=c['band'], mode=c.get('mode')):   # out of band: stored
+            return                                                           # with the override on
         self._last_ch = n
         self._save_settings()
 
@@ -1436,14 +1530,12 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._rx_line.push(now, rx)
         shown = self._rx_line.at(now - self._delays()[1]) or rx
 
-        legends = {self.band}
+        legends = {BP.MODE_LEGEND[self.mode]}
         if self._moving():
             legends.add('AUTO')
         mono = self.fm_mono
         if mono:
             legends.add('MONO')
-        if self.band == 'AM' and self.am_wide:
-            legends.add('WIDE')
         if shown['stereo'] and not mono:
             legends.add('STEREO')
         if shown['tuned']:
@@ -1474,9 +1566,10 @@ class TunerApp(SettingsWindow, AdvancedWindow):
 
         view = self.meter_view.get(self.band, 'Q')
         sig, uncal = shown['smeter'] if view == 'S' else (shown['sig'], False)
+        line1, line2 = self._text_lines(tb, shown['text'])
         state = dict(legends=frozenset(legends), fixed=True, unit=unit, freq=(big, dots, fine),
                      sig=sig, meter=view, uncal=uncal, ch=ch,
-                     rds=self._live_text(now, blink) or shown['text'])
+                     rds=self._live_text(now, blink) or line1, line2=line2)
         if now < self._lamp_until:
             state['all'] = True
         return state
@@ -1560,6 +1653,27 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             if rlo <= c <= rhi:
                 return (c, '') if self.override else (None, 'OUT OF BAND: OVERRIDE OFF')
         return None, 'OUT OF RANGE'
+
+    def _text_lines(self, tb, station):
+        """The dot matrix's two rows: the station's own data (RDS, RBDS, PMDS) when it sends some,
+        Band info is up and the mode can carry it; otherwise the band, then the mode and filter."""
+        detail = self._mode_detail()
+        if any(f.strip() for f in station) and not self.band_info and self.mode in BP.DATA_MODES:
+            pty = getattr(tb, 'rds_pty', None)
+            return station, (_pty_name(pty).upper() if pty else detail)
+        b = self._plan()
+        return ('', '', BP.display_name(b, self.freq) if BP.in_band(b, self.freq) else ''), detail
+
+    def _mode_detail(self):
+        """The mode, and what goes with it: AM's filter, a channelized band's channel."""
+        parts = [BP.MODE_TEXT[self.mode]]
+        if self.band == 'AM':
+            parts.append('FILTER WIDE' if self.am_wide else 'FILTER AUTO' if self.am_auto_width
+                         else f'FILTER {self.am_normal_hz / 1000:g} kHz')
+        label = BP.channel_at(self._plan(), self.freq)
+        if label is not None:
+            parts.append(f'CHANNEL {label}')
+        return '  '.join(parts)
 
     def _rds_fields(self, tb, now):
         """Call letters, PS and a window of RadioText for the dot-matrix row.

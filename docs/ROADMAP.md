@@ -256,20 +256,26 @@ the monitor, and modes on the tuner.
 - [x] A band plan behind those keys: each band's edges, default mode, tuning step and filter
   widths, and the parts of a band with a mode of their own. Done (radio/ui/bandplan.py,
   tests/test_bandplan.py), for the Americas; filter widths come with the receivers.
-- [ ] Mode keys on the tuner: AM, FM, SSB, CW. Pressing one again steps to its next kind: AM,
+- [x] Mode keys on the tuner: AM, FM, SSB, CW. Pressing one again steps to its next kind: AM,
   synchronous AM on USB or LSB; FM broadcast, narrow (+/-5 kHz), narrow (+/-2.5 kHz); SSB on
   USB or LSB. Width steps the mode's filters (the CW filters too, taking over from the AM width
   and FM bandwidth rows in Settings); Squelch for narrow FM; Fine tune (two small keys) nudges
-  by less than the band's step (10 Hz on SSB and CW, 100 Hz or so on AM).
-- [ ] Each band picks its usual mode, and so does tuning into a part of a band with its own: AM
+  by less than the band's step (10 Hz on SSB and CW, 100 Hz or so on AM). Done: the keys, the
+  kinds, a mode on any frequency (changing receiver if it must), presets remembering their mode,
+  Fine tune (AM 100 Hz, FM 5 kHz, SSB/CW 10 Hz, narrow FM 500 Hz). Kinds whose receiver isn't
+  built (synchronous AM, narrow FM, SSB, CW) say NOT YET; Width and Squelch come with them.
+- [x] Each band picks its usual mode, and so does tuning into a part of a band with its own: AM
   on medium wave, shortwave and the airband; narrow FM on 2 m, marine and weather; on the
   amateur HF bands LSB below 10 MHz and USB above (20 m is USB), and CW in their CW parts.
   Where there's no usual mode, the radio stays on the one it's on. SSB and CW need Phase 6.
-- [ ] The tuner display: legends AM, FM, USB, LSB, CW; AUTO, STEREO, MONO, RDS, TONE; TUNED,
+  Done: crossing into such a part changes mode only when its receiver is built (else it stays).
+- [x] The tuner display: legends AM, FM, USB, LSB, CW; AUTO, STEREO, MONO, RDS, TONE; TUNED,
   MEMORY. A second dot-matrix line. Band info (a latching key) switches the text between the
   band information (band, kind of mode, filter, repeater offset, tone) and the station's own
   data (RDS, RBDS, PMDS: a shortwave station could carry PMDS); on modes that can carry no data
-  (SSB, CW) it stays on band information.
+  (SSB, CW) it stays on band information. Done: with no station data the text shows the band
+  anyway; in the station view the second row has the RDS programme type, else the mode. WIDE
+  left the legends for the text (AM's filter: WIDE, AUTO or its width).
 - [ ] Repeaters: Rev listens on the input, at the band's usual offset (2 m +/-600 kHz, 1.25 m
   -1.6 MHz, 70 cm +/-5 MHz); CTCSS (PL) and DCS decoded and shown, and tone squelch.
 - [ ] Regions, chosen in Settings, because band edges and channel spacing depend on where you

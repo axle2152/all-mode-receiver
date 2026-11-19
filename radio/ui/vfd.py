@@ -19,7 +19,7 @@ from .theme import (
     LEG_Y, MB_ROWS, MB_SCALE, MB_SEGS, MB_X0, MB_X1, MHZ_Y, MON_STATS, NUMS, NUM_H, NUM_PITCH,
     NUM_T, NUM_W, PHOSPHOR, Q_SCALE, SCALES, SCALE_Y, SIG_BOT, SIG_H0, SIG_H1, SIG_PITCH,
     SIG_RISE, SIG_W, SIG_X, SS, STAT_Y, S_SCALE, UNCAL_Y, UNIT_X, VFD_BOX, ghost_of, rgb_of,
-    LEG_PX, MON_LAB_PX, MON_SMALL_PX, SCALE_PX, UNIT_PX)
+    LEG_PX, LINE2_N, LINE2_TOP, LINE2_X, MON_LAB_PX, MON_SMALL_PX, SCALE_PX, UNIT_PX)
 
 
 # 5x7 dot-matrix characters (the Delco's table)
@@ -271,6 +271,7 @@ class TunerVfd(VfdBase):
         for slot in self.DIGIT_SLOTS:
             keys += self._digit_keys(slot, '8', ghost)
         keys += [('dot', f, c, r, k) for f, _, n in DOT_FIELDS for c in range(n) for r in range(7) for k in range(5)]
+        keys += [('dot', 'l2', c, r, k) for c in range(LINE2_N) for r in range(7) for k in range(5)]
         return keys
 
     def _blur_for(self, key):
@@ -291,7 +292,7 @@ class TunerVfd(VfdBase):
         if kind == 'bar':
             return 'signal'
         if kind == 'dot':
-            return 'rds_' + key[1]
+            return 'rds_rt' if key[1] == 'l2' else 'rds_' + key[1]     # the second row: RadioText's colour
         return None
 
     @staticmethod
@@ -332,6 +333,7 @@ class TunerVfd(VfdBase):
             keys += self._digit_keys(('ch', i), c)
         for (field, _, n), text in zip(DOT_FIELDS, st.get('rds', ('', '', ''))):
             keys += self._dot_keys(field, text[:n])
+        keys += self._dot_keys('l2', st.get('line2', '')[:LINE2_N])
         return keys
 
     def _draw_element(self, d, img, key):
@@ -339,9 +341,9 @@ class TunerVfd(VfdBase):
         kind = key[0]
         if kind == 'dot':
             _, field, c, r, col = key
-            fx = dict((f, x) for f, x, _ in DOT_FIELDS)[field]
+            fx = LINE2_X if field == 'l2' else dict((f, x) for f, x, _ in DOT_FIELDS)[field]
             x = fx + (c * 6 + col) * DOT_PITCH
-            y = DOT_TOP + r * DOT_PITCH
+            y = (LINE2_TOP if field == 'l2' else DOT_TOP) + r * DOT_PITCH
             d.rectangle([x * k, y * k, (x + DOT_SIZE) * k, (y + DOT_SIZE) * k], fill=255)
             return
         if kind == 'leg':
