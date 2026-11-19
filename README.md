@@ -105,6 +105,9 @@ It also shows how many data groups arrive each second and how many are lost.
   - an echo profile that shows how far away the reflecting hills or buildings are
   - a 30-second history of signal quality
 - Meters and indicators are delayed to match the sound, so what you see is what you hear.
+- A Bands panel with a key for every band: the shortwave broadcast bands, long wave, medium
+  wave and FM, the amateur bands from 160 m to 23 cm, air, marine, weather, public safety, CB,
+  FRS/GMRS and MURS. Each band remembers where you left it and picks its usual mode.
 - Panels that size themselves to your screen, so the lettering stays readable on a laptop, a
   big monitor or a 4K screen (or pick a size in Settings).
 - An Advanced window with the full diagnostics.
@@ -149,7 +152,7 @@ Some useful options; `--help` lists them all:
 | `--record-iq drive.cs8` | FM: record the raw radio signal (about 4.8 MB a second) |
 
 Keyboard: Left and Right tune, Shift+Left and Shift+Right seek, 0 to 9 recall presets, M stores
-one, F and A pick the band, O is mono, W is the AM Wide key, P is power, and D or Enter starts
+one, F and A pick FM and medium wave, O is mono, W is the AM Wide key, P is power, and D or Enter starts
 direct frequency entry.
 
 The window looks best with the Nimbus Sans font (`fonts-urw-base35` on Ubuntu, usually already

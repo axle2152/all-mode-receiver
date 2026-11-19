@@ -132,6 +132,21 @@ BANDS = (
 
 BY_KEY = {b.key: b for b in BANDS}
 
+# Where a band starts the first time its key is pressed (else its bottom edge): a calling
+# or watch channel, or where its phone part begins.
+HOME = {'FM': 90.5 * M, 'MW': 1000 * k, 'HAM160': 1900 * k, 'HAM80': 3850 * k, 'HAM40': 7200 * k,
+        'HAM20': 14200 * k, 'HAM17': 18130 * k, 'HAM15': 21300 * k, 'HAM12': 24950 * k, 'HAM10': 28400 * k,
+        'HAM6': 52.525 * M, 'HAM2': 146.52 * M, 'HAM125': 223.5 * M, 'HAM70': 446.0 * M,
+        'HAM33': 927.5 * M, 'HAM23': 1294.5 * M, 'AIR': 118.0 * M, 'MARINE': 156.8 * M, 'WX': 162.55 * M,
+        'CB': 27.185 * M, 'FRS': 462.5625 * M, 'MURS': 151.82 * M}
+
+
+def home(b, i=0):
+    """Where band b (or range i of a stepping key) starts the first time."""
+    if b.ranges:
+        return b.ranges[i % len(b.ranges)][0]
+    return HOME.get(b.key, b.lo)
+
 
 def band(key):
     return BY_KEY[key]

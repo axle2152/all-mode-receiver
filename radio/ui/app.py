@@ -35,9 +35,11 @@ from .frequency import as_text, freq_digits
 from . import smeter
 from .monitor import DelayLine, MonitorLogic
 from .settings import SettingsWindow
+from . import bandplan as BP
 from .theme import (
-    ADV_KEY, AM_KEY, BASE_H, BASE_W, COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, DIRECT_KEY,
-    DOT_FIELDS, ECHO_KEY, FM_KEY, FREEZE_KEY, HOLD_KEY, IF_KEY, KEY_PX, LABEL_PX, LABEL_Y, LIP,
+    ADV_KEY, BAND_GAP, BAND_KEY_H, BAND_ROWS, BAND_W, BAND_X0, BAND_X1, BANDS_H, BASE_H, BASE_W,
+    COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, GROUP_GAP, HEADING_PX,
+    DOT_FIELDS, ECHO_KEY, FREEZE_KEY, HOLD_KEY, IF_KEY, KEY_PX, LABEL_PX, LABEL_Y, LIP,
     LOWER_LABEL_Y, MEM_KEY, METER_KEY, MONITOR_KEY, MONO_KEY, MPX_KEY, PAD_GAP, PAD_PX, PAD_ROWS,
     PAD_W, PAD_X, POWER_KEY, PPM_KEY, PRINT, PRINT_SOFT, RACK_GAP, RESET_KEY, ROW3_LABEL_Y,
     SCALE_Y, SET_KEY, SIG_BOT, SIG_H1, SIG_PITCH, SIG_X, SMALL_PX, SPEC_AVG, SS, TUNE_DOWN,
@@ -80,6 +82,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.fm_freq = self._fit('FM', self.fm_freq)
         self.am_freq = self._fit('AM', self.am_freq)
         self.freq = self.am_freq if self.band == 'AM' else self.fm_freq
+        self.band_freqs = dict(saved.get('band_freqs') or {})   # each band (or range): where it was left
+        self.bandkey = self._start_band_key(saved.get('bandkey'))
 
         pick = lambda key, default: saved.get(key, delco.get(key, default))
         self.channels   = saved.get('channels') or self._seed_channels()
@@ -296,6 +300,12 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         v = raw.get('ui_size')
         if v == 'fit' or (num(v) and v in UI_SIZES):
             out['ui_size'] = v
+        if raw.get('bandkey') in BP.BY_KEY:
+            out['bandkey'] = raw['bandkey']
+        if isinstance(raw.get('band_freqs'), dict):
+            out['band_freqs'] = {key: float(v) for key, v in raw['band_freqs'].items()
+                                 if isinstance(key, str) and key.split('#')[0] in BP.BY_KEY and num(v)
+                                 and RTL_RANGE[0] <= v <= RTL_RANGE[1]}
         if isinstance(raw.get('pi_calls'), dict):
             out['pi_calls'] = self._clean_calls(raw['pi_calls'])
         return out
@@ -347,6 +357,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             'badge': self.badge,
             'monitor': bool(self.monitor_on),
             'ui_size': self.ui_size,
+            'bandkey': self.bandkey,
+            'band_freqs': {key: round(v, 1) for key, v in self._band_freqs_now().items()},
             'meter_mode': self.meter_mode,
             'peak_hold': bool(self.peak_hold),
             'scope_mode': self.scope_mode,
@@ -536,7 +548,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         width, within its height (a 1080p screen gets about 1.17, a 4K one about 2.3); a chosen
         size, as given, unless the screen is too small for it."""
         r = self.root
-        h = 2 * BASE_H + RACK_GAP                       # the tuner and the monitor
+        h = 2 * BASE_H + BANDS_H + 2 * RACK_GAP         # the tuner, the bands and the monitor
         sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
         room = min((sw - 20) / BASE_W, (sh - 100) / h)
         want = FIT_WIDTH * sw / BASE_W if size == 'fit' else float(size)
@@ -547,7 +559,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if abs(s - self.s) < 1e-3:
             return
         self.s = s
-        for cv in (self.canvas, self.mcanvas):
+        for cv in (self.canvas, self.bcanvas, self.mcanvas):
             cv.destroy()
         self._shown = self._mshown = None
         self._build_ui()
@@ -560,11 +572,14 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.root.configure(bg='#161616')
         self.canvas = c = tk.Canvas(self.root, width=W, height=H, highlightthickness=0, bd=0)
         c.pack()
+        self.bcanvas = bc = tk.Canvas(self.root, width=W, height=round(BANDS_H * s), highlightthickness=0, bd=0)
+        bc.pack(pady=(round(RACK_GAP * s), 0))
         self.mcanvas = mc = tk.Canvas(self.root, width=W, height=H, highlightthickness=0, bd=0)
         if self.monitor_on:
             mc.pack(pady=(round(RACK_GAP * s), 0))
 
         self._plate_item = c.create_image(0, 0, anchor='nw')
+        self._bplate_item = bc.create_image(0, 0, anchor='nw')
         self._mplate_item = mc.create_image(0, 0, anchor='nw')
         self._render_plates()
 
@@ -603,11 +618,16 @@ class TunerApp(SettingsWindow, AdvancedWindow):
           on_press=lambda: self._tune_press(-1), on_release=self._tune_release)
         K(c, TUNE_UP, legend='Up', icon='right', size=KEY_PX,
           on_press=lambda: self._tune_press(+1), on_release=self._tune_release)
-        K(c, FM_KEY, legend='FM', size=KEY_PX, on_press=lambda: self._band('FM'))
-        K(c, AM_KEY, legend='AM', size=KEY_PX, on_press=lambda: self._band('AM'))
         K(c, WIDE_KEY, legend='Wide', size=KEY_PX, on_press=self._toggle_wide, latched=lambda: self.am_wide)
-        K(c, DIRECT_KEY, legend='Direct', size=KEY_PX, on_press=self._direct_toggle,
-          latched=lambda: self._direct is not None)
+        for kid, label, box in self._band_layout()[0]:
+            if kid == 'DIRECT':
+                K(bc, box, legend=label, size=KEY_PX, on_press=self._direct_toggle,
+                  latched=lambda: self._direct is not None)
+            elif kid in ('REV', 'TONE'):                 # narrow FM's, when it's built
+                K(bc, box, legend=label, size=KEY_PX, on_press=lambda: self._message('NARROW FM NOT YET'))
+            else:
+                K(bc, box, legend=label, size=KEY_PX, on_press=lambda kid=kid: self._band_key(kid),
+                  latched=lambda kid=kid: self.bandkey == kid)
 
         K(mc, RESET_KEY, legend='Reset', size=KEY_PX, on_press=self._mon_reset)
         K(mc, PPM_KEY, legend='PPM', size=KEY_PX, on_press=lambda: self._set_meter_mode('ppm'),
@@ -634,8 +654,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         r.bind('<Shift-Right>', lambda e: self._search_key(+1))
         for n in range(10):
             r.bind(str(n), lambda e, n=n: self._digit(n))
-        for ch, fn in (('m', self._memory), ('f', lambda: self._band('FM')),
-                       ('a', lambda: self._band('AM')), ('o', self._toggle_mono),
+        for ch, fn in (('m', self._memory), ('f', lambda: self._band_key('FM')),
+                       ('a', lambda: self._band_key('MW')), ('o', self._toggle_mono),
                        ('w', self._toggle_wide), ('p', self._toggle_power),
                        ('d', self._direct_toggle), ('i', self._addon_window),
                        ('s', self._meter_toggle)):
@@ -649,15 +669,15 @@ class TunerApp(SettingsWindow, AdvancedWindow):
     def _render_plates(self):
         s = self.s
         W, H = round(BASE_W * s), round(BASE_H * s)
-        for kind, item, canvas in (('tuner', self._plate_item, self.canvas),
-                                   ('monitor', self._mplate_item, self.mcanvas)):
-            plate = brushed_plate(W, H, seed=11 if kind == 'tuner' else 23).convert('RGBA')
-            art = Image.new('RGBA', (round(BASE_W * s * SS), round(BASE_H * s * SS)), (0, 0, 0, 0))
+        for kind, item, canvas, bh, seed in (('tuner', self._plate_item, self.canvas, BASE_H, 11),
+                                             ('bands', self._bplate_item, self.bcanvas, BANDS_H, 31),
+                                             ('monitor', self._mplate_item, self.mcanvas, BASE_H, 23)):
+            H = round(bh * s)
+            plate = brushed_plate(W, H, seed=seed).convert('RGBA')
+            art = Image.new('RGBA', (round(BASE_W * s * SS), round(bh * s * SS)), (0, 0, 0, 0))
             d = ImageDraw.Draw(art)
-            if kind == 'tuner':
-                self._draw_tuner_panel(d)
-            else:
-                self._draw_monitor_panel(d)
+            {'tuner': self._draw_tuner_panel, 'bands': self._draw_bands_panel,
+             'monitor': self._draw_monitor_panel}[kind](d)
             plate.alpha_composite(art.resize((W, H), Image.LANCZOS))
             ph = ImageTk.PhotoImage(plate)
             setattr(self, f'_{kind}_plate_img', ph)
@@ -694,7 +714,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._nameplate(d, self.badge)
         self._draw_bezel(d, WIN)
         boxes = [POWER_KEY, MONITOR_KEY, ADV_KEY, SET_KEY, MEM_KEY, MONO_KEY, METER_KEY,
-                 TUNE_DOWN, TUNE_UP, FM_KEY, AM_KEY, WIDE_KEY, DIRECT_KEY]
+                 TUNE_DOWN, TUNE_UP, WIDE_KEY]
         for i in range(10):
             row, col = divmod(i, 5)
             xa = PAD_X + col * (PAD_W + PAD_GAP)
@@ -705,15 +725,51 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                            (ADV_KEY[0], ROW3_LABEL_Y, 'Open'),
                            (PAD_X, LABEL_Y, 'Preset channels 1-24'),
                            (MONO_KEY[0], ROW3_LABEL_Y, 'Stereo'), (METER_KEY[0], ROW3_LABEL_Y, 'Display'),
-                           (TUNE_DOWN[0], LABEL_Y, 'Tuning'), (FM_KEY[0], LOWER_LABEL_Y, 'Band'),
-                           (WIDE_KEY[0], LOWER_LABEL_Y, 'AM filter'),
-                           (DIRECT_KEY[0], ROW3_LABEL_Y, 'Frequency')):
+                           (TUNE_DOWN[0], LABEL_Y, 'Tuning'),
+                           (WIDE_KEY[0], LOWER_LABEL_Y, 'AM filter')):
             draw_text(d, x * k, y * k, text, lab, PRINT)
         draw_text(d, pad_r * k, LABEL_Y * k, 'To store: Memory, then channel', small, PRINT_SOFT, align='r')
         draw_text(d, TUNE_UP[2] * k, LABEL_Y * k, 'Tap for manual, hold for auto', small,
                   PRINT_SOFT, align='r')
-        draw_text(d, TUNE_UP[2] * k, (DIRECT_KEY[1] + 17) * k, 'Type it on the preset keys', small,
-                  PRINT_SOFT, align='r')
+
+    def _band_layout(self):
+        """The Bands panel: (keys as (id, legend, box), headings as (x, y, text)). The shortwave
+        and amateur keys share one width, so their columns line up under each other."""
+        f = font('key', KEY_PX)
+        wide = lambda t: max(BAND_W, round(text_width(t, f)) + 22)
+        keys, heads = [], []
+        y0, y1, y2 = BAND_ROWS
+
+        def run(x, y, items, title, width=None):
+            heads.append((x, y - 8, title))
+            for kid, label in items:
+                w = width or wide(label)
+                keys.append((kid, label, (x, y, x + w, y + BAND_KEY_H)))
+                x += w + BAND_GAP
+            return x - BAND_GAP
+        group = lambda g: [(b.key, b.label) for b in BP.BANDS if b.group == g]
+        run(BAND_X0, y0, group('shortwave'), BP.GROUPS['shortwave'][0], BAND_W)
+        bc = group('broadcast')
+        run(BAND_X1 - sum(wide(l) for _, l in bc) - BAND_GAP * (len(bc) - 1), y0, bc, BP.GROUPS['broadcast'][0])
+        run(BAND_X0, y1, group('amateur'), BP.GROUPS['amateur'][0], BAND_W)
+        dw = wide('Direct') + 12
+        run(BAND_X1 - dw, y1, [('DIRECT', 'Direct')], 'FREQUENCY', dw)
+        x = run(BAND_X0, y2, group('public'), BP.GROUPS['public'][0]) + GROUP_GAP
+        x = run(x, y2, group('personal'), BP.GROUPS['personal'][0]) + GROUP_GAP
+        run(x, y2, [('REV', 'Rev'), ('TONE', 'Tone')], 'REPEATER')
+        return keys, heads
+
+    def _draw_bands_panel(self, d):
+        k = self.s * SS
+        keys, heads = self._band_layout()
+        self._nameplate(d, 'Bands')
+        self._draw_wells(d, [box for _, _, box in keys])
+        hf = font('badge', HEADING_PX * k)
+        for x, y, text in heads:
+            draw_text(d, x * k, y * k, text, hf, PRINT, tracking=0.8 * k)
+        direct = next(box for kid, _, box in keys if kid == 'DIRECT')
+        draw_text(d, (direct[0] - 12) * k, (direct[1] + 20) * k, 'Type it on the preset keys',
+                  font('label', SMALL_PX * k), PRINT_SOFT, align='r')
 
     def _draw_monitor_panel(self, d):
         k = self.s * SS
@@ -774,16 +830,94 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if not self.power_on:
             self._radio_run = False
 
-    def _band(self, band, freq=None):
+    def _start_band_key(self, saved):
+        """The band key to start on: the saved one if it holds the frequency on this receiver,
+        else the band the frequency is in (FM or MW if none: Band limits: Override)."""
+        b = self._band_for_family(self.freq, self.band, prefer=saved)
+        return b.key if b is not None else ('FM' if self.band == 'FM' else 'MW')
+
+    def _band_for_family(self, freq, family, prefer=None):
+        """The band freq falls in that the receiver `family` ('AM', 'FM') plays in its usual mode:
+        `prefer` if it qualifies, else the narrowest that does."""
+        cands = [BP.BY_KEY[prefer]] if prefer in BP.BY_KEY else []
+        for b in cands + sorted(BP.BANDS, key=lambda b: b.hi - b.lo):
+            if BP.in_band(b, freq) and BP.MODE_RX.get(BP.usual_mode(b, freq)) == family:
+                return b
+        return None
+
+    def _range_index(self, b, freq):
+        lo = BP.range_for(b, freq)[0]
+        return next((i for i, r in enumerate(b.ranges) if r[0] == lo), 0)
+
+    def _band_freqs_now(self):
+        """band_freqs with the band (and range) in use at the frequency it's on now."""
+        out = dict(self.band_freqs)
+        b = BP.band(self.bandkey)
+        if BP.in_band(b, self.freq):
+            out[self.bandkey] = self.freq
+            if b.ranges:
+                out[f'{self.bandkey}#{self._range_index(b, self.freq)}'] = self.freq
+        return out
+
+    def _band_key(self, key, freq=None):
+        """A key on the Bands panel (or a frequency typed or recalled that falls in band `key`):
+        tune there, in the band's usual mode. A band remembers where it was left; a key that
+        steps through ranges (Police/Fire) moves to its next range when pressed again."""
+        if not self.power_on:
+            return False
+        b = BP.band(key)
+        if freq is None:
+            if b.ranges and key == self.bandkey:
+                i = (self._range_index(b, self.freq) + 1) % len(b.ranges)
+                freq = self.band_freqs.get(f'{key}#{i}', BP.home(b, i))
+            else:
+                freq = self.band_freqs.get(key, BP.home(b))
+        freq = BP.snap(b, freq)
+        rx = BP.MODE_RX.get(BP.usual_mode(b, freq))
+        if rx == 'AM' and AMReceiver is None:
+            self._set_status(f'AM unavailable: {_AM_ERR}')
+            return False
+        if rx not in ('AM', 'FM'):                     # its receiver isn't built yet
+            self._message(f"{b.name}: {'NARROW FM' if rx == 'NFM' else 'SSB / CW'} NOT YET")
+            return False
+        self.band_freqs = self._band_freqs_now()
+        self.bandkey = key
+        if rx != self.band:
+            self._switch_family(rx, freq)
+        else:
+            self._memory_until = 0.0
+            self._seek_cancel()
+            self._tune_to(freq)
+        self._save_settings()
+        self._refresh_keys()
+        return True
+
+    def _go_to(self, freq, family=None):
+        """Tune to a frequency typed or recalled: in the band it falls in, whose usual mode picks
+        the receiver (a preset keeps the receiver it was stored on); with Band limits: Override,
+        anywhere, on the receiver in use."""
+        b = (self._band_for_family(freq, family, prefer=self.bandkey) if family
+             else BP.band_for(freq, prefer=self.bandkey))
+        if b is not None:
+            return self._band_key(b.key, freq)
+        if not self.override:
+            self._message('OUT OF BAND')
+            return False
+        family = family or self.band
+        if family != self.band:
+            self._switch_family(family, freq)
+        else:
+            self._tune_to(freq)
+        self._save_settings()
+        return True
+
+    def _switch_family(self, band, freq):
+        """Change receiver (FM or AM) and tune to freq: the receiver restarts."""
         if not self.power_on:
             return
         self._memory_until = 0.0
         if band == 'AM' and AMReceiver is None:
             self._set_status(f'AM unavailable: {_AM_ERR}')
-            return
-        if band == self.band:
-            if freq is not None:
-                self._tune_to(freq)
             return
         self._seek_cancel()
         if self.band == 'FM':
@@ -791,8 +925,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         else:
             self.am_freq = self.freq
         self.band = band
-        self.freq = self._snap(freq if freq is not None else
-                               (self.am_freq if band == 'AM' else self.fm_freq))
+        self.freq = self._snap(freq)
         self._tuned_t = time.monotonic()
         self._q_on = False
         self._mon_retuned()
@@ -846,38 +979,57 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         return 'direct_q', FM_DEVICE_ARGS + (',direct_samp=2' if freq < XOVER_HZ else '')
 
     def _fit(self, band, freq):
-        """A frequency the receiver will take: the band's raster within the band,
-        or with Band limits: Override, anywhere the tuner reaches (to 1 kHz)."""
+        """A frequency the receiver `band` ('AM', 'FM') will take at start: on its band's raster
+        (any band it plays), or with Band limits: Override, anywhere the tuner reaches (to 1 kHz)."""
         if self.override:
             lo, hi = self._limits(band)
             return round(min(max(freq, lo), hi), -3)
-        return self._snap_in(band, freq)
+        b = self._band_for_family(freq, band)
+        return BP.snap(b, freq) if b is not None else self._snap_in(band, freq)
+
+    def _plan(self):
+        return BP.band(self.bandkey)
 
     def _snap(self, freq):
-        return self._fit(self.band, freq)
+        """Within the band: on its raster. Outside it: clamped to the band, or with Band limits:
+        Override, anywhere the tuner reaches (to 1 kHz)."""
+        b = self._plan()
+        if BP.in_band(b, freq) or not self.override:
+            return BP.snap(b, freq)
+        lo, hi = self._limits(self.band)
+        return round(min(max(freq, lo), hi), -3)
 
     def _in_band(self, freq=None):
-        lo, hi, _ = BANDS[self.band]
-        f = self.freq if freq is None else freq
-        return lo - 1 <= f <= hi + 1
+        return BP.in_band(self._plan(), self.freq if freq is None else freq)
 
     def _step_hz(self):
-        return BANDS[self.band][2]
+        return BP.step(self._plan(), self.freq)
 
     def _nchan(self):
-        lo, hi, st = BANDS[self.band]
+        """Channels in the band (or the range in use): a search gives up after one lap."""
+        lo, hi, st, _ = BP.range_for(self._plan(), self.freq)
         return int(round((hi - lo) / st)) + 1
 
     def _wrap(self, freq):
-        if self.override:                              # past the band edge instead of round to the other end
+        """A step or search past the band's edge: round to the other end, or with Band limits:
+        Override, on past it."""
+        b = self._plan()
+        if self.override:
             lo, hi = self._limits(self.band)
-            return round(min(max(freq, lo), hi), -3)
-        lo, _, st = BANDS[self.band]
-        idx = int(round((freq - lo) / st)) % self._nchan()
-        return round(lo + idx * st, -3)
+            return self._snap(min(max(freq, lo), hi))
+        lo, hi, _, _ = BP.range_for(b, self.freq)
+        if freq > hi + 1:
+            freq = lo
+        elif freq < lo - 1:
+            freq = hi
+        return BP.snap(b, freq)
 
     def _tune_to(self, freq):
         self.freq = self._snap(freq)
+        if not self._in_band():                        # past its edge (Override): the band it's in now
+            b = self._band_for_family(self.freq, self.band)
+            if b is not None:
+                self.bandkey = b.key
         self._tuned_t = time.monotonic()
         self._q_on = False
         self._mon_retuned()
@@ -1064,14 +1216,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if not c:
             self._flash = (n, now + 1.2)
             return
-        if not self.override and not (BANDS[c['band']][0] - 1 <= c['freq'] <= BANDS[c['band']][1] + 1):
-            self._message('OUT OF BAND')                # stored with the override on
+        if not self._go_to(c['freq'], family=c['band']):   # out of band: stored with the override on
             return
         self._last_ch = n
-        if c['band'] != self.band:
-            self._band(c['band'], c['freq'])
-        else:
-            self._tune_to(c['freq'])
         self._save_settings()
 
     def _channel_now(self):
@@ -1303,9 +1450,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if hz is None:
             self._message(why)
             return
-        self._tune_to(hz)
-        self._last_ch = None
-        self._save_settings()
+        if self._go_to(hz):
+            self._last_ch = None
+            self._save_settings()
 
     def _parse_direct(self, text):
         """Typed digits to Hz. FM: tenths of a MHz (885 = 88.5), whole MHz, or kHz;
@@ -1322,10 +1469,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             cands = [v * 1e5, v * 1e6, v * 1e3]
         else:
             cands = [v * 1e3, v * 1e6]
-        lo, hi, _ = BANDS[self.band]
         rlo, rhi = self._limits(self.band)
-        for c in cands:
-            if lo - 1 <= c <= hi + 1:
+        for c in cands:                                 # the first reading that's in a band
+            if BP.band_for(c, prefer=self.bandkey) is not None:
                 return c, ''
         for c in cands:
             if rlo <= c <= rhi:

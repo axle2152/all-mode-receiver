@@ -26,7 +26,6 @@ Tuner (top unit)
     Memory          then a channel number: stores the station you're on
     S units         latching: the signal bar in S units, or (up) signal quality;
                     see Display below
-    FM / AM         band; each band remembers its own frequency
     Wide            latching AM filter key: 12 kHz, with a 10 kHz notch for
                     adjacent-channel whistles. Off: the AM width chosen in Settings
                     (2.5, 5, 8 or 10.2 kHz). With AUTO on there, it starts at 2.5 kHz
@@ -35,11 +34,6 @@ Tuner (top unit)
                     second when it starts.
     Mono            latching Stereo key, both bands: FM mono, or AM with the
                     C-QUAM stereo ignored
-    Direct          direct frequency entry, down while you type:
-                    then digits (preset keys, keyboard or keypad),
-                    Enter to tune, Esc to cancel, Backspace to correct. FM: 885 =
-                    88.5 MHz, or type a decimal (162.55); AM: kHz (1720), or a
-                    decimal for MHz (5.905). Out-of-band needs Band limits: Override.
     Display         TUNED = the retune has settled and there is a carrier the
                     receiver can hold; STEREO = the back end's stereo indicator.
                     The bar shows signal quality (POOR / FAIR / GOOD, from the
@@ -47,6 +41,25 @@ Tuner (top unit)
                     +20 to +60; S9 = -73 dBm below 30 MHz, -93 dBm above). S units,
                     S or a click on the bar switches; each band remembers. UNCAL
                     until calibrated in Settings > Reception > S-meter.
+
+Bands (middle unit)
+    Shortwave       the broadcast bands 120 m to 11 m (metres), in AM
+    Amateur         160 m to 23 cm, in the mode each part of a band is usually heard
+                    in (CW at the bottom of the HF bands, then SSB; narrow FM on 2 m)
+    LW / MW / FM    long wave, medium wave, FM broadcast
+    Public service  Air (AM), Marine, Weather, Police/Fire (VHF, UHF, 800 MHz: press
+                    again for the next)
+    Personal        CB (AM), FRS/GMRS, MURS
+    Repeater        Rev (listen on the input) and Tone (CTCSS)
+                    Each band remembers where you left it. Bands that need narrow FM,
+                    SSB or CW say NOT YET until those receivers are built.
+    Direct          direct frequency entry, down while you type:
+                    then digits (preset keys, keyboard or keypad),
+                    Enter to tune, Esc to cancel, Backspace to correct. FM: 885 =
+                    88.5 MHz, or type a decimal (162.55); AM: kHz (1720), or a
+                    decimal for MHz (5.905). It goes to the band the frequency is in
+                    (9580 = 31 m shortwave, in AM); outside every band it needs
+                    Band limits: Override.
 
 Monitor (bottom unit; needs rx_meters.py next to fm_stereo.py)
     L / R           station audio level after de-emphasis, ahead of volume:

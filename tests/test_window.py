@@ -30,6 +30,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -62,6 +63,12 @@ def child(appdir, band, fonts, secs):
         real_print(*a, **k)
     A.print = tee
     root = tk.Tk()
+    done, t_start = {}, time.monotonic()
+
+    def on_error(exc, val, tb):                   # an error in any callback fails the run
+        problems.append(f'error in a callback: {exc.__name__}: {val}')
+        real_print('INFO error:', ''.join(traceback.format_exception(exc, val, tb)).strip().splitlines()[-1])
+    root.report_callback_exception = on_error
     app = A.TunerApp(root, scale=0.6, freq=1080e3 if band == 'AM' else 90.5e6)
     states = []
     problems = []
@@ -156,6 +163,9 @@ def child(appdir, band, fonts, secs):
         root.after(250, sample)
 
     def finish():
+        if 'keys' in done and not done['keys'] and time.monotonic() - t_start < secs + 20:
+            root.after(500, finish)                     # the key checks are still going
+            return
         path = getattr(F.font('vfd', 20), 'path', None)
         real_print('INFO band', app.band, '| display font:',
                    path if isinstance(path, str) else "Pillow's built-in font")
@@ -198,9 +208,22 @@ def child(appdir, band, fonts, secs):
         import json
         from radio.ui.theme import BASE_W
         mine = []
+        done['keys'] = False
 
         def key_for(fn):
             return next((k for k in app.keys if k.on_press == fn), None)
+
+        def key_for_band(kid):
+            return next((k for k in app.keys if k.latched is not None and k.canvas is app.bcanvas
+                         and app.bandkey != kid and not k.latched() and _is_band_key(k, kid)), None) \
+                or next((k for k in app.keys if k.canvas is app.bcanvas and _is_band_key(k, kid)), None)
+
+        def _is_band_key(k, kid):
+            saved, app.bandkey = app.bandkey, kid       # the key whose latch follows this band
+            try:
+                return bool(k.latched and k.latched())
+            finally:
+                app.bandkey = saved
 
         def press(k):
             k._press(None)
@@ -263,8 +286,37 @@ def child(appdir, band, fonts, secs):
             if abs(got - want) > 0.002:
                 mine.append(f'fit on {w}x{h}: {got:.3f}, want {want}')
         root.winfo_screenwidth, root.winfo_screenheight = sw, sh
+        # the Bands panel: a band key tunes there in its usual receiver, remembers where it was
+        # left; Direct finds the band a frequency is in; a band whose receiver isn't built says so
+        kb = {kid: key_for_band(kid) for kid in ('SW41', 'FM', 'MW', 'HAM2')}
+        if None in kb.values():
+            mine.append(f'band keys missing: {[k for k, v in kb.items() if v is None]}')
+        else:
+            press(kb['SW41'])
+            if (app.bandkey, app.band) != ('SW41', 'AM') or not 7.2e6 <= app.freq <= 7.45e6 or not kb['SW41']._down:
+                mine.append(f'41 m key: band {app.bandkey} on {app.band} at {app.freq / 1e6:g} MHz')
+            app._step(+1, manual=True)
+            if abs(app.freq - 7.205e6) > 1:
+                mine.append(f'a step on 41 m went to {app.freq / 1e3:g} kHz, not 7205')
+            press(kb['FM'])
+            if (app.bandkey, app.band) != ('FM', 'FM'):
+                mine.append(f'FM key: band {app.bandkey} on {app.band}')
+            press(kb['SW41'])
+            if abs(app.freq - 7.205e6) > 1:
+                mine.append(f'41 m did not remember 7205 kHz: {app.freq / 1e3:g}')
+            press(kb['HAM2'])
+            msg = (app._dm_msg or ('',))[0]
+            if app.bandkey != 'SW41' or 'NOT YET' not in msg:
+                mine.append(f'2 m (no narrow FM yet): band {app.bandkey}, message {msg!r}')
+            app._direct_start()
+            app._direct = '9580'
+            app._direct_enter()
+            if (app.bandkey, app.band, round(app.freq)) != ('SW31', 'AM', 9580000):
+                mine.append(f'typed 9580: band {app.bandkey} on {app.band} at {app.freq / 1e3:g} kHz')
+            press(kb['MW' if band == 'AM' else 'FM'])     # back where this run started
         problems.extend(mine)
         real_print('INFO keys and size:', 'ok' if not mine else '; '.join(mine))
+        done['keys'] = True
 
     def stereo_checks():
         """The pretend stereo add-on: STEREO, the system's name, its lamp, meter and line."""
@@ -290,7 +342,8 @@ def child(appdir, band, fonts, secs):
         root.after(2000, settings_clicks)
     if not (addon or fm_addon):
         root.after(6000, meter_checks)
-        root.after(8500, key_checks)
+        done['keys'] = False
+        root.after(7500, key_checks)
     if addon:
         root.after(5000, addon_checks)
     if fm_addon:

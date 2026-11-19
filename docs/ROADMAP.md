@@ -238,7 +238,7 @@ the monitor, and modes on the tuner.
   band keys and the AM filter's Wide key on the second), and Band info comes with the second
   dot-matrix line. Monitor, Advanced, Settings, Direct and S units stay down while what they
   turn on is on.
-- [ ] The Bands panel, a key for every band, grouped under printed headings:
+- [x] The Bands panel, a key for every band, grouped under printed headings:
   - Shortwave (metres): 120, 90, 75, 60, 49, 41, 31, 25, 22, 19, 16, 15, 13, 11; with
     Broadcast (LW, MW, FM) at the right of that row
   - Amateur (metres): 160, 80, 60, 40, 30, 20, 17, 15, 12, 10, 6, 2, 1.25, 70 cm, 33 cm,
@@ -246,8 +246,14 @@ the monitor, and modes on the tuner.
     Frequency (Direct: type it on the preset keys) at the right
   - Public service: Air, Marine, Weather, Police/Fire; Personal: CB, FRS/GMRS, MURS;
     Repeater: Rev and Tone
-- [ ] A band plan behind those keys: each band's edges, default mode, tuning step and filter
-  widths, and the parts of a band with a mode of their own.
+  Done: a third unit between the tuner and the monitor. Each band key tunes to its band in its
+  usual receiver and remembers where it was left; Police/Fire steps through VHF, UHF and
+  800 MHz; Direct finds the band a typed frequency is in; presets find theirs. FM/AM and
+  Direct left the tuner. Bands that need narrow FM, SSB or CW say NOT YET until those
+  receivers exist, and so do Rev and Tone.
+- [x] A band plan behind those keys: each band's edges, default mode, tuning step and filter
+  widths, and the parts of a band with a mode of their own. Done (radio/ui/bandplan.py,
+  tests/test_bandplan.py), for the Americas; filter widths come with the receivers.
 - [ ] Mode keys on the tuner: AM, FM, SSB, CW. Pressing one again steps to its next kind: AM,
   synchronous AM on USB or LSB; FM broadcast, narrow (+/-5 kHz), narrow (+/-2.5 kHz); SSB on
   USB or LSB. Width steps the mode's filters (the CW filters too, taking over from the AM width

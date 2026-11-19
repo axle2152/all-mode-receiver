@@ -108,11 +108,17 @@ MONO_KEY   = (914, 159, 978, 185)
 METER_KEY  = (1002, 159, 1068, 185)     # S units (or signal quality) on the signal bar
 TUNE_DOWN  = (1192, 51, 1314, 83)
 TUNE_UP    = (1328, 51, 1450, 83)
-FM_KEY     = (1192, 107, 1250, 133)
-AM_KEY     = (1258, 107, 1316, 133)
 WIDE_KEY   = (1392, 107, 1450, 133)     # AM filter: Wide
-DIRECT_KEY = (1192, 159, 1272, 185)     # type a frequency on the preset keys
 LABEL_Y, LOWER_LABEL_Y, ROW3_LABEL_Y = 43, 99, 151
+
+# Bands layout (base coordinates): the shortwave and amateur keys share one width so their
+# columns line up; LW, MW, FM and Direct sit at the right; three rows under printed headings
+BANDS_H    = 196
+BAND_ROWS  = (44, 98, 152)              # key tops; each heading sits 8 px above its row
+BAND_KEY_H = 30
+BAND_X0, BAND_X1 = 200, 1450
+BAND_W, BAND_GAP, GROUP_GAP = 50, 6, 26
+HEADING_PX = 12.0
 
 # Monitor layout
 RESET_KEY  = (30, 107, 104, 133)
