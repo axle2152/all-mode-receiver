@@ -59,6 +59,13 @@ Bands (middle unit)
                     again for the next)
     Personal        CB (AM), FRS/GMRS, MURS
     Repeater        Rev (listen on the input) and Tone (CTCSS)
+    Channels        CB, FRS/GMRS, Weather, MURS and Marine go channel to channel: the
+                    tuning keys step channels (CB's 23 comes between 22 and 24, as on a
+                    CB), the number keys pick one (4 then 0 = channel 40), and CH shows
+                    its number. Memory pressed twice makes the channel you're on the
+                    band's home channel; its band key then goes there (Settings >
+                    Reception: their band key, home channel or where I left it; channel
+                    bands, by channel or ordinary steps).
                     Each band remembers where you left it. Bands that need narrow FM,
                     SSB or CW say NOT YET until those receivers are built. Crossing
                     28.8 MHz the dongle reopens: direct sampling below, its tuner above.

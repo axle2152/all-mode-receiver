@@ -107,7 +107,9 @@ It also shows how many data groups arrive each second and how many are lost.
 - Meters and indicators are delayed to match the sound, so what you see is what you hear.
 - A Bands panel with a key for every band: the shortwave broadcast bands, long wave, medium
   wave and FM, the amateur bands from 160 m to 23 cm, air, marine, weather, public safety, CB,
-  FRS/GMRS and MURS. Each band remembers where you left it and picks its usual mode.
+  FRS/GMRS and MURS. Each band remembers where you left it and picks its usual mode. On the
+  channelized bands (CB, FRS/GMRS, weather, MURS, marine) the radio goes channel to channel and
+  shows the channel number, and you can give each a home channel.
 - Panels that size themselves to your screen, so the lettering stays readable on a laptop, a
   big monitor or a 4K screen (or pick a size in Settings).
 - An Advanced window with the full diagnostics.

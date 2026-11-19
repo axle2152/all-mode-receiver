@@ -83,6 +83,10 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.am_freq = self._fit('AM', self.am_freq)
         self.freq = self.am_freq if self.band == 'AM' else self.fm_freq
         self.band_freqs = dict(saved.get('band_freqs') or {})   # each band (or range): where it was left
+        self.home_channels = dict(saved.get('home_channels') or {})  # channelized bands: the home channel
+        self.channel_steps = bool(saved.get('channel_steps', True))  # step channel to channel on those
+        self.band_key_goes = saved.get('band_key_goes', 'home')      # their key: 'home' channel, or 'last'
+        self._home_ask_until = 0.0
         self.bandkey = self._start_band_key(saved.get('bandkey'))
 
         pick = lambda key, default: saved.get(key, delco.get(key, default))
@@ -304,6 +308,13 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             out['ui_size'] = v
         if raw.get('bandkey') in BP.BY_KEY:
             out['bandkey'] = raw['bandkey']
+        if isinstance(raw.get('home_channels'), dict):
+            out['home_channels'] = {key: float(v) for key, v in raw['home_channels'].items()
+                                    if key in BP.BY_KEY and num(v) and BP.channel_at(BP.band(key), v)}
+        if isinstance(raw.get('channel_steps'), bool):
+            out['channel_steps'] = raw['channel_steps']
+        if raw.get('band_key_goes') in ('home', 'last'):
+            out['band_key_goes'] = raw['band_key_goes']
         if isinstance(raw.get('band_freqs'), dict):
             out['band_freqs'] = {key: float(v) for key, v in raw['band_freqs'].items()
                                  if isinstance(key, str) and key.split('#')[0] in BP.BY_KEY and num(v)
@@ -361,6 +372,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             'bands': bool(self.bands_on),
             'ui_size': self.ui_size,
             'bandkey': self.bandkey,
+            'home_channels': {key: round(v, 1) for key, v in self.home_channels.items()},
+            'channel_steps': bool(self.channel_steps),
+            'band_key_goes': self.band_key_goes,
             'band_freqs': {key: round(v, 1) for key, v in self._band_freqs_now().items()},
             'meter_mode': self.meter_mode,
             'peak_hold': bool(self.peak_hold),
@@ -871,15 +885,17 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             if b.ranges and key == self.bandkey:
                 i = (self._range_index(b, self.freq) + 1) % len(b.ranges)
                 freq = self.band_freqs.get(f'{key}#{i}', BP.home(b, i))
+            elif self.band_key_goes == 'home' and key in self.home_channels:
+                freq = self.home_channels[key]
             else:
                 freq = self.band_freqs.get(key, BP.home(b))
-        freq = BP.snap(b, freq)
+        freq = BP.nearest_channel(b, freq) if b.channels and self.channel_steps else BP.snap(b, freq)
         rx = BP.MODE_RX.get(BP.usual_mode(b, freq))
         if rx == 'AM' and AMReceiver is None:
             self._set_status(f'AM unavailable: {_AM_ERR}')
             return False
         if rx not in ('AM', 'FM'):                     # its receiver isn't built yet
-            self._message(f"{b.name}: {'NARROW FM' if rx == 'NFM' else 'SSB / CW'} NOT YET")
+            self._message('NARROW FM NOT YET' if rx == 'NFM' else 'SSB AND CW NOT YET')
             return False
         self.band_freqs = self._band_freqs_now()
         self.bandkey = key
@@ -991,10 +1007,17 @@ class TunerApp(SettingsWindow, AdvancedWindow):
     def _plan(self):
         return BP.band(self.bandkey)
 
-    def _snap(self, freq):
-        """Within the band: on its raster. Outside it: clamped to the band, or with Band limits:
-        Override, anywhere the tuner reaches (to 1 kHz)."""
+    def _channels_on(self, freq=None):
+        """A channelized band, stepping by channel, and freq within it."""
         b = self._plan()
+        return bool(b.channels) and self.channel_steps and BP.in_band(b, self.freq if freq is None else freq)
+
+    def _snap(self, freq):
+        """Within the band: on its raster (a channelized band: on a channel). Outside it: clamped
+        to the band, or with Band limits: Override, anywhere the tuner reaches (to 1 kHz)."""
+        b = self._plan()
+        if self._channels_on(freq):
+            return BP.nearest_channel(b, freq)
         if BP.in_band(b, freq) or not self.override:
             return BP.snap(b, freq)
         lo, hi = self._limits(self.band)
@@ -1006,8 +1029,16 @@ class TunerApp(SettingsWindow, AdvancedWindow):
     def _step_hz(self):
         return BP.step(self._plan(), self.freq)
 
+    def _next_freq(self, direction):
+        """One step up or down: the next channel on a channelized band, else the band's step."""
+        if self._channels_on():
+            return BP.next_channel(self._plan(), self.freq, direction)
+        return self._wrap(self.freq + direction * self._step_hz())
+
     def _nchan(self):
         """Channels in the band (or the range in use): a search gives up after one lap."""
+        if self._channels_on():
+            return len(self._plan().channels)
         lo, hi, st, _ = BP.range_for(self._plan(), self.freq)
         return int(round((hi - lo) / st)) + 1
 
@@ -1052,7 +1083,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             self._seek_cancel()
             self._entry_cancel()
             self._memory_until = 0.0
-        self._tune_to(self._wrap(self.freq + direction * self._step_hz()))
+        self._tune_to(self._next_freq(direction))
 
     def _tune_press(self, direction):
         if not self.power_on:
@@ -1074,7 +1105,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
     def _hold_fire(self, direction):
         """Held: search, starting by re-checking the channel the tap moved to."""
         self._hold_job = None
-        self.freq = self._wrap(self.freq - direction * self._step_hz())
+        self.freq = self._next_freq(-direction)
         self._search(direction)
 
     def _search_key(self, direction):
@@ -1100,7 +1131,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if st['steps'] > self._nchan():
             self._seek_finish(st['start'])
             return
-        self._tune_to(self._wrap(self.freq + st['dir'] * self._step_hz()))
+        self._tune_to(self._next_freq(st['dir']))
         st['t0'] = time.monotonic()
         st.pop('verify', None)
         self._seek_job = self.root.after(60, self._seek_check)
@@ -1170,6 +1201,17 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._seek_cancel()
         self._entry_cancel()
         now = time.monotonic()
+        label = BP.channel_at(self._plan(), self.freq) if self._channels_on() else None
+        if label is not None:                          # a channelized band has a home channel, not presets
+            if self._home_ask_until > now:
+                self._home_ask_until = 0.0
+                self.home_channels[self.bandkey] = self.freq
+                self._message(f'HOME CHANNEL {label}')
+                self._save_settings()
+            else:
+                self._home_ask_until = now + MEMORY_WAIT_S
+                self._message(f'HOME CH {label}? MEMORY', secs=MEMORY_WAIT_S)
+            return
         self._memory_until = 0.0 if self._memory_until > now else now + MEMORY_WAIT_S
 
     def _digit(self, n):
@@ -1179,26 +1221,39 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             self._direct_key(str(n))
             return
         self._seek_cancel()
+        top = BP.top_channel(self._plan()) if self._channels_on() else N_CHANNELS
         e = self._entry
         if e is None:
-            if n in (0, 1, 2):
+            if n * 10 <= top:                          # could be the first of two digits: wait
                 self._entry = n
                 self._entry_job = self.root.after(int(ENTRY_WAIT_S * 1000), self._entry_timeout)
             else:
-                self._channel(n)
+                self._pick(n)
             return
         self._entry_cancel()
         ch = e * 10 + n
-        if 1 <= ch <= N_CHANNELS:
-            self._channel(ch)
+        if 1 <= ch <= top:
+            self._pick(ch)
         else:
             self._digit(n)
+
+    def _pick(self, n):
+        """A number on the keys: a channel on a channelized band, else a preset."""
+        if not self._channels_on():
+            self._channel(n)
+            return
+        f = BP.channel_freq(self._plan(), n)
+        if f is None:
+            self._message(f'NO CHANNEL {n}')
+            return
+        self._tune_to(f)
+        self._save_settings()
 
     def _entry_timeout(self):
         self._entry_job = None
         e, self._entry = self._entry, None
-        if e in (1, 2):
-            self._channel(e)
+        if e:
+            self._pick(e)
 
     def _entry_cancel(self):
         if self._entry_job:
@@ -1387,6 +1442,10 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             ch = (' ', str(self._entry)) if blink else (' ', ' ')
         elif self._flash and now < self._flash[1]:
             ch = ch_chars(self._flash[0]) if blink else (' ', ' ')
+        elif self._channels_on():                       # a channelized band: its channel number
+            label = BP.channel_at(self._plan(), self.freq) or ''
+            ch = (' ' + label)[-2:] if len(label) <= 2 else label[:2]
+            ch = tuple(ch) if label else (' ', ' ')
         else:
             self._flash = None
             n = self._channel_now()

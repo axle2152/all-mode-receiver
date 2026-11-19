@@ -7,7 +7,8 @@ test_bandplan.py - the bands behind the Bands panel. Needs neither GNU Radio nor
 Checks every band is sane (edges, step, keys unique, the panel's labels), the mode each band
 and each part of a band is usually heard in (CW at the bottom of the amateur bands, AM on
 shortwave, narrow FM on 2 m...), snapping to channels (FM's odd tenths, CB, a stepping key's
-ranges), the repeater offsets, and which band a frequency falls in.
+ranges), the channelized bands' channel tables (CB's out-of-order 23, stepping, GMRS repeater
+pairs), the repeater offsets, and which band a frequency falls in.
 """
 import os
 import sys
@@ -83,6 +84,27 @@ def main():
                          ('FRS', 462.6 * M, 5 * M)):
         got = B.repeater_offset(B.band(key), f)
         check(f'{key} output {f / M:g} MHz', got == want, f'{got / k:+g} kHz')
+
+    print('Channelized bands')
+    cb, wx, frs, mar, murs = (B.band(x) for x in ('CB', 'WX', 'FRS', 'MARINE', 'MURS'))
+    bad = [f'{b.key} {l}' for b in B.BANDS for l, f, _ in b.channels if not b.lo - 1 <= f <= b.hi + 1]
+    bad += [b.key for b in B.BANDS if b.channels and len({l for l, _, _ in b.channels}) != len(b.channels)]
+    check('channels inside their band, numbers unique', not bad, ', '.join(bad))
+    check('channel counts: CB 40, FRS/GMRS 22, WX 7, MURS 5',
+          [len(b.channels) for b in (cb, frs, wx, murs)] == [40, 22, 7, 5])
+    for b, n, f in ((cb, 19, 27.185), (cb, 23, 27.255), (cb, 24, 27.235), (cb, 40, 27.405), (wx, 1, 162.550),
+                    (wx, 6, 162.500), (frs, 1, 462.5625), (frs, 15, 462.550), (frs, 22, 462.725),
+                    (mar, 16, 156.800), (mar, 22, 157.100), (murs, 5, 154.600)):
+        got = B.channel_freq(b, n)
+        check(f'{b.key} channel {n} is {f:g} MHz', got is not None and abs(got - f * M) < 1, f'{(got or 0) / M:g}')
+    steps = [B.channel_at(cb, B.next_channel(cb, B.channel_freq(cb, n), +1)) for n in (22, 23, 24, 40)]
+    check('CB steps in channel order: 22>23>24>25, 40>1', steps == ['23', '24', '25', '1'], ' '.join(steps))
+    check('CB down from 1 goes to 40', B.channel_at(cb, B.next_channel(cb, B.channel_freq(cb, 1), -1)) == '40')
+    check('off a channel, a step goes to the nearest first', B.next_channel(cb, 27.183 * M, +1) == 27.185 * M)
+    check('27.183 MHz snaps to channel 19', B.channel_at(cb, B.nearest_channel(cb, 27.183 * M)) == '19')
+    check('GMRS repeaters on 15-22 (+5 MHz), none on FRS 1-7',
+          B.repeater_offset(frs, B.channel_freq(frs, 18)) == 5 * M and B.repeater_offset(frs, B.channel_freq(frs, 3)) == 0)
+    check('top channel numbers: CB 40, marine 88', (B.top_channel(cb), B.top_channel(mar)) == (40, 88))
 
     print('Which band a frequency is in')
     for f, prefer, want in ((7200 * k, None, 'SW41'), (7100 * k, None, 'HAM40'), (162.55 * M, None, 'WX'),

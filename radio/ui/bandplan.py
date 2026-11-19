@@ -41,16 +41,46 @@ GROUPS = {'shortwave': ('SHORTWAVE (METRES)', 0), 'broadcast': ('BROADCAST', 0),
           'amateur': ('AMATEUR (METRES)', 1), 'public': ('PUBLIC SERVICE', 2),
           'personal': ('PERSONAL', 2)}
 
-Band = namedtuple('Band', 'key label group name lo hi step mode parts origin ranges offsets')
+Band = namedtuple('Band', 'key label group name lo hi step mode parts origin ranges offsets channels')
 # key: unique id; label: on the key; name: on the display; lo, hi, step in Hz; mode: usual mode
 # (or None); parts: ((lo, hi, mode), ...) with a usual mode of their own; origin: the channel
 # raster starts here (FM's odd tenths), else lo; ranges: for a key that steps through ranges
-# ((lo, hi, step, name), ...); offsets: repeater offsets ((lo, hi, Hz), ...)
+# ((lo, hi, step, name), ...); offsets: repeater offsets ((lo, hi, Hz), ...); channels: a
+# channelized band's channels in number order ((label, Hz, repeater offset Hz), ...): tuning
+# steps channel to channel, and the CH digits show the channel
 
 
-def _b(key, label, group, name, lo, hi, step, mode, parts=(), origin=None, ranges=(), offsets=()):
+def _b(key, label, group, name, lo, hi, step, mode, parts=(), origin=None, ranges=(), offsets=(), channels=()):
     return Band(key, label, group, name, lo, hi, step, mode, tuple(parts), lo if origin is None else origin,
-                tuple(ranges), tuple(offsets))
+                tuple(ranges), tuple(offsets), tuple(channels))
+
+
+def _chans(pairs, offsets=None):
+    offsets = offsets or {}
+    return tuple((str(n), f * 1e6, offsets.get(n, 0.0)) for n, f in pairs)
+
+
+# US channel plans
+CB_CHANNELS = _chans(enumerate((26.965, 26.975, 26.985, 27.005, 27.015, 27.025, 27.035, 27.055, 27.065, 27.075,
+                                27.085, 27.105, 27.115, 27.125, 27.135, 27.155, 27.165, 27.175, 27.185, 27.205,
+                                27.215, 27.225, 27.255, 27.235, 27.245, 27.265, 27.275, 27.285, 27.295, 27.305,
+                                27.315, 27.325, 27.335, 27.345, 27.355, 27.365, 27.375, 27.385, 27.395, 27.405), 1))
+FRS_CHANNELS = _chans(enumerate((462.5625, 462.5875, 462.6125, 462.6375, 462.6625, 462.6875, 462.7125,
+                                 467.5625, 467.5875, 467.6125, 467.6375, 467.6625, 467.6875, 467.7125,
+                                 462.5500, 462.5750, 462.6000, 462.6250, 462.6500, 462.6750, 462.7000, 462.7250), 1),
+                      offsets={n: 5e6 for n in range(15, 23)})       # GMRS repeaters on 15-22: input +5 MHz
+WX_CHANNELS = _chans(enumerate((162.550, 162.400, 162.475, 162.425, 162.450, 162.500, 162.525), 1))
+MURS_CHANNELS = _chans(enumerate((151.820, 151.880, 151.940, 154.570, 154.600), 1))
+# marine VHF, US: the simplex channels (18 for 18A and so on: the CH digits hold two), and the
+# coast station's side of the duplex ones (what you hear from shore)
+MARINE_CHANNELS = _chans((
+    (6, 156.300), (8, 156.400), (9, 156.450), (10, 156.500), (11, 156.550), (12, 156.600), (13, 156.650),
+    (14, 156.700), (16, 156.800), (17, 156.850), (18, 156.900), (19, 156.950), (20, 161.600), (21, 157.050),
+    (22, 157.100), (23, 157.150), (24, 161.800), (25, 161.850), (26, 161.900), (27, 161.950), (28, 162.000),
+    (63, 156.175), (65, 156.275), (66, 156.325), (67, 156.375), (68, 156.425), (69, 156.475), (70, 156.525),
+    (71, 156.575), (72, 156.625), (73, 156.675), (74, 156.725), (77, 156.875), (78, 156.925), (79, 156.975),
+    (80, 157.025), (81, 157.075), (82, 157.125), (83, 157.175), (84, 161.825), (85, 161.875), (86, 161.925),
+    (87, 157.375), (88, 157.425)))
 
 
 k, M = 1e3, 1e6
@@ -117,17 +147,18 @@ BANDS = (
        offsets=((1282 * M, 1288 * M, -12 * M),)),
     # ---- public service
     _b('AIR', 'Air', 'public', 'AIR BAND', 118 * M, 137 * M, 25 * k, 'AM'),
-    _b('MARINE', 'Marine', 'public', 'MARINE VHF', 156.0 * M, 162.025 * M, 25 * k, 'NFM'),
-    _b('WX', 'Weather', 'public', 'NOAA WEATHER', 162.400 * M, 162.550 * M, 25 * k, 'NFM'),
+    _b('MARINE', 'Marine', 'public', 'MARINE VHF', 156.0 * M, 162.025 * M, 25 * k, 'NFM',
+       channels=MARINE_CHANNELS),
+    _b('WX', 'Weather', 'public', 'NOAA WEATHER', 162.400 * M, 162.550 * M, 25 * k, 'NFM', channels=WX_CHANNELS),
     _b('PUBLIC', 'Police/Fire', 'public', 'PUBLIC SAFETY', 150.8 * M, 174 * M, 12.5 * k, 'NFM2',
        ranges=((150.8 * M, 174 * M, 12.5 * k, 'PUBLIC SAFETY VHF'),
                (450 * M, 470 * M, 12.5 * k, 'PUBLIC SAFETY UHF'),
                (851 * M, 869 * M, 12.5 * k, 'PUBLIC SAFETY 800'))),
     # ---- personal
-    _b('CB', 'CB', 'personal', 'CB', 26.965 * M, 27.405 * M, 10 * k, 'AM'),
+    _b('CB', 'CB', 'personal', 'CB', 26.965 * M, 27.405 * M, 10 * k, 'AM', channels=CB_CHANNELS),
     _b('FRS', 'FRS/GMRS', 'personal', 'FRS / GMRS', 462.5500 * M, 467.7250 * M, 12.5 * k, 'NFM',
-       origin=462.5500 * M, offsets=((462.5500 * M, 462.7250 * M, 5 * M),)),
-    _b('MURS', 'MURS', 'personal', 'MURS', 151.820 * M, 154.600 * M, 5 * k, 'NFM'),
+       origin=462.5500 * M, channels=FRS_CHANNELS),
+    _b('MURS', 'MURS', 'personal', 'MURS', 151.820 * M, 154.600 * M, 5 * k, 'NFM', channels=MURS_CHANNELS),
 )
 
 BY_KEY = {b.key: b for b in BANDS}
@@ -202,8 +233,44 @@ def step(b, freq):
     return range_for(b, freq)[2]
 
 
+def channel_at(b, freq):
+    """The label of the channel on exactly freq (within 1 Hz), or None."""
+    for label, f, _ in b.channels:
+        if abs(f - freq) < 1:
+            return label
+    return None
+
+
+def nearest_channel(b, freq):
+    return min(b.channels, key=lambda ch: abs(ch[1] - freq))[1]
+
+
+def next_channel(b, freq, direction):
+    """The next channel in number order (round to the other end); from off a channel, the
+    nearest one first."""
+    i = min(range(len(b.channels)), key=lambda j: abs(b.channels[j][1] - freq))
+    if abs(b.channels[i][1] - freq) >= 1:
+        return b.channels[i][1]
+    return b.channels[(i + direction) % len(b.channels)][1]
+
+
+def channel_freq(b, number):
+    """The frequency of channel `number` (as typed), or None."""
+    for label, f, _ in b.channels:
+        if label == str(number):
+            return f
+    return None
+
+
+def top_channel(b):
+    return max(int(label) for label, _, _ in b.channels)
+
+
 def repeater_offset(b, freq):
     """The usual repeater offset for an output on freq (Hz, signed), or 0."""
+    for label, f, off in b.channels:
+        if abs(f - freq) < 1:
+            return off
     for lo, hi, off in b.offsets:
         if lo <= freq < hi:
             return off

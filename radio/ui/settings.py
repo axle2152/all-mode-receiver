@@ -186,6 +186,20 @@ class SettingsWindow:
         self._mon_var = tk.BooleanVar(value=self.monitor_on)
         tk.Checkbutton(r, text='Show under the tuner', variable=self._mon_var, command=self._toggle_monitor,
                        **cb).pack(side=tk.LEFT)
+        r = row(t, 'CHANNEL BANDS')
+        self._chsteps_var = tk.BooleanVar(value=self.channel_steps)
+        for val, txt in ((True, 'BY CHANNEL'), (False, 'ORDINARY STEPS')):
+            w = tk.Radiobutton(r, text=txt, value=val, variable=self._chsteps_var, width=15,
+                               command=self._channel_steps_changed, **rb)
+            w.pack(side=tk.LEFT, padx=1)
+            tips.bind(w, TIPS['chsteps'])
+        r = row(t, 'THEIR BAND KEY')
+        self._goes_var = tk.StringVar(value=self.band_key_goes)
+        for val, txt in (('home', 'HOME CHANNEL'), ('last', 'WHERE I LEFT IT')):
+            w = tk.Radiobutton(r, text=txt, value=val, variable=self._goes_var, width=15,
+                               command=self._band_key_goes_changed, **rb)
+            w.pack(side=tk.LEFT, padx=1)
+            tips.bind(w, TIPS['homech'])
         r = row(t, 'OUTPUT LEVEL')
         self._out_var = tk.DoubleVar(value=self.output_db)
         for db in OUTPUT_DB_CHOICES:
@@ -271,6 +285,16 @@ class SettingsWindow:
 
     def _cal_clear(self):
         self._cal_msg = (self._smeter_clear(), time.monotonic() + 6.0)
+
+    def _channel_steps_changed(self):
+        self.channel_steps = bool(self._chsteps_var.get())
+        if self._channels_on():
+            self._tune_to(self.freq)                    # onto a channel
+        self._save_settings()
+
+    def _band_key_goes_changed(self):
+        self.band_key_goes = self._goes_var.get()
+        self._save_settings()
 
     def _size_changed(self):
         v = self._size_var.get()

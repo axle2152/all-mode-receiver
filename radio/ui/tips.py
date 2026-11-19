@@ -19,6 +19,12 @@ def _pty_name(pty):
 
 
 TIPS = dict(
+    chsteps="CB, FRS/GMRS, weather, MURS and marine radio come in numbered channels. BY CHANNEL: the "
+            "tuning keys step channel to channel, the number keys pick a channel, and CH shows its number. "
+            "ORDINARY STEPS: their usual spacing, like any other band.",
+    homech="On a channelized band, press Memory twice to make the channel you're on its home channel. "
+           "HOME CHANNEL: its band key always goes there (weather on your local station, say); "
+           "WHERE I LEFT IT: to the channel you were last on.",
     ui_size="How big the tuner and the monitor are drawn. FIT fills most of the screen's width, so "
             "the lettering stays readable on any screen, 4K included; 100% is 1480 pixels wide.",
     quality="How clean the station sounds after all the processing, measured from the FM signal "

@@ -297,7 +297,7 @@ def child(appdir, band, fonts, secs):
                 if kbnd._down != app.bands_on or bool(app.bcanvas.winfo_ismapped()) != app.bands_on:
                     mine.append(f'Bands key: shown {app.bands_on}, mapped {app.bcanvas.winfo_ismapped()}, '
                                 f'key down {kbnd._down}')
-        kb = {kid: key_for_band(kid) for kid in ('SW41', 'FM', 'MW', 'HAM2', 'AIR')}
+        kb = {kid: key_for_band(kid) for kid in ('SW41', 'FM', 'MW', 'HAM2', 'AIR', 'CB')}
         if None in kb.values():
             mine.append(f'band keys missing: {[k for k, v in kb.items() if v is None]}')
         else:
@@ -327,6 +327,43 @@ def child(appdir, band, fonts, secs):
             msg = (app._dm_msg or ('',))[0]
             if (app.bandkey, app.band, round(app.freq), msg) != ('SW31', 'AM', 9580000, 'DIRECT SAMPLING'):
                 mine.append(f'typed 9580: band {app.bandkey} on {app.band} at {app.freq / 1e3:g} kHz, message {msg!r}')
+            # a channelized band: channel to channel, CH shows the channel, Memory sets home
+            ch = lambda: ''.join(app._vfd_state()['ch']).strip()
+            press(kb['CB'])
+            if (app.bandkey, round(app.freq), ch()) != ('CB', 27185000, '19'):
+                mine.append(f'CB key: band {app.bandkey} at {app.freq / 1e6:g} MHz, CH {ch()!r} (want 19)')
+            app._pick(22)
+            got = []
+            for _ in range(2):
+                app._step(+1, manual=True)
+                got.append(ch())
+            if got != ['23', '24'] or round(app.freq) != 27235000:
+                mine.append(f'CB steps from 22: CH {got}, at {app.freq / 1e6:g} MHz (want 23 on 27.255, 24 on 27.235)')
+            app._digit(4)
+            app._digit(0)
+            if (round(app.freq), ch()) != (27405000, '40'):
+                mine.append(f'4 then 0 on CB: {app.freq / 1e6:g} MHz, CH {ch()!r}')
+            app._memory()
+            app._memory()
+            if app.home_channels.get('CB') != app.freq or 'HOME CHANNEL 40' not in (app._dm_msg or ('',))[0]:
+                mine.append(f'Memory twice on CB 40: home {app.home_channels.get("CB")}, message {app._dm_msg!r}')
+            app._pick(5)
+            press(kb['FM'])
+            press(kb['CB'])
+            if ch() != '40':
+                mine.append(f'back to CB with a home channel: CH {ch()!r} (want 40)')
+            app.band_key_goes = 'last'
+            app._pick(5)
+            press(kb['FM'])
+            press(kb['CB'])
+            if ch() != '5':
+                mine.append(f'back to CB, "where I left it": CH {ch()!r} (want 5)')
+            app.channel_steps = False
+            app._pick(3) if app._channels_on() else app._tune_to(26.985e6)
+            app._step(+1, manual=True)
+            if round(app.freq) != 26995000 or ch():
+                mine.append(f'ordinary steps on CB from 26.985: {app.freq / 1e6:g} MHz, CH {ch()!r}')
+            app.channel_steps, app.band_key_goes = True, 'home'
             press(kb['MW' if band == 'AM' else 'FM'])     # back where this run started
         problems.extend(mine)
         real_print('INFO keys and size:', 'ok' if not mine else '; '.join(mine))

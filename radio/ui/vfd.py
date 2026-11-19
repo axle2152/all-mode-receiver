@@ -256,7 +256,7 @@ class TunerVfd(VfdBase):
         return im.convert('L')
 
     def _digit_keys(self, slot, ch, ghost=False):
-        avail = 'abcdeg' if slot == ('ch', 0) else 'abcdefg'
+        avail = 'abcdefg'                             # both CH digits whole: CB runs to 40, marine to 88
         if self.digit_masks and avail == 'abcdefg':
             c = 'ghost' if ghost else ch
             return [('img',) + slot + (c,)] if c in self.digit_masks else []

@@ -287,8 +287,17 @@ the monitor, and modes on the tuner.
     in much of Europe and 25 kHz in the US; CB on AM in the US and mostly FM in Europe).
 - [ ] Tuning steps by mode, with a setting to change them: 5 kHz for AM and narrowband FM on
   the shortwave and amateur bands, 10 Hz or 1 Hz for SSB and CW.
-- [ ] Presets store band, mode, frequency and filter, in pages of 24. Existing presets carry
-  over.
+- [x] Channelized bands (the owner's idea): CB (40), FRS/GMRS (22; GMRS repeater pairs on
+  15-22), weather (WX1-7), MURS (1-5) and marine VHF (US numbering; 18A shows as 18) tune
+  channel to channel, in channel order (CB's 23 between 22 and 24), the number keys pick a
+  channel, and the CH digits show it (both CH digits are now whole 7-segment digits: CB runs
+  to 40, marine to 88). No presets there: Memory pressed twice sets the band's home channel,
+  and Settings > Reception chooses whether the band key goes to it or to where it was left,
+  and whether these bands step by channel or by their ordinary spacing.
+- [ ] Presets by band (the owner's choice over pages): 24 for each band, except the
+  channelized ones; a preset stores band, mode, frequency and filter, and on narrow FM the
+  repeater offset (or Rev) and the PL tone. Existing presets carry over (FM to FM, AM to the
+  band each is in).
 
 ## Phase 6: Shortwave, VHF/UHF and more analog modes
 
