@@ -313,10 +313,10 @@ def child(appdir, band, fonts, secs):
             press(kb['SW41'])
             if abs(app.freq - 7.205e6) > 1:
                 mine.append(f'41 m did not remember 7205 kHz: {app.freq / 1e3:g}')
-            press(kb['HAM2'])
-            msg = (app._dm_msg or ('',))[0]
-            if app.bandkey != 'SW41' or 'NOT YET' not in msg:
-                mine.append(f'2 m (no narrow FM yet): band {app.bandkey}, message {msg!r}')
+            press(kb['HAM2'])                           # narrow FM, on its own receiver
+            if (app.bandkey, app.band, app.mode) != ('HAM2', 'NFM', 'NFM') or not 144e6 <= app.freq <= 148e6:
+                mine.append(f'2 m key: band {app.bandkey} on {app.band} in {app.mode} at {app.freq / 1e6:g} MHz')
+            press(kb['SW41'])
             press(kb['AIR'])                            # above 28.8 MHz: the dongle's tuner
             msg = (app._dm_msg or ('',))[0]
             if (app.bandkey, app.band, msg) != ('AIR', 'AM', 'QUADRATURE TUNER'):
@@ -450,7 +450,106 @@ def child(appdir, band, fonts, secs):
             press(kb['MW' if band == 'AM' else 'FM'])     # back where this run started
         problems.extend(mine)
         real_print('INFO keys and size:', 'ok' if not mine else '; '.join(mine))
-        done['keys'] = True
+        if None in kb.values():
+            done['keys'] = True
+        else:
+            root.after(100, lambda: nfm_1())       # defined below
+
+        # ---- narrow FM: 2 m on its own receiver, Squelch, Rev, Tone, a repeater preset
+        nfm = []
+        line2 = lambda: app._vfd_state()['line2']
+        msg = lambda: (app._dm_msg or ('',))[0]
+
+        def nfm_1():
+            press(kb['HAM2'])
+            app._tune_to(146.52e6)
+            app._rev_key()                              # a simplex channel has no input
+            if app.rev_from is not None or 'SIMPLEX' not in msg():
+                nfm.append(f'Rev on 146.52 simplex: input {app.rev_from}, message {msg()!r}')
+            app._direct_start()
+            app._direct = '146.94'
+            app._direct_enter()
+            if round(app.freq) != 146940000 or '-600 kHz' not in line2():
+                nfm.append(f'146.94: {app.freq / 1e6:g} MHz, second row {line2()!r} (want the -600 kHz offset)')
+            app._rev_key()
+            krev = next((k for k in app.keys if k.on_press == app._rev_key), None)
+            root.update()
+            if round(app.freq) != 146340000 or app.rev_from != 146.94e6 or 'REV -600 kHz' not in line2() \
+                    or krev is None or not krev._down:
+                nfm.append(f'Rev on 146.94: {app.freq / 1e6:g} MHz (want 146.34), row {line2()!r}, '
+                           f'key down {krev._down if krev else None}')
+            app._rev_key()
+            if round(app.freq) != 146940000 or app.rev_from is not None:
+                nfm.append(f'Rev again: {app.freq / 1e6:g} MHz (want 146.94)')
+            root.after(3000, nfm_2)                    # the narrow FM receiver starts
+
+        def nfm_2():
+            tb = app.tb
+            if tb is None or tb.BAND != 'NFM':
+                nfm.append(f'2 m: the narrow FM receiver is not running ({type(tb).__name__})')
+                return nfm_end()
+            if (tb.width, tb.squelch_level) != ('NFM', 3):
+                nfm.append(f'narrow FM started with width {tb.width}, squelch {tb.squelch_level} (want NFM, 3)')
+            app._tone_key()
+            if app.tsq_hz is not None or 'NO TONE' not in msg():
+                nfm.append(f'Tone with no tone heard: {app.tsq_hz}, message {msg()!r}')
+            app._heard = (app.freq, 100.0)              # as if the repeater's tone had been heard
+            st = app._vfd_state()
+            if 'PL 100.0' not in st['line2']:
+                nfm.append(f'tone heard: second row {st["line2"]!r} (want PL 100.0)')
+            app._tone_key()
+            st = app._vfd_state()
+            if (app.tsq_hz, tb.tone_squelch) != (100.0, 100.0) or 'TONE' not in st['legends'] \
+                    or 'TSQ 100.0' not in st['line2']:
+                nfm.append(f'Tone: tone squelch {app.tsq_hz} (receiver {tb.tone_squelch}), legends '
+                           f'{sorted(st["legends"])}, row {st["line2"]!r}')
+            app._memory()
+            app._channel(5)
+            c = app._band_presets()[4]
+            text = app._channel_text(c)
+            back = app._parse_channel(text)
+            if text != 'NFM 146.94 OFS-600 PL100.0 TSQ' or back != {k: v for k, v in c.items() if k != 'mode'}:
+                nfm.append(f'repeater preset saved as {text!r}, read back as {back!r}')
+            app._step(+1, manual=True)
+            app._apply_nfm()
+            if app.tsq_hz is not None or tb.tone_squelch is not None:
+                nfm.append(f'tuned away: tone squelch still {app.tsq_hz} / {tb.tone_squelch}')
+            app._channel(5)
+            app._apply_nfm()
+            if (round(app.freq), app.tsq_hz, tb.tone_squelch) != (146940000, 100.0, 100.0):
+                nfm.append(f'preset 5: {app.freq / 1e6:g} MHz, tone squelch {app.tsq_hz} / {tb.tone_squelch}')
+            app._squelch_key()
+            if app.squelch_on or tb.squelch_level != 0 or msg() != 'SQUELCH OFF':
+                nfm.append(f'Squelch key: on {app.squelch_on}, receiver level {tb.squelch_level}, {msg()!r}')
+            app._squelch_key()
+            app._sql_var.set(5)                         # Settings > Squelch
+            app._squelch_level_changed()
+            if (app.squelch_on, tb.squelch_level) != (True, 5):
+                nfm.append(f'squelch level 5: on {app.squelch_on}, receiver level {tb.squelch_level}')
+            app._sql_var.set(3)
+            app._squelch_level_changed()
+            app._mode_key('FM')                         # narrow FM 2.5: no restart
+            if (app.mode, tb.width) != ('NFM2', 'NFM2') or not line2().startswith('FM NARROW 2.5'):
+                nfm.append(f'FM key on narrow FM: mode {app.mode}, receiver {tb.width}, row {line2()!r}')
+            app._mode_key('FM')
+            app._mode_key('FM')
+            app._toggle_advanced()
+            root.after(1500, nfm_3)
+
+        def nfm_3():
+            if 'Narrow FM' not in app._id_var.get() or 'Squelch' not in app._rdsd_var.get():
+                nfm.append(f'Advanced on narrow FM: {app._id_var.get()!r} / {app._rdsd_var.get()[:40]!r}')
+            app._toggle_advanced()
+            nfm_end()
+
+        def nfm_end():
+            press(kb['MW' if band == 'AM' else 'FM'])
+            app._squelch_key()
+            if 'NARROW FM ONLY' not in msg():
+                nfm.append(f'Squelch key off narrow FM: {msg()!r}')
+            problems.extend(nfm)
+            real_print('INFO narrow FM keys:', 'ok' if not nfm else '; '.join(nfm))
+            done['keys'] = True
 
     def stereo_checks():
         """The pretend stereo add-on: STEREO, the system's name, its lamp, meter and line."""

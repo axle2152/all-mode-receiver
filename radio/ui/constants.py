@@ -12,7 +12,9 @@ from .. import TOP_DIR
 
 FM_MIN, FM_MAX, FM_STEP = 87.5e6, 107.9e6, 0.2e6
 AM_MIN, AM_MAX, AM_STEP = 530e3, 1710e3, 10e3
-BANDS = {'FM': (FM_MIN, FM_MAX, FM_STEP), 'AM': (AM_MIN, AM_MAX, AM_STEP)}
+NFM_MIN, NFM_MAX, NFM_STEP = 144e6, 148e6, 5e3        # narrow FM's home: 2 m
+BANDS = {'FM': (FM_MIN, FM_MAX, FM_STEP), 'AM': (AM_MIN, AM_MAX, AM_STEP), 'NFM': (NFM_MIN, NFM_MAX, NFM_STEP)}
+SQUELCH_DEFAULT = 3                        # narrow FM's squelch level (1-9: 4 to 25 dB C/N)
 # Settings > Reception > Band limits: Override lifts the band edges to what the
 # dongle can reach. With direct sampling available (AM source direct_q, an
 # RTL-SDR like the V3), either receiver crosses over at 28.8 MHz: the RTL2832's
@@ -50,7 +52,7 @@ TUNED_SETTLE_S = 0.3
 TUNED_HYST_DB  = 2.0
 
 SIG_STEPS      = 15                 # signal bar: 9 rising, then 6 at full height
-SIG_RANGE      = {'FM': (3.0, 33.0), 'AM': (7.5, 43.5)}   # AM was (12, 48) before its C/N was corrected
+SIG_RANGE      = {'FM': (3.0, 33.0), 'AM': (7.5, 43.5), 'NFM': (3.0, 33.0)}   # AM was (12, 48) before its C/N was corrected
 SIG_FALL_PER_S = 8.0 * SIG_STEPS / 9      # steps a second: the bar falls as fast as the old 9-step ladder
 
 OUTPUT_DB_DEFAULT = -6.0
@@ -58,7 +60,7 @@ OUTPUT_DB_CHOICES = (-12.0, -9.0, -6.0, -3.0, 0.0)
 BADGE_DEFAULT     = 'Stereo Tuner'
 
 # Monitor
-MON_SETTLE_S   = {'FM': 0.5, 'AM': 0.9}   # discard readings this long after a retune
+MON_SETTLE_S   = {'FM': 0.5, 'AM': 0.9, 'NFM': 0.5}   # discard readings this long after a retune
 PPM_FALL_DB_S  = 13.3                     # IEC 60268-10 type I: 20 dB in 1.5 s
 PEAK_HOLD_S    = 1.5
 VU_TAU_S       = 0.045                    # two poles: 99% in about 300 ms

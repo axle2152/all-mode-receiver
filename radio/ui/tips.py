@@ -19,6 +19,20 @@ def _pty_name(pty):
 
 
 TIPS = dict(
+    squelch="Narrow FM's squelch keeps the speaker quiet between transmissions. Level 1 opens on a "
+            "weak station (4 dB above the noise), 9 only on a strong one (25 dB); 3 suits most "
+            "listening. The Squelch key on the Bands panel turns it on or off.",
+    nfm_quality="How clean the narrow FM station is: how far it quiets the receiver's noise, which "
+                "follows its carrier-to-noise ratio in 12.5 kHz. Above 20 dB is clean.",
+    nfm_level="The station's level at the receiver, in dB below full scale.",
+    nfm_bw="The filter: +/-8 kHz for 5 kHz deviation (25 kHz channels), +/-5.5 kHz for 2.5 kHz "
+           "(12.5 kHz channels). The FM key steps between them.",
+    nfm_dev="The station's peak deviation, against its channel's limit (5 or 2.5 kHz).",
+    nfm_tone="The CTCSS (PL) tone the station sends under its audio, and how much it deviates. "
+             "Repeaters use it to know who to repeat; the Tone key listens only while it's there.",
+    lamp_sql="A station is opening the squelch.",
+    lamp_tone="A CTCSS (PL) tone is heard.",
+    lamp_tsq="Tone squelch is on: the speaker plays only while its tone is heard.",
     chsteps="CB, FRS/GMRS, weather, MURS and marine radio come in numbered channels. BY CHANNEL: the "
             "tuning keys step channel to channel, the number keys pick a channel, and CH shows its number. "
             "ORDINARY STEPS: their usual spacing, like any other band.",

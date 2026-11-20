@@ -131,6 +131,16 @@ class SettingsWindow:
         w = tk.Checkbutton(r, text='AUTO', variable=self._amauto_var, command=self._am_width_changed, **cb)
         w.pack(side=tk.LEFT, padx=(14, 0))
         tips.bind(w, TIPS['amauto'])
+        r = row(t, 'SQUELCH')
+        self._sql_var = tk.IntVar(value=int(self.squelch_level))
+        for lv in range(1, 10):
+            w = tk.Radiobutton(r, text=str(lv), value=lv, variable=self._sql_var, width=3,
+                               command=self._squelch_level_changed, **rb)
+            w.pack(side=tk.LEFT, padx=1)
+            tips.bind(w, TIPS['squelch'])
+        w = tk.Label(r, text='NARROW FM', **lab)
+        w.pack(side=tk.LEFT, padx=(10, 0))
+        tips.bind(w, TIPS['squelch'])
         r = row(t, 'TUNER GAIN')
         self.agc_btn = SilverButton(r, size=BUTTON_SMALL, text='AGC', font=fonts.FACE_FONT, command=self._toggle_agc)
         self.agc_btn.pack(side=tk.LEFT, padx=(0, 8))
@@ -290,6 +300,11 @@ class SettingsWindow:
         self.channel_steps = bool(self._chsteps_var.get())
         if self._channels_on():
             self._tune_to(self.freq)                    # onto a channel
+        self._save_settings()
+
+    def _squelch_level_changed(self):
+        self.squelch_level = int(self._sql_var.get())
+        self._apply_nfm()
         self._save_settings()
 
     def _band_key_goes_changed(self):

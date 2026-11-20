@@ -109,7 +109,7 @@ class Crt:
             marks = [(0, '0'), (50, '50'), (100, '100'), (150, '150'), (200, '200 us')]
             pos = lambda v: (v + 20) / 270
         else:
-            title = 'ECHO   FM only'
+            title = 'ECHO   FM only' if band == 'AM' else 'ECHO   broadcast FM only'
             pos = None
         for v, t in marks:
             x = fx(pos(v))

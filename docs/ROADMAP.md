@@ -245,15 +245,16 @@ the monitor, and modes on the tuner.
     23 cm, its keys the same width as the shortwave keys so the columns line up; with
     Frequency (Direct: type it on the preset keys) at the right
   - Public service: Air, Marine, Weather, Police/Fire; Personal: CB, FRS/GMRS, MURS;
-    Repeater: Rev and Tone
+    Narrow FM: Squelch, Rev and Tone
   Done: a third unit between the tuner and the monitor. Each band key tunes to its band in its
   usual receiver and remembers where it was left; Police/Fire steps through VHF, UHF and
   800 MHz; Direct finds the band a typed frequency is in and tunes it exactly as typed (not
   onto the nearest channel); presets find theirs. FM/AM left the
   tuner; Direct sits under the Tuning keys (the owner's choice), beside Wide. A Bands key (and
   Settings > Panel) shows or hides the panel. A band change across 28.8 MHz reopens the dongle
-  (direct sampling below, the tuner above), and says so. Bands that need narrow FM, SSB or CW
-  say NOT YET until those receivers exist, and so do Rev and Tone.
+  (direct sampling below, the tuner above), and says so. Bands that need SSB or CW say NOT YET
+  until that receiver exists. Narrow FM's bands play (2 m, 70 cm, marine, weather, FRS/GMRS,
+  MURS, public safety), and Squelch joined Rev and Tone on the panel (no room on the tuner).
 - [x] A band plan behind those keys: each band's edges, default mode, tuning step and filter
   widths, and the parts of a band with a mode of their own. Done (radio/ui/bandplan.py,
   tests/test_bandplan.py), for the Americas; filter widths come with the receivers.
@@ -264,7 +265,8 @@ the monitor, and modes on the tuner.
   by less than the band's step (10 Hz on SSB and CW, 100 Hz or so on AM). Done: the keys, the
   kinds, a mode on any frequency (changing receiver if it must), presets remembering their mode,
   Fine tune (AM 100 Hz, FM 5 kHz, SSB/CW 10 Hz, narrow FM 500 Hz). Kinds whose receiver isn't
-  built (synchronous AM, narrow FM, SSB, CW) say NOT YET; Width and Squelch come with them.
+  built (synchronous AM, SSB, CW) say NOT YET; Width comes with them. Narrow FM's two kinds
+  switch width without a restart; Squelch is on the Bands panel, its level in Settings.
 - [x] Each band picks its usual mode, and so does tuning into a part of a band with its own: AM
   on medium wave, shortwave and the airband; narrow FM on 2 m, marine and weather; on the
   amateur HF bands LSB below 10 MHz and USB above (20 m is USB), and CW in their CW parts.
@@ -277,8 +279,12 @@ the monitor, and modes on the tuner.
   (SSB, CW) it stays on band information. Done: with no station data the text shows the band
   anyway; in the station view the second row has the RDS programme type, else the mode. WIDE
   left the legends for the text (AM's filter: WIDE, AUTO or its width).
-- [ ] Repeaters: Rev listens on the input, at the band's usual offset (2 m +/-600 kHz, 1.25 m
-  -1.6 MHz, 70 cm +/-5 MHz); CTCSS (PL) and DCS decoded and shown, and tone squelch.
+- [x] Repeaters: Rev listens on the input, at the band's usual offset (2 m +/-600 kHz, 1.25 m
+  -1.6 MHz, 70 cm +/-5 MHz); CTCSS (PL) and DCS decoded and shown, and tone squelch. Done for
+  CTCSS: the tone named (any of the 50 standard ones, to a fraction of a hertz, so 67.0 and
+  69.3 stay apart), shown in the second text row (PL 100.0, or TSQ 100.0 with tone squelch),
+  and kept out of the speaker; Tone squelches on the tone heard or a preset's; Rev at the band
+  plan's offset or a preset's (GMRS +5 MHz on 15-22). DCS still to come.
 - [ ] Regions, chosen in Settings, because band edges and channel spacing depend on where you
   are:
   - AM: 530 to 1700 kHz in 10 kHz steps in the Americas; 531 to 1602 kHz in 9 kHz steps in
@@ -305,8 +311,9 @@ the monitor, and modes on the tuner.
   channelized ones; a preset stores band, mode, frequency and filter, and on narrow FM the
   repeater offset (or Rev) and the PL tone. Existing presets carry over (FM to FM, AM to the
   band each is in). Done so far: 24 per band (the CH digits show the band's own), the first
-  run's seeds on FM 1-4 and MW 1-4, an older single list carried over slot for slot. Mode,
-  filter, offset and tone join each preset as those land.
+  run's seeds on FM 1-4 and MW 1-4, an older single list carried over slot for slot; the mode;
+  on narrow FM the offset, the tone and tone squelch (in the settings file as
+  'NFM 146.94 OFS-600 PL100.0 TSQ'). The filter joins when Width lands.
 
 ## Phase 6: Shortwave, VHF/UHF and more analog modes
 
@@ -320,7 +327,7 @@ the monitor, and modes on the tuner.
   themselves were never written, so the controls do nothing yet. Written here, once, for AM
   broadcast and shortwave alike.
 - [ ] Noise reduction for AM and SSB
-- [ ] Narrowband FM as a mode of its own (not broadcast FM narrowed). Two channel plans cover
+- [x] Narrowband FM as a mode of its own (not broadcast FM narrowed). Two channel plans cover
   most of what's on the air:
   - 25 kHz channels, about +/-5 kHz deviation: most amateur FM (2 m, 70 cm, 10 m), NOAA
     Weather Radio, marine VHF. Filter about 15 kHz.
@@ -329,7 +336,16 @@ the monitor, and modes on the tuner.
 
   Plus an AUTO that picks from the measured deviation, and a level reference per plan so a
   +/-2.5 kHz station doesn't play 6 dB quieter. Squelch, de-emphasis, and CTCSS and DCS tone
-  decoding.
+  decoding. Done (radio/nfm.py, tests/test_nfm.py in real GNU Radio, 3.10.1 and 3.10.9): its
+  own receiver at 960 ksps, +/-8 and +/-5.5 kHz filters (the FM key picks; both play equally
+  loud), 750 us de-emphasis with 300 Hz to 3 kHz audio (the CTCSS tone 70 dB down), a noise
+  squelch whose levels are dB of C/N (the discriminator's noise just above the voice band
+  against its no-signal level: it tracks C/N in 12.5 kHz dB for dB, at any gain, and doubles as
+  the signal quality), no noise burst at the end of a transmission, AFC for the dongle's crystal
+  error, its own tuner AGC (the S-meter always knows the gain), meters (deviation against 5 or
+  2.5 kHz) and an Advanced dashboard. Still to come: AUTO width, DCS. To try on the bench:
+  squelch levels against real stations, the AGC's targets, and 750 us against what local
+  repeaters send.
 
 ## Phase 7: Amateur digital modes
 

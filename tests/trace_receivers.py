@@ -6,14 +6,16 @@ trace_receivers.py - prove a change leaves the receivers' signal chains alone
     python3 tests/trace_receivers.py after.json --code /other/checkout
     python3 tests/trace_receivers.py --compare before.json after.json
 
-Builds the AM receiver (all three sources) and the FM receiver (with and without IQ
-recording) against the GNU Radio stand-in with tracing on, takes each through a scripted
+Builds the AM receiver (all three sources), the FM receiver (with and without IQ
+recording) and the narrow FM receiver (tuner and direct sampling) against the GNU Radio
+stand-in with tracing on, takes each through a scripted
 session (start, tune, filters, tone, stereo, mono, gain, mute, readouts) on a pretend clock,
 and writes every event to a JSON file: each block made and its arguments, each connection,
 each call on a block, what each step returned, and the receiver's plain attributes at the end.
 
 Record before and after a refactor and compare: identical means every block, setting and
-connection is the same. --compare lists any differences. For "before", check the old
+connection is the same. --compare lists any differences; when one trace has a receiver the
+other hasn't (one added since), it compares the sessions both have and names the others. For "before", check the old
 commit out into another folder (git worktree add ../before HEAD~1) and pass --code.
 """
 import argparse
@@ -35,6 +37,11 @@ def record(out):
     import radio.receiver
     for m in (radio.am, radio.fm.receiver, radio.fm.rds, radio.receiver):
         m.time = FakeTime()
+    try:
+        import radio.nfm as nfm
+        nfm.time = FakeTime()
+    except ImportError:                   # older code, from before narrow FM
+        nfm = None
     try:                                  # the receivers alone: installed add-ons stay out, so
         import radio.addons               # traces compare the same thing on any machine
         radio.addons._entry_points = lambda: []
@@ -98,6 +105,10 @@ def record(out):
             step('nrsc0', lambda: tb.set_nrsc_deemphasis(False))
         if tb.has('am_stereo'):
             step('st', lambda: tb.set_stereo_system('auto'))
+        if tb.has('nfm_width'):
+            step('width', lambda: tb.set_width('NFM'))
+        if tb.has('squelch'):
+            step('sql', lambda: tb.set_squelch(3))
         step('mute', lambda: tb.set_mute(False))
         step('start', lambda: tb.start())
         run(tb, 3.0, 'blend1')
@@ -119,6 +130,12 @@ def record(out):
             step('nrsc1', lambda: tb.set_nrsc_deemphasis(True))
         if tb.has('am_stereo'):
             step('kahn', lambda: tb.set_stereo_system('kahn'))
+        if tb.has('nfm_width'):
+            step('width2', lambda: tb.set_width('NFM2'))
+        if tb.has('ctcss'):
+            step('tsq', lambda: tb.set_tone_squelch(100.0))
+        if tb.has('squelch'):
+            step('sql0', lambda: tb.set_squelch(0))
         if tb.has('mono'):
             step('mono1', lambda: tb.set_force_mono(True))
             step('mono0', lambda: tb.set_force_mono(False))
@@ -151,8 +168,24 @@ def record(out):
         step('freq877', lambda: tb.set_freq(87.7e6))
         for a in ('rds_ps', 'rds_rt', 'rds_pi', 'rds_tp', 'rds_ta', 'rds_af', 'rds_ct', 'rds_ptyn'):
             step('attr ' + a, lambda a=a: getattr(tb, a))
+    for args in (() if nfm is None else ('numchan=1 rtl=0', 'numchan=1 rtl=0,direct_samp=2')):
+        SIM.reset(); SIM.fake_clock = True; SIM.vary = True; np.random.seed(1)
+        log(('session', f'NFM {args}'))
+        tb = nfm.NFMReceiver(freq=146.94e6, rf_gain=29.7, agc=True, device_args=args, audio_device='')
+        common(tb, 146.52e6)
+        step('readout', lambda: tb.readout())
     json.dump(_log.EVENTS, open(out, 'w'), indent=0)
     print(f"{len(_log.EVENTS)} events -> {out}")
+
+
+def sessions(ev):
+    """The events of each receiver session, by its name (events before the first under None)."""
+    out, name = {}, None
+    for e in ev:
+        if e[0] == 'session':
+            name = e[1]
+        out.setdefault(name, []).append(e)
+    return out
 
 
 def compare(a_path, b_path):
@@ -160,6 +193,16 @@ def compare(a_path, b_path):
     a, b = json.load(open(a_path)), json.load(open(b_path))
     if a == b:
         print(f"Identical: {len(a)} events, every block, setting, connection and call the same.")
+        return 0
+    sa, sb = sessions(a), sessions(b)
+    both = [n for n in sa if n in sb]
+    if set(sa) != set(sb) and all(sa[n] == sb[n] for n in both):
+        n_ev = sum(len(sa[n]) for n in both)
+        print(f"Identical in every session both have: {n_ev} events, every block, setting, connection "
+              f"and call the same.")
+        for label, only in (('first', [n for n in sa if n not in sb]), ('second', [n for n in sb if n not in sa])):
+            if only:
+                print(f"Only in the {label}: " + ', '.join(only))
         return 0
     graph = lambda ev: [e for e in ev if e[0] in ('new', 'connect', 'disconnect', 'call', 'firdes')]
     print('Blocks, connections and calls:', 'identical' if graph(a) == graph(b) else 'DIFFERENT')

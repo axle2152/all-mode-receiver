@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw, ImageTk
 
 from .advanced import AdvancedWindow
 from .art import _rrect, brushed_plate, num_chars
-from .backend import AMReceiver, FMStereoReceiver, _AM_ERR
+from .backend import AMReceiver, FMStereoReceiver, NFMReceiver, _AM_ERR
 from .constants import (
     AM_MAX, AM_MIN, AM_MOD_MIN_CNR_DB, AM_WIDTHS, BADGE_DEFAULT, BANDS, DELCO_SETTINGS,
     DIRECT_WAIT_S, ENTRY_WAIT_S, FM_DEVICE_ARGS, FM_MAX, FM_MIN, GLOW_DEFAULT,
@@ -26,7 +26,7 @@ from .constants import (
     MILES_PER_US, MOD_MIN_CNR_DB, MON_SETTLE_S, MPX_STATS_S, N_CHANNELS, OUTPUT_DB_DEFAULT,
     OVER_LAMP_S, PILOT_COMP, POWER_SLEEP_S, RDS_CAL_STEREO_TOOL, RDS_COMP, RDS_CREST,
     RDS_RT_PAUSE_S, RDS_SCROLL_S, RTL_RANGE, SEEK_CONFIRM_N, SEEK_MIN_CNR_DB, SEEK_QUICK_N,
-    SEEK_TIMEOUT_S, SETTINGS_FALLBACK, SETTINGS_NAME, SIG_FALL_PER_S, SIG_RANGE, SIG_STEPS,
+    SEEK_TIMEOUT_S, SETTINGS_FALLBACK, SETTINGS_NAME, SIG_FALL_PER_S, SIG_RANGE, SIG_STEPS, SQUELCH_DEFAULT,
     TUNED_HYST_DB, TUNED_SETTLE_S, TUNER_MIN, UI_TICK_MS, XOVER_HZ, _ASSET_DIR,
     FIT_WIDTH, SCALE_MAX, SCALE_MIN, UI_SIZES)
 from .crt import Crt
@@ -40,13 +40,17 @@ from . import bandplan as BP
 from .theme import (
     ADV_KEY, BANDINFO_KEY, BANDS_KEY, DIRECT_KEY, FINE_DN, FINE_UP, MODE_BOXES, BAND_GAP, BAND_KEY_H, BAND_ROWS, BAND_W, BAND_X0, BAND_X1, BANDS_H, BASE_H, BASE_W,
     COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, GROUP_GAP, HEADING_PX,
-    DOT_FIELDS, ECHO_KEY, FREEZE_KEY, HOLD_KEY, IF_KEY, KEY_PX, LABEL_PX, LABEL_Y, LIP,
+    DOT_FIELDS, ECHO_KEY, FREEZE_KEY, HOLD_KEY, IF_KEY, KEY_PX, LABEL_PX, LABEL_Y, LINE2_N, LIP,
     LOWER_LABEL_Y, MEM_KEY, METER_KEY, MONITOR_KEY, MONO_KEY, MPX_KEY, PAD_GAP, PAD_PX, PAD_ROWS,
     PAD_W, PAD_X, POWER_KEY, PPM_KEY, PRINT, PRINT_SOFT, RACK_GAP, RESET_KEY, ROW3_LABEL_Y,
     SCALE_Y, SET_KEY, SIG_BOT, SIG_H1, SIG_PITCH, SIG_X, SMALL_PX, SPEC_AVG, SS, TUNE_DOWN,
     TUNE_UP, VFD_BOX, VU_KEY, WELL, WIDE_KEY, WIN)
 from .vfd import MonitorVfd, TunerVfd
 from .widgets import Key
+
+
+# Each receiver remembers where it was left (the settings file keeps them)
+FREQ_ATTR = {'AM': 'am_freq', 'FM': 'fm_freq', 'NFM': 'nfm_freq'}
 
 
 # ---------------------------------------------------------------------------
@@ -70,19 +74,18 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.band    = saved.get('band', 'FM')
         self.fm_freq = saved.get('fm_freq', 90.5e6)
         self.am_freq = saved.get('am_freq', 750e3)
+        self.nfm_freq = saved.get('nfm_freq', 146.52e6)
         if freq is not None:
-            self.band = 'AM' if freq < 30e6 else 'FM'
-            if self.band == 'AM':
-                self.am_freq = freq
-            else:
-                self.fm_freq = freq
-        if AMReceiver is None:
+            self.band = self._family_for(freq)
+            setattr(self, FREQ_ATTR[self.band], freq)
+        if (self.band == 'AM' and AMReceiver is None) or (self.band == 'NFM' and NFMReceiver is None):
             self.band = 'FM'
         self.am_source, self.upconverter_hz = am_source or 'direct_q', upconverter_hz
         self.audio_device = audio_device or ''         # GNU Radio sound output; '' = system default
         self.fm_freq = self._fit('FM', self.fm_freq)
         self.am_freq = self._fit('AM', self.am_freq)
-        self.freq = self.am_freq if self.band == 'AM' else self.fm_freq
+        self.nfm_freq = self._fit('NFM', self.nfm_freq)
+        self.freq = getattr(self, FREQ_ATTR[self.band])
         self.band_freqs = dict(saved.get('band_freqs') or {})   # each band (or range): where it was left
         self.home_channels = dict(saved.get('home_channels') or {})  # channelized bands: the home channel
         self.channel_steps = bool(saved.get('channel_steps', True))  # step channel to channel on those
@@ -91,6 +94,13 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.bandkey = self._start_band_key(saved.get('bandkey'))
         self.mode = self._start_mode(saved.get('mode'))
         self.band_info = bool(saved.get('band_info', False))   # the text: band information, not the station's
+        self.squelch_on = bool(saved.get('squelch', True))      # narrow FM: the Squelch key...
+        self.squelch_level = saved.get('squelch_level', SQUELCH_DEFAULT)   # ...and Settings' level
+        self.tsq_hz, self._tsq_freq = None, None        # tone squelch: its tone, and the channel it's for
+        self.rev_from, self._rev_input = None, None     # Rev: the repeater's output, and the input tuned
+        self._here = None                               # a recalled preset's offset and tone, for its channel
+        self._heard = None                              # (channel, CTCSS tone) last heard there
+        self._nfm_applied = None
 
         pick = lambda key, default: saved.get(key, delco.get(key, default))
         self.presets    = (saved.get('presets') or self._presets_from(saved.get('channels'))   # by band
@@ -249,7 +259,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         out = {}
         num = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool)
         self.override = raw.get('override') is True
-        if raw.get('band') in ('FM', 'AM'):
+        if raw.get('band') in FREQ_ATTR:
             out['band'] = raw['band']
         v = raw.get('last_fm_mhz')
         if num(v) and RTL_RANGE[0] / 1e6 <= v <= RTL_RANGE[1] / 1e6:
@@ -257,6 +267,12 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         v = raw.get('last_am_khz')
         if num(v) and RTL_RANGE[0] / 1e3 <= v <= RTL_RANGE[1] / 1e3:
             out['am_freq'] = v * 1e3
+        v = raw.get('last_nfm_mhz')
+        if num(v) and RTL_RANGE[0] / 1e6 <= v <= RTL_RANGE[1] / 1e6:
+            out['nfm_freq'] = v * 1e6
+        v = raw.get('squelch_level')
+        if num(v) and int(v) == v and 1 <= v <= 9:
+            out['squelch_level'] = int(v)
         chans = raw.get('channels')                    # before presets were by band
         if isinstance(chans, list) and len(chans) == N_CHANNELS:
             out['channels'] = [self._parse_channel(c) for c in chans]
@@ -264,7 +280,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             out['presets'] = {key: [self._parse_channel(c) for c in lst]
                               for key, lst in raw['presets'].items()
                               if key in BP.BY_KEY and isinstance(lst, list) and len(lst) == N_CHANNELS}
-        for key in ('fm_mono', 'power', 'agc', 'monitor', 'bands', 'band_info', 'peak_hold'):
+        for key in ('fm_mono', 'power', 'agc', 'monitor', 'bands', 'band_info', 'peak_hold', 'squelch'):
             if isinstance(raw.get(key), bool):
                 out[key] = raw[key]
         for key, name in (('stereo_blend', 'blend'), ('hi_cut', 'hicut'), ('dip_hicut', 'dip_hicut'),
@@ -345,25 +361,41 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         return out
 
     def _parse_channel(self, c):
+        """A preset from the settings file: 'FM 90.5', 'AM 1080', 'AM 7335 SAM_U' (a mode other than
+        the receiver's plain one), 'NFM 146.94 OFS-600 PL100.0 TSQ' (a repeater: its offset in kHz,
+        its CTCSS tone, and tone squelch on)."""
         if not isinstance(c, str):
             return None
         parts = c.split()
-        if len(parts) not in (2, 3) or parts[0] not in BANDS:
-            return None
-        mode = parts[2] if len(parts) == 3 else None
-        if mode is not None and BP.MODE_RX.get(mode) != parts[0]:
+        if len(parts) < 2 or parts[0] not in FREQ_ATTR:
             return None
         try:
             v = float(parts[1])
         except ValueError:
             return None
-        hz = v * (1e6 if parts[0] == 'FM' else 1e3)
+        hz = v * (1e3 if parts[0] == 'AM' else 1e6)
         lo, hi = RTL_RANGE
         if not lo <= hz <= hi:
             return None
         out = {'band': parts[0], 'freq': round(hz, 1)}   # as stored (fine tuning keeps its Hz)
-        if mode is not None:
-            out['mode'] = mode
+        for tok in parts[2:]:
+            try:
+                if tok in BP.MODES:
+                    if BP.MODE_RX[tok] != parts[0]:
+                        return None
+                    out['mode'] = tok
+                elif tok.startswith('OFS'):
+                    out['offset'] = float(tok[3:]) * 1e3
+                elif tok.startswith('PL'):
+                    out['tone'] = float(tok[2:])
+                elif tok == 'TSQ':
+                    out['tsq'] = True
+                else:
+                    return None
+            except ValueError:
+                return None
+        if 'tone' not in out:
+            out.pop('tsq', None)
         return out
 
     @staticmethod
@@ -371,19 +403,28 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if not c:
             return None
         mode = c.get('mode')
-        tail = f' {mode}' if mode and mode != c['band'] else ''     # the plain mode needs no word
-        if c['band'] == 'FM':
-            return 'FM ' + f"{c['freq'] / 1e6:.6f}".rstrip('0').rstrip('.') + tail
-        return f"AM {c['freq'] / 1e3:.3f}".rstrip('0').rstrip('.') + tail
+        words = [mode] if mode and mode != c['band'] else []      # the plain mode needs no word
+        if c.get('offset'):
+            words.append(f"OFS{c['offset'] / 1e3:+g}")
+        if c.get('tone'):
+            words.append(f"PL{c['tone']:.1f}")
+        if c.get('tsq'):
+            words.append('TSQ')
+        tail = ''.join(' ' + w for w in words)
+        if c['band'] == 'AM':
+            return f"AM {c['freq'] / 1e3:.3f}".rstrip('0').rstrip('.') + tail
+        return f"{c['band']} " + f"{c['freq'] / 1e6:.6f}".rstrip('0').rstrip('.') + tail
 
     def _save_settings(self):
-        fm = self.freq if self.band == 'FM' else self.fm_freq
-        am = self.freq if self.band == 'AM' else self.am_freq
+        last = {b: self._out_freq() if self.band == b else getattr(self, a) for b, a in FREQ_ATTR.items()}
         data = {
             'band': self.band,
-            'last_fm_mhz': round(fm / 1e6, 4),
+            'last_fm_mhz': round(last['FM'] / 1e6, 4),
             'override': bool(self.override),
-            'last_am_khz': round(am / 1e3),
+            'last_am_khz': round(last['AM'] / 1e3),
+            'last_nfm_mhz': round(last['NFM'] / 1e6, 6),
+            'squelch': bool(self.squelch_on),
+            'squelch_level': int(self.squelch_level),
             'presets': {key: [self._channel_text(c) for c in lst] for key, lst in self.presets.items() if any(lst)},
             'fm_mono': bool(self.fm_mono),
             'power': bool(self.power_on),
@@ -460,6 +501,10 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                     self.tb = AMReceiver(freq=self.freq, rf_gain=self.rf_gain, agc=self.agc_on,
                                          am_source=am_src, upconverter_hz=self.upconverter_hz,
                                          audio_device=self.audio_device)
+                elif self.band == 'NFM':
+                    self.tb = NFMReceiver(freq=self.freq, rf_gain=self.rf_gain, agc=self.agc_on,
+                                          device_args=fm_args, audio_device=self.audio_device,
+                                          width=self._nfm_width())
                 else:
                     self.tb = FMStereoReceiver(freq=self.freq, rf_gain=self.rf_gain, agc=self.agc_on,
                                                device_args=fm_args, audio_device=self.audio_device,
@@ -586,6 +631,26 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             tb.set_stereo_system(self.am_stereo)
         if tb.has('blankers'):
             tb.set_blankers(impulse=self.am_ib, noise=self.am_nb)
+        self._apply_nfm(tb)
+
+    def _nfm_width(self):
+        return self.mode if self.mode in ('NFM', 'NFM2') else 'NFM'
+
+    def _apply_nfm(self, tb=None):
+        """Narrow FM's width (from the mode), squelch and tone squelch, sent when they change."""
+        tb = tb or self.tb
+        if tb is None:
+            return
+        want = (id(tb), self._nfm_width(), self.squelch_level if self.squelch_on else 0, self.tsq_hz)
+        if want == self._nfm_applied:
+            return
+        self._nfm_applied = want
+        if tb.has('nfm_width'):
+            tb.set_width(want[1])
+        if tb.has('squelch'):
+            tb.set_squelch(want[2])
+        if tb.has('ctcss'):
+            tb.set_tone_squelch(want[3])
 
     # ------------------------------------------------------------------
     # UI
@@ -679,9 +744,13 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         K(c, DIRECT_KEY, legend='Direct', size=KEY_PX, on_press=self._direct_toggle,
           latched=lambda: self._direct is not None)
         K(c, WIDE_KEY, legend='Wide', size=KEY_PX, on_press=self._toggle_wide, latched=lambda: self.am_wide)
+        nfm_keys = {'SQL': (self._squelch_key, lambda: self.squelch_on and self.band == 'NFM'),
+                    'REV': (self._rev_key, lambda: self.rev_from is not None),
+                    'TONE': (self._tone_key, lambda: self.tsq_hz is not None)}
         for kid, label, box in self._band_layout()[0]:
-            if kid in ('REV', 'TONE'):                 # narrow FM's, when it's built
-                K(bc, box, legend=label, size=KEY_PX, on_press=lambda: self._message('NARROW FM NOT YET'))
+            if kid in nfm_keys:
+                fn, lit = nfm_keys[kid]
+                K(bc, box, legend=label, size=KEY_PX, on_press=fn, latched=lit)
             else:
                 K(bc, box, legend=label, size=KEY_PX, on_press=lambda kid=kid: self._band_key(kid),
                   latched=lambda kid=kid: self.bandkey == kid)
@@ -815,7 +884,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         run(BAND_X0, y1, group('amateur'), BP.GROUPS['amateur'][0], BAND_W)
         x = run(BAND_X0, y2, group('public'), BP.GROUPS['public'][0]) + GROUP_GAP
         x = run(x, y2, group('personal'), BP.GROUPS['personal'][0]) + GROUP_GAP
-        run(x, y2, [('REV', 'Rev'), ('TONE', 'Tone')], 'REPEATER')
+        run(x, y2, [('SQL', 'Squelch'), ('REV', 'Rev'), ('TONE', 'Tone')], 'NARROW FM')
         return keys, heads
 
     def _draw_bands_panel(self, d):
@@ -890,19 +959,28 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         """The band key to start on: the saved one if it holds the frequency on this receiver,
         else the band the frequency is in (FM or MW if none: Band limits: Override)."""
         b = self._band_for_family(self.freq, self.band, prefer=saved)
-        return b.key if b is not None else ('FM' if self.band == 'FM' else 'MW')
+        return b.key if b is not None else {'FM': 'FM', 'AM': 'MW', 'NFM': 'HAM2'}[self.band]
 
     def _start_mode(self, saved):
         """The mode to start in: the saved one if this receiver plays it, else the band's usual."""
         if saved in BP.MODES and BP.MODE_RX[saved] == self.band:
             return saved
         m = BP.usual_mode(BP.band(self.bandkey), self.freq)
-        return m if m and BP.MODE_RX[m] == self.band else ('FM' if self.band == 'FM' else 'AM')
+        return m if m and BP.MODE_RX[m] == self.band else self.band      # each receiver's plain mode
+
+    @staticmethod
+    def _family_for(freq):
+        """The receiver for a frequency given at start: its band's usual one (else AM below
+        30 MHz, FM above)."""
+        b = BP.band_for(freq)
+        rx = BP.MODE_RX.get(BP.usual_mode(b, freq)) if b is not None else None
+        return rx if rx in FREQ_ATTR else ('AM' if freq < 30e6 else 'FM')
 
     def _rx_ok(self, mode):
-        """A receiver for this mode is built (and AM's could be loaded)."""
+        """A receiver for this mode is built (and could be loaded)."""
         rx = BP.MODE_RX.get(mode)
-        return rx == 'FM' or (rx == 'AM' and AMReceiver is not None)
+        return (rx == 'FM' or (rx == 'AM' and AMReceiver is not None)
+                or (rx == 'NFM' and NFMReceiver is not None))
 
     def _mode_key(self, key):
         """AM, FM, SSB, CW: that mode, or pressed again, its next kind (AM: synchronous on USB or
@@ -919,6 +997,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.mode = mode
         if BP.MODE_RX[mode] != self.band:
             self._switch_family(BP.MODE_RX[mode], self.freq, snap=False)
+        self._apply_nfm()                               # narrow FM 5 or 2.5: no restart
         self._save_settings()
         self._refresh_keys()
 
@@ -956,11 +1035,11 @@ class TunerApp(SettingsWindow, AdvancedWindow):
     def _band_freqs_now(self):
         """band_freqs with the band (and range) in use at the frequency it's on now."""
         out = dict(self.band_freqs)
-        b = BP.band(self.bandkey)
-        if BP.in_band(b, self.freq):
-            out[self.bandkey] = self.freq
+        b, f = BP.band(self.bandkey), self._out_freq()
+        if BP.in_band(b, f):
+            out[self.bandkey] = f
             if b.ranges:
-                out[f'{self.bandkey}#{self._range_index(b, self.freq)}'] = self.freq
+                out[f'{self.bandkey}#{self._range_index(b, f)}'] = f
         return out
 
     def _band_key(self, key, freq=None, mode=None, exact=False):
@@ -1043,14 +1122,12 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             self._set_status(f'AM unavailable: {_AM_ERR}')
             return
         self._seek_cancel()
-        if self.band == 'FM':
-            self.fm_freq = self.freq
-        else:
-            self.am_freq = self.freq
+        setattr(self, FREQ_ATTR[self.band], self._out_freq())
         self.band = band
         if BP.MODE_RX.get(self.mode) != band:          # the new receiver's plain mode
-            self.mode = 'FM' if band == 'FM' else 'AM'
+            self.mode = band
         self.freq = self._snap(freq) if snap else float(round(freq))
+        self._nfm_follow()
         self._tuned_t = time.monotonic()
         self._q_on = False
         self._mon_retuned()
@@ -1169,6 +1246,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         b0, old = self._plan(), self.freq
         old_usual = BP.usual_mode(b0, old) if BP.in_band(b0, old) else None
         self.freq = self._snap(freq) if snap else float(round(freq))
+        self._nfm_follow()
         if not self._in_band():                        # past its edge (Override): the band it's in now
             b = self._band_for_family(self.freq, self.band)
             if b is not None:
@@ -1383,7 +1461,16 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         now = time.monotonic()
         if self._memory_until > now:
             self._memory_until = 0.0
-            self._band_presets()[n - 1] = {'band': self.band, 'freq': self.freq, 'mode': self.mode}
+            entry = {'band': self.band, 'freq': self._out_freq(), 'mode': self.mode}
+            if self.band == 'NFM':                     # a repeater: its offset and tone come along
+                off, tone = self._offset_here(), self.tsq_hz or self._known_tone()
+                if off:
+                    entry['offset'] = off
+                if tone:
+                    entry['tone'] = tone
+                if self.tsq_hz is not None:
+                    entry['tsq'] = True
+            self._band_presets()[n - 1] = entry
             self._last_ch = n
             self._flash = (n, now + 1.2)
             self._save_settings()
@@ -1394,6 +1481,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             return
         if not self._go_to(c['freq'], family=c['band'], mode=c.get('mode')):   # out of band: stored
             return                                                           # with the override on
+        self._here = {'freq': self.freq, 'offset': c.get('offset'), 'tone': c.get('tone')}
+        if c.get('tsq') and c.get('tone'):
+            self.tsq_hz, self._tsq_freq = c['tone'], self.freq
         self._last_ch = n
         self._save_settings()
 
@@ -1402,7 +1492,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         return self.presets.setdefault(self.bandkey, [None] * N_CHANNELS)
 
     def _channel_now(self):
-        here = (self.band, round(self.freq))
+        here = (self.band, round(self._out_freq()))
         match = lambda c: c and (c['band'], round(c['freq'])) == here
         lst = self.presets.get(self.bandkey) or [None] * N_CHANNELS
         if self._last_ch and match(lst[self._last_ch - 1]):
@@ -1550,6 +1640,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             legends.add('TUNED')
         if shown['rds']:
             legends.add('RDS')
+        if self.tsq_hz is not None and self.band == 'NFM':
+            legends.add('TONE')
         if self._memory_until > now:
             if blink:
                 legends.add('MEMORY')
@@ -1651,6 +1743,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             cands = [v * 1e6]
         elif self.band == 'FM':
             cands = [v * 1e5, v * 1e6, v * 1e3]
+        elif self.band == 'NFM':
+            cands = [v * 1e3, v * 1e6, v * 1e5]
         else:
             cands = [v * 1e3, v * 1e6]
         rlo, rhi = self._limits(self.band)
@@ -1681,7 +1775,118 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         label = BP.channel_at(self._plan(), self.freq)
         if label is not None:
             parts.append(f'CHANNEL {label}')
-        return '  '.join(parts)
+        if self.band == 'NFM':
+            off = self._offset_here()
+            if self.rev_from is not None:
+                parts.append('REV ' + self._offset_text(off))
+            elif off:
+                parts.append(self._offset_text(off))
+            tone = self._known_tone()
+            if self.tsq_hz is not None:
+                parts.append(f'TSQ {self.tsq_hz:.1f}')
+            elif tone:
+                parts.append(f'PL {tone:.1f}')
+        for text in ('  '.join(parts), ' '.join(parts), ' '.join(parts).replace('CHANNEL ', 'CH ')):
+            if len(text) <= LINE2_N:
+                break
+        return text
+
+    # ---- narrow FM: squelch, repeaters, tones
+    def _out_freq(self):
+        """The channel tuned: with Rev on, the repeater's output (the input is what's heard)."""
+        return self.rev_from if self.rev_from is not None else self.freq
+
+    def _nfm_follow(self):
+        """After a retune: Rev, tone squelch and a recalled preset's details belong to the channel
+        they were set on."""
+        if self.rev_from is not None and self.freq != self._rev_input:
+            self.rev_from = None
+        here = self._out_freq()
+        if self.tsq_hz is not None and here != self._tsq_freq:
+            self.tsq_hz = None
+        if self._here is not None and here != self._here['freq']:
+            self._here = None
+
+    def _offset_here(self):
+        """The repeater offset for the channel: a recalled preset's, else the band plan's (0 on a
+        simplex channel)."""
+        out = self._out_freq()
+        if self._here is not None and self._here.get('offset') is not None:
+            return self._here['offset']
+        b = self._plan()
+        return BP.repeater_offset(b, out) if BP.in_band(b, out) else 0.0
+
+    @staticmethod
+    def _offset_text(off):
+        return f'{off / 1e3:+g} kHz' if abs(off) < 1e6 else f'{off / 1e6:+g} MHz'
+
+    def _known_tone(self):
+        """The CTCSS tone for the channel: heard now, heard there earlier, or a preset's."""
+        tb, out = self.tb, self._out_freq()
+        if tb is not None and tb.has('ctcss') and tb.ctcss_hz:
+            return tb.ctcss_hz
+        if self._heard is not None and self._heard[0] == out:
+            return self._heard[1]
+        if self._here is not None and self._here.get('tone'):
+            return self._here['tone']
+        return None
+
+    def _squelch_key(self):
+        """Squelch (Bands panel): narrow FM's squelch on or off; its level is in Settings."""
+        if not self.power_on:
+            return
+        if self.band != 'NFM':
+            self._message('SQUELCH: NARROW FM ONLY')
+            return
+        self.squelch_on = not self.squelch_on
+        self._message(f'SQUELCH {self.squelch_level}' if self.squelch_on else 'SQUELCH OFF')
+        self._apply_nfm()
+        self._refresh_keys()
+        self._save_settings()
+
+    def _rev_key(self):
+        """Rev: listen on the repeater's input (its output plus the offset), and back."""
+        if not self.power_on:
+            return
+        self._seek_cancel()
+        self._entry_cancel()
+        self._memory_until = 0.0
+        if self.rev_from is not None:
+            out, self.rev_from = self.rev_from, None
+            self._tune_to(out, snap=False)
+        elif self.band != 'NFM':
+            self._message('REV: NARROW FM ONLY')
+            return
+        else:
+            off = self._offset_here()
+            if not off:
+                self._message('SIMPLEX: NO OFFSET')
+                return
+            out = self.freq
+            self.rev_from, self._rev_input = out, float(round(out + off))
+            self._tune_to(out + off, snap=False)
+        self._refresh_keys()
+        self._save_settings()
+
+    def _tone_key(self):
+        """Tone: tone squelch on the CTCSS tone heard (or stored with the preset), or off."""
+        if not self.power_on:
+            return
+        if self.tsq_hz is not None:
+            self.tsq_hz = None
+            self._message('TONE SQUELCH OFF')
+        elif self.band != 'NFM':
+            self._message('TONE: NARROW FM ONLY')
+            return
+        else:
+            tone = self._known_tone()
+            if tone is None:
+                self._message('NO TONE HEARD YET')
+                return
+            self.tsq_hz, self._tsq_freq = tone, self._out_freq()
+            self._message(f'TONE SQUELCH {tone:.1f}')
+        self._apply_nfm()
+        self._refresh_keys()
 
     def _rds_fields(self, tb, now):
         """Call letters, PS and a window of RadioText for the dot-matrix row.
@@ -1844,6 +2049,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             fm = self.band == 'FM'
             if fm:                                 # judged before the equalizer, like the path itself
                 item['valid'] = getattr(tb, 'pre_cnr_db', getattr(tb, 'cnr_db', 0.0)) >= MOD_MIN_CNR_DB
+            elif tb.has('squelch'):                # narrow FM: a station heard, clean enough
+                item['valid'] = tb.squelch_open and tb.cnr_db >= MOD_MIN_CNR_DB
+                item['full'] = tb.dev_khz          # 100% = 5 or 2.5 kHz
             else:                                  # AM: locked, and clean enough to mean anything
                 item['valid'] = (bool(getattr(tb, 'locked', False))
                                  and getattr(tb, 'cnr_db', 0.0) >= AM_MOD_MIN_CNR_DB)
@@ -1874,7 +2082,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             dt = min(0.25, max(0.0, it['t'] - self._mon_t))
             self._mon_t = it['t']
             if it['m'] is not None and not it['settling']:
-                self.mon.feed(it['m'], it['t'], dt, it['band'], it['keep'], it['valid'])
+                self.mon.feed(it['m'], it['t'], dt, it['band'], it['keep'], it['valid'], it.get('full', 75.0))
             else:
                 self.mon.idle(it['t'], dt)
                 if it['settling']:
@@ -1913,7 +2121,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             stats.add('OVER')
         if live and not mon.mod_valid:
             stats.add('NOISY')
-        fm = self.band == 'FM'
+        fm = self.band in ('FM', 'NFM')                 # deviation in kHz, both ways
         pk = mon.mod_peak() if live else None
         nums = {}
 

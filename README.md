@@ -9,7 +9,8 @@ good as the signal allows, clean up what it can, play at a correct, consistent l
 you what's going on. That goes for someone who just wants to listen, for someone who works in
 broadcasting, and for a ham or shortwave listener.
 
-Today it receives AM and FM broadcast. Shortwave and more modes are on the way (see
+Today it receives AM and FM broadcast, shortwave in AM, and narrowband FM: ham repeaters,
+marine radio, NOAA weather, FRS/GMRS and the like. SSB, CW and more modes are on the way (see
 [Where it's going](#where-its-going)).
 
 ## What it does
@@ -68,10 +69,30 @@ It also shows how many data groups arrive each second and how many are lost.
   scrolling text and program type.
 - Carrier lock, carrier-to-noise, adjacent-channel strength and carrier offset readings.
 
+### Narrowband FM
+
+For the two-way radio channels: ham repeaters and simplex, marine radio, NOAA weather radio,
+FRS/GMRS, MURS and public safety.
+
+- **Squelch**, like a scanner's: the speaker stays quiet until someone transmits, and the noise
+  burst at the end of a transmission never reaches the speaker. It judges a signal by how clean
+  it is, not how loud, so it works the same whatever the dongle's gain. Pick how weak a station
+  may be and still open it (levels 1 to 9) in Settings.
+- **PL tones (CTCSS).** It names the tone a repeater sends under its audio (PL 100.0, say) and
+  keeps that tone out of the speaker. The **Tone** key then plays only the transmissions that
+  carry it, so a busy channel shared by several repeaters plays just the one you want.
+- **Rev** listens on a repeater's input, at the band's usual offset (600 kHz on 2 m, 5 MHz on
+  70 cm, 1.6 MHz on 1.25 m), to hear whether the other station is close enough to reach directly.
+- **Both widths:** 5 kHz deviation (25 kHz channels) and 2.5 kHz (12.5 kHz channels), played
+  equally loud. The FM key steps between them.
+- **Repeater presets** remember the offset and the tone, and tone squelch if it was on.
+- It follows a dongle's frequency error by itself (AFC), and sets the dongle's gain on its own
+  so the S-meter always knows it.
+
 ### The tuner
 
-- 24 presets, seek, step tuning, direct frequency entry from the keyboard, and mouse-wheel
-  tuning.
+- 24 presets on every band, seek, step tuning, direct frequency entry from the keyboard, and
+  mouse-wheel tuning.
 - With the band-limit override it tunes anywhere the dongle reaches, 100 kHz to 1766 MHz. It
   switches between direct sampling and the normal tuner by itself.
 - A frequency display that reads any frequency up to 9.99 GHz, down to 1 Hz: in kHz below
@@ -204,6 +225,7 @@ With GNU Radio installed (still no dongle needed), these run the real receivers 
 test stations:
 
     python3 tests/test_gnuradio.py
+    python3 tests/test_nfm.py              # narrow FM: squelch, PL tones, tone squelch, both widths
     python3 addons/crosby/test_crosby.py   # the Crosby add-on: plays Crosby stereo, and only that
     python3 addons/btsc/test_btsc.py       # the BTSC add-on: plays TV stereo, and only that
 
@@ -227,9 +249,9 @@ else running, the kernel's TV-tuner driver has it. Unplug the dongle, run
 
 ## Where it's going
 
-- Shortwave and amateur bands, with presets in pages of 24
-- More modes: synchronous AM, SSB, DSB and CW, then narrowband FM and amateur digital modes,
-  with automatic identification of which digital system a signal is using
+- More modes: synchronous AM, SSB, DSB and CW, then amateur digital modes, with automatic
+  identification of which digital system a signal is using
+- DCS (digital-coded squelch), alongside the PL tones narrowband FM decodes now
 - Later, possibly DRM and HD Radio
 
 The details, phase by phase, are in [docs/ROADMAP.md](docs/ROADMAP.md).

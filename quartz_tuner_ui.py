@@ -33,11 +33,12 @@ Tuner (top unit)
                     them anyway. Locked down on modes that carry none (SSB, CW).
     Mode            AM, FM, SSB, CW: that mode on the frequency you're on (it changes
                     receiver if it needs to). Pressed again, its next kind: AM, then
-                    synchronous AM on USB or LSB; FM, then narrow FM (+/-5 and 2.5 kHz);
-                    SSB on USB or LSB. Kinds whose receiver isn't built yet say NOT YET.
+                    synchronous AM on USB or LSB; FM, then narrow FM (5 kHz deviation, then
+                    2.5 kHz for 12.5 kHz channels); SSB on USB or LSB. Kinds whose receiver
+                    isn't built yet say NOT YET.
                     A band, or a part of a band with a mode of its own, picks that mode.
     Fine tune       a small nudge off the band's steps (AM 100 Hz, SSB and CW 10 Hz,
-                    FM 5 kHz); the next ordinary step comes back onto them
+                    narrow FM 500 Hz, FM 5 kHz); the next ordinary step comes back onto them
     Wide            latching AM filter key: 12 kHz, with a 10 kHz notch for
                     adjacent-channel whistles. Off: the AM width chosen in Settings
                     (2.5, 5, 8 or 10.2 kHz). With AUTO on there, it starts at 2.5 kHz
@@ -50,12 +51,14 @@ Tuner (top unit)
                     then digits (preset keys, keyboard or keypad),
                     Enter to tune, Esc to cancel, Backspace to correct. FM: 885 =
                     88.5 MHz, or type a decimal (162.55); AM: kHz (1720), or a
-                    decimal for MHz (5.905). It goes to the band the frequency is in
+                    decimal for MHz (5.905); narrow FM: kHz (146940), or a decimal
+                    for MHz (146.94). It goes to the band the frequency is in
                     (9580 = 31 m shortwave, in AM), exactly as typed (27.150 on CB
                     stays between channels; the next step goes to the nearest);
                     outside every band it needs Band limits: Override.
     Display         TUNED = the retune has settled and there is a carrier the
-                    receiver can hold; STEREO = the back end's stereo indicator.
+                    receiver can hold (narrow FM: one that would open the squelch);
+                    STEREO = the back end's stereo indicator; TONE = tone squelch on.
                     The bar shows signal quality (POOR / FAIR / GOOD, from the
                     carrier-to-noise) or signal strength in S units (S1 to S9, then
                     +20 to +60; S9 = -73 dBm below 30 MHz, -93 dBm above). S units,
@@ -70,7 +73,16 @@ Bands (middle unit)
     Public service  Air (AM), Marine, Weather, Police/Fire (VHF, UHF, 800 MHz: press
                     again for the next)
     Personal        CB (AM), FRS/GMRS, MURS
-    Repeater        Rev (listen on the input) and Tone (CTCSS)
+    Narrow FM       Squelch: latching, keeps the speaker quiet between transmissions
+                    (the level, 1 to 9, is in Settings > Reception; 3 suits most).
+                    Rev: latching, listens on a repeater's input, at the band's usual
+                    offset (2 m +/-600 kHz, 1.25 m -1.6 MHz, 70 cm +/-5 MHz, GMRS +5 MHz)
+                    or a preset's; the display shows the input and REV.
+                    Tone: tone squelch on the CTCSS (PL) tone heard (or stored with the
+                    preset): only that repeater's transmissions play. The second text
+                    row shows the offset and the tone heard (PL 100.0) or squelched on
+                    (TSQ 100.0). A preset stored on a repeater keeps its offset, tone
+                    and tone squelch.
     Channels        CB, FRS/GMRS, Weather, MURS and Marine go channel to channel: the
                     tuning keys step channels (CB's 23 comes between 22 and 24, as on a
                     CB), the number keys pick one (4 then 0 = channel 40), and CH shows
@@ -78,9 +90,9 @@ Bands (middle unit)
                     band's home channel; its band key then goes there (Settings >
                     Reception: their band key, home channel or where I left it; channel
                     bands, by channel or ordinary steps).
-                    Each band remembers where you left it. Bands that need narrow FM,
-                    SSB or CW say NOT YET until those receivers are built. Crossing
-                    28.8 MHz the dongle reopens: direct sampling below, its tuner above.
+                    Each band remembers where you left it. Bands that need SSB or CW
+                    say NOT YET until that receiver is built. Crossing 28.8 MHz the
+                    dongle reopens: direct sampling below, its tuner above.
 
 Monitor (bottom unit; needs rx_meters.py next to fm_stereo.py)
     L / R           station audio level after de-emphasis, ahead of volume:
@@ -90,7 +102,8 @@ Monitor (bottom unit; needs rx_meters.py next to fm_stereo.py)
                     cut at 60 kHz (main channel, pilot and RDS; SCAs are not
                     included), so neither the channel filter nor neighbouring
                     stations can inflate it (FM: kHz and percent of 75 kHz;
-                    AM: the larger of positive and negative). NOISY
+                    narrow FM: of 5 or 2.5 kHz; AM: the larger of positive and
+                    negative). NOISY
                     lights instead when noise or multipath ahead of the
                     equalizer would make the peaks read high.
     LUFS            BS.1770 momentary loudness; INTEGRATED, SHORT TERM, RANGE

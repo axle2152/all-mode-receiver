@@ -81,7 +81,8 @@ class MonitorLogic:
             self._hold_step(ch, now, dt)
         self.mod_bar = max(0.0, self.mod_bar - 60.0 * dt)
 
-    def feed(self, m, now, dt, band, keep, mod_valid):
+    def feed(self, m, now, dt, band, keep, mod_valid, full=75.0):
+        """One reading. band: 'FM', 'NFM' (deviation in kHz, 100% = full kHz) or 'AM' (percent)."""
         a, md = m['audio'], m['mod']
         if a['n']:
             # The ballistics step over the time since the last samples, not since the last tick:
@@ -114,7 +115,8 @@ class MonitorLogic:
 
         self.mod_valid = bool(mod_valid)
         off = 0.0
-        if band == 'FM' and md['n']:           # peaks from the carrier's centre, not from 0 Hz
+        fm = band in ('FM', 'NFM')
+        if fm and md['n']:                     # peaks from the carrier's centre, not from 0 Hz
             off = self.offset_khz()
             if off is None:
                 off = md['mean'] or 0.0
@@ -126,8 +128,8 @@ class MonitorLogic:
                 self.peak_hist.append((now, md['peaks'], off))
                 while self.peak_hist and now - self.peak_hist[0][0] > MOD_DIST_S:
                     self.peak_hist.popleft()
-            if band == 'FM':
-                pct, raw = max(pos, neg) / 75.0 * 100.0, max(pos, neg)
+            if fm:
+                pct, raw = max(pos, neg) / full * 100.0, max(pos, neg)
             self.mod_hist.append((now, pct, raw, pos, neg))
             while self.mod_hist and now - self.mod_hist[0][0] > MOD_HOLD_S:
                 self.mod_hist.popleft()
@@ -151,7 +153,7 @@ class MonitorLogic:
             self.peak_hist.clear()
         # The average frequency stays sound under noise and multipath, which only
         # spoil the peaks: carrier offset keeps measuring while tuned.
-        if keep and band == 'FM' and md['n'] and md['mean'] is not None:
+        if keep and fm and md['n'] and md['mean'] is not None:
             self.off_hist.append((now, md['mean'] * md['n'], md['n']))
             while self.off_hist and now - self.off_hist[0][0] > OFFSET_AVG_S:
                 self.off_hist.popleft()
