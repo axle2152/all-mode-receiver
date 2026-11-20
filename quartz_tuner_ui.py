@@ -20,8 +20,8 @@ Tuner (top unit)
     Advanced        the Advanced window (diagnostics); down while it's open
     Settings        reception, panel (nameplate, size, monitor) and display colours;
                     down while it's open
-    Tuning down/up  tap: one channel. Hold: search to the next station.
-                    Either key stops a search that is running.
+    Tuning down/up  tap: one channel (100 Hz on SSB and CW). Hold: search to the next
+                    station. Either key stops a search that is running.
     0 to 9          presets 1 to 24, each band its own (3-9 recall at once; 1 or 2
                     wait a moment for a second digit; 0 then a digit = 01 to 09). On
                     a channelized band (CB, FRS/GMRS, Weather...) they pick channels.
@@ -33,18 +33,22 @@ Tuner (top unit)
                     them anyway. Locked down on modes that carry none (SSB, CW).
     Mode            AM, FM, SSB, CW: that mode on the frequency you're on (it changes
                     receiver if it needs to). Pressed again, its next kind: AM, then
-                    synchronous AM on USB or LSB; FM, then narrow FM (5 kHz deviation, then
-                    2.5 kHz for 12.5 kHz channels); SSB on USB or LSB. Kinds whose receiver
-                    isn't built yet say NOT YET.
+                    synchronous AM on the upper or lower sideband (only that side is heard,
+                    so interference on the other drops away); FM, then narrow FM (5 kHz
+                    deviation, then 2.5 kHz for 12.5 kHz channels); SSB on USB or LSB. SSB,
+                    CW and sync AM share one receiver, so moving between them is instant.
+                    The dial reads the carrier: CW plays a 600 Hz tone when tuned on it.
                     A band, or a part of a band with a mode of its own, picks that mode.
     Fine tune       a small nudge off the band's steps (AM 100 Hz, SSB and CW 10 Hz,
                     narrow FM 500 Hz, FM 5 kHz); the next ordinary step comes back onto them
-    Wide            latching AM filter key: 12 kHz, with a 10 kHz notch for
-                    adjacent-channel whistles. Off: the AM width chosen in Settings
-                    (2.5, 5, 8 or 10.2 kHz). With AUTO on there, it starts at 2.5 kHz
-                    when AM comes on, opens up as the signal allows, and narrows on
-                    noise and loud neighbours. Lights WIDE on AM. AM fades in over a
-                    second when it starts.
+    Width           the next filter for the mode in use, shown on the second text row.
+                    AM: 2.5, 5, 8, 10.2 kHz, then WIDE (12 kHz, with a 10 kHz notch for
+                    adjacent-channel whistles), then 2.5 again; with AUTO on in Settings
+                    the filter narrows below that on noise and loud neighbours (it starts
+                    at 2.5 kHz when AM comes on and opens as the signal allows). FM: auto,
+                    wide, narrow. Narrow FM: 5 or 2.5 kHz deviation. SSB 1.8, 2.4, 2.7,
+                    3 kHz; CW 250, 500 Hz, 1, 2.4 kHz; sync AM 3, 4.5, 6, 8 kHz. Each mode
+                    remembers its own. AM fades in over a second when it starts.
     Mono            latching Stereo key, both bands: FM mono, or AM with the
                     C-QUAM stereo ignored
     Direct          direct frequency entry, down while you type:
@@ -90,9 +94,8 @@ Bands (middle unit)
                     band's home channel; its band key then goes there (Settings >
                     Reception: their band key, home channel or where I left it; channel
                     bands, by channel or ordinary steps).
-                    Each band remembers where you left it. Bands that need SSB or CW
-                    say NOT YET until that receiver is built. Crossing 28.8 MHz the
-                    dongle reopens: direct sampling below, its tuner above.
+                    Each band remembers where you left it. Crossing 28.8 MHz the dongle
+                    reopens: direct sampling below, its tuner above.
 
 Monitor (bottom unit; needs rx_meters.py next to fm_stereo.py)
     L / R           station audio level after de-emphasis, ahead of volume:
@@ -122,7 +125,7 @@ Monitor (bottom unit; needs rx_meters.py next to fm_stereo.py)
                     spectrum (MPX) or the multipath echo profile (Echo)
 
 Keyboard: Left / Right tune, Shift+Left / Right search, 0 to 9 presets, M memory,
-F / A band, O mono, W wide (AM), P power, D or Enter direct frequency entry,
+F / A band, O mono, W width, P power, D or Enter direct frequency entry,
 S signal meter (quality or S units).
 Mouse wheel over the tuner display tunes.
 

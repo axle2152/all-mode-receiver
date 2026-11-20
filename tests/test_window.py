@@ -412,10 +412,10 @@ def child(appdir, band, fonts, secs):
                 mine.append(f'AM mode on FM: mode {app.mode} on {app.band} at {app.freq / 1e6:g} MHz')
             app._memory()
             app._channel(7)                             # a preset remembers its mode
-            for key in ('AM', 'SSB', 'CW'):
-                app._mode_key(key)
-                if app.mode != 'AM' or 'NOT YET' not in (app._dm_msg or ('',))[0]:
-                    mine.append(f'{key} key (not built): mode {app.mode}, message {app._dm_msg!r}')
+            for key, want in (('AM', 'SAM_U'), ('AM', 'SAM_L'), ('SSB', 'USB'), ('SSB', 'LSB'), ('CW', 'CW')):
+                app._mode_key(key)                      # sync AM, SSB and CW: the HF receiver
+                if (app.mode, app.band, round(app.freq)) != (want, 'HF', round(f0)):
+                    mine.append(f'{key} key: mode {app.mode} on {app.band} at {app.freq / 1e6:g} MHz (want {want})')
             app._mode_key('FM')
             if (app.mode, app.band) != ('FM', 'FM'):
                 mine.append(f'FM key: mode {app.mode} on {app.band}')
@@ -440,13 +440,13 @@ def child(appdir, band, fonts, secs):
             app._step(+1, manual=True)
             if (round(fine), round(app.freq)) != (1080100, 1090000):
                 mine.append(f'fine tune from 1080 kHz: {fine:.0f} Hz, then a step: {app.freq:.0f} Hz')
-            # a part of a band with its own mode: 10 m's AM part; below it, USB (not built): stays AM
+            # a part of a band with its own mode: 10 m's AM part; below it, USB
             app._direct_start()
             app._direct = '29100'
             app._direct_enter()
             app._tune_to(28.999e6)
-            if (app.bandkey, app.mode) != ('HAM10', 'AM'):
-                mine.append(f'10 m below its AM part: band {app.bandkey}, mode {app.mode} (want AM kept)')
+            if (app.bandkey, app.mode, app.band) != ('HAM10', 'USB', 'HF'):
+                mine.append(f'10 m below its AM part: band {app.bandkey}, mode {app.mode} on {app.band} (want USB)')
             press(kb['MW' if band == 'AM' else 'FM'])     # back where this run started
         problems.extend(mine)
         real_print('INFO keys and size:', 'ok' if not mine else '; '.join(mine))
@@ -511,11 +511,11 @@ def child(appdir, band, fonts, secs):
             if text != 'NFM 146.94 OFS-600 PL100.0 TSQ' or back != {k: v for k, v in c.items() if k != 'mode'}:
                 nfm.append(f'repeater preset saved as {text!r}, read back as {back!r}')
             app._step(+1, manual=True)
-            app._apply_nfm()
+            app._apply_mode()
             if app.tsq_hz is not None or tb.tone_squelch is not None:
                 nfm.append(f'tuned away: tone squelch still {app.tsq_hz} / {tb.tone_squelch}')
             app._channel(5)
-            app._apply_nfm()
+            app._apply_mode()
             if (round(app.freq), app.tsq_hz, tb.tone_squelch) != (146940000, 100.0, 100.0):
                 nfm.append(f'preset 5: {app.freq / 1e6:g} MHz, tone squelch {app.tsq_hz} / {tb.tone_squelch}')
             app._squelch_key()
@@ -549,6 +549,105 @@ def child(appdir, band, fonts, secs):
                 nfm.append(f'Squelch key off narrow FM: {msg()!r}')
             problems.extend(nfm)
             real_print('INFO narrow FM keys:', 'ok' if not nfm else '; '.join(nfm))
+            hf_1()
+
+        # ---- SSB, CW and sync AM on the HF receiver; the Width key on every mode
+        hf = []
+
+        def hf_1():
+            from radio.hf import HFReceiver
+            from radio.ui import bandplan as BP
+            from radio.ui.frequency import as_text
+            if {m: HFReceiver.WIDTHS[m] for m in BP.FILTERS} != BP.FILTERS or \
+                    {m: HFReceiver.DEFAULT_WIDTH[m] for m in BP.FILTERS} != BP.DEFAULT_FILTER:
+                hf.append('the window\'s filter table differs from the HF receiver\'s')
+            kb20 = key_for_band('HAM20')
+            press(kb20)
+            app._tune_to(14.2e6)
+            if (app.bandkey, app.band, app.mode) != ('HAM20', 'HF', 'USB'):
+                hf.append(f'20 m key: band {app.bandkey} on {app.band} in {app.mode} (want USB on HF)')
+            app._step(+1, manual=True)
+            app._fine(+1)
+            if as_text(app.freq, app._step_hz()) != '14200.11 kHz':
+                hf.append(f'a step (100 Hz) and fine tune (10 Hz) from 14200: {as_text(app.freq, app._step_hz())}')
+            app._step(+1, manual=True)
+            if round(app.freq) != 14200200:
+                hf.append(f'a step from 14200.11 kHz: {app.freq:.0f} Hz (want back on 100 Hz: 14200200)')
+            root.after(3000, hf_2)                     # the HF receiver starts
+
+        def hf_2():
+            tb = app.tb
+            if tb is None or tb.BAND != 'HF':
+                hf.append(f'20 m: the HF receiver is not running ({type(tb).__name__})')
+                return hf_end()
+            if (tb.mode, tb.width) != ('USB', 2700):
+                hf.append(f'the HF receiver started in {tb.mode} at {tb.width} Hz (want USB, 2700)')
+            app._width_key()
+            st = app._vfd_state()
+            if (tb.width, app.hf_widths['USB']) != (3000, 3000) or 'FILTER 3 kHz' not in st['line2']:
+                hf.append(f'Width on USB: receiver {tb.width}, row {st["line2"]!r} (want 3 kHz)')
+            app._width_key()
+            if tb.width != 1800:
+                hf.append(f'Width again: {tb.width} Hz (want round to 1800)')
+            app._mode_key('SSB')
+            app._mode_key('CW')
+            app._width_key()
+            if app.tb is not tb or (tb.mode, tb.width) != ('CW', 1000) or 'CW' not in app._vfd_state()['legends']:
+                hf.append(f'SSB then CW and Width, without a restart: {tb.mode} at {tb.width} Hz, '
+                          f'same receiver {app.tb is tb}')
+            app._memory()                              # a CW preset keeps its filter
+            app._channel(9)
+            text = app._channel_text(app._band_presets()[8])
+            if not text.endswith('CW W1000') or app._parse_channel(text).get('width') != 1000:
+                hf.append(f'CW preset saved as {text!r}')
+            app._tune_to(14.05e6)                      # into 20 m's CW part, then out of it
+            app._tune_to(14.25e6)
+            app._tick()
+            if (app.mode, tb.mode, tb.width) != ('USB', 'USB', 1800):
+                hf.append(f'back in the phone part: {app.mode} (receiver {tb.mode} at {tb.width} Hz; want USB 1800)')
+            app._mode_key('AM')                        # AM: the AM receiver; again: sync AM, here
+            app._mode_key('AM')
+            if (app.mode, app.band) != ('SAM_U', 'HF') or 'FILTER 4.5 kHz' not in line2():
+                hf.append(f'AM then sync AM: {app.mode} on {app.band}, row {line2()!r}')
+            app._toggle_advanced()
+            root.after(2500, hf_3)
+
+        def hf_3():
+            if 'Synchronous AM' not in app._id_var.get() or 'Filter' not in app._rdsd_var.get():
+                hf.append(f'Advanced on sync AM: {app._id_var.get()!r} / {app._rdsd_var.get()[:40]!r}')
+            app._toggle_advanced()
+            press(kb['MW'])                            # Width on AM: 8 kHz, 10.2, Wide, back to 2.5
+            app.am_normal_hz, app.am_wide = 8000, False
+            got = []
+            for _ in range(3):
+                app._width_key()
+                got.append('WIDE' if app.am_wide else app.am_normal_hz)
+            if got != [10200, 'WIDE', 2500] or not line2().startswith('AM  FILTER'):
+                hf.append(f'Width on AM from 8 kHz: {got}, row {line2()!r}')
+            app.am_normal_hz = 8000
+            press(kb['FM'])                            # on FM: auto, wide, narrow
+            app.if_mode = 'auto'
+            got = []
+            for _ in range(3):
+                app._width_key()
+                got.append(app.if_mode)
+            if got != ['wide', 'narrow', 'auto']:
+                hf.append(f'Width on FM: {got}')
+            press(kb['HAM2'])                          # on narrow FM: 5 kHz, then 2.5
+            app._width_key()
+            if app.mode != 'NFM2':
+                hf.append(f'Width on narrow FM: {app.mode} (want NFM2)')
+            app._width_key()
+            with open(os.path.join(appdir, 'quartz_tuner_settings.json')) as f:
+                saved = json.load(f)
+            if saved.get('hf_widths', {}).get('CW') != 1000 or saved.get('hf_widths', {}).get('USB') != 1800:
+                hf.append(f"HF filters saved as {saved.get('hf_widths')!r}")
+            hf_end()
+
+        def hf_end():
+            press(kb['MW' if band == 'AM' else 'FM'])
+            problems.extend(hf)
+            real_print('INFO SSB, CW, sync AM and Width:', 'ok' if not hf else '; '.join(hf))
             done['keys'] = True
 
     def stereo_checks():

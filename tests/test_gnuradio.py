@@ -4,8 +4,8 @@ test_gnuradio.py - do the receivers really run in GNU Radio? Needs GNU Radio, no
 
     python3 tests/test_gnuradio.py
 
-Runs the real AM and FM receivers in your GNU Radio for 6 seconds each (narrow FM has its own,
-tests/test_nfm.py), with a pretend
+Runs the real AM and FM receivers in your GNU Radio for 6 seconds each (narrow FM and HF have
+their own, tests/test_nfm.py and tests/test_hf.py), with a pretend
 dongle (a test station: carrier, a 1 kHz tone and noise, at the frequency tuned) and a
 silent sound card, then checks samples flow at the right rates, the receivers' updates run
 without errors, and what they measure fits the test station (its level for the S-meter too). If GNU Radio isn't installed,
@@ -115,8 +115,9 @@ def receiver(band, station_hz, cnr_db=40.0, phase_tone=None):
     from radio.am import AMReceiver
     from radio.fm.receiver import FMStereoReceiver
     from radio.nfm import NFMReceiver
+    from radio.hf import HFReceiver
 
-    class Rx({'AM': AMReceiver, 'NFM': NFMReceiver}.get(band, FMStereoReceiver)):
+    class Rx({'AM': AMReceiver, 'NFM': NFMReceiver, 'HF': HFReceiver}.get(band, FMStereoReceiver)):
         def _make_source(self, args):
             return FakeDongle(self.samp_rate, band, station_hz, cnr_db, phase_tone)
 
@@ -209,7 +210,7 @@ def start_race(band):
     """In a child process: the window's timer asking for the audio lag while the backend
     thread is still inside start(). GNU Radio builds the sample counters audio_lag() reads
     inside start(), and reading one too early crashed it (a segfault, on the bench too)."""
-    freq = {'AM': 1080e3, 'NFM': 146.52e6}.get(band, 90.5e6)
+    freq = {'AM': 1080e3, 'NFM': 146.52e6, 'HF': 14.2e6}.get(band, 90.5e6)
     tb = receiver(band, freq)(freq=freq, agc=False)
     done = []
 
@@ -245,6 +246,7 @@ def main():
     race('AM')
     race('FM')
     race('NFM')                                    # narrow FM's own checks: tests/test_nfm.py
+    race('HF')                                     # and the HF receiver's: tests/test_hf.py
     print('AM stereo pilots')
     pilot('C-QUAM pilot (25 Hz, 4%) found', [(25.0, 0.04)], True, 'cquam')
     pilot('Kahn pilot (15 Hz, 4%) found', [(15.0, 0.04)], True, 'kahn')

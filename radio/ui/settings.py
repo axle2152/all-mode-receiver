@@ -304,7 +304,7 @@ class SettingsWindow:
 
     def _squelch_level_changed(self):
         self.squelch_level = int(self._sql_var.get())
-        self._apply_nfm()
+        self._apply_mode()
         self._save_settings()
 
     def _band_key_goes_changed(self):

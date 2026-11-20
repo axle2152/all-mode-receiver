@@ -41,7 +41,7 @@ import numpy as np
 from gnuradio import gr, blocks, filter, analog
 
 from . import meters as rx_meters
-from .receiver import Receiver
+from .receiver import Receiver, TunerGain
 
 # The EIA / TIA-603 CTCSS tones, Hz (the 50 in common use)
 CTCSS_TONES = (67.0, 69.3, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5, 91.5, 94.8, 97.4, 100.0,
@@ -49,12 +49,6 @@ CTCSS_TONES = (67.0, 69.3, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5, 91.5, 94.8,
                156.7, 159.8, 162.2, 165.5, 167.9, 171.3, 173.8, 177.3, 179.9, 183.5, 186.2, 189.9,
                192.8, 196.6, 199.5, 203.5, 206.5, 210.7, 218.1, 225.7, 229.1, 233.6, 241.8, 250.3,
                254.1)
-
-# R82xx tuner gain steps (dB), when the dongle doesn't list its own
-R82XX_GAINS = [0.0, 0.9, 1.4, 2.7, 3.7, 7.7, 8.7, 12.5, 14.4, 15.7, 16.6, 19.7, 20.7, 22.9,
-               25.4, 28.0, 29.7, 32.8, 33.8, 36.4, 37.2, 38.6, 40.2, 42.1, 43.4, 43.9, 44.5,
-               48.0, 49.6]
-
 
 def _kaiser_lp(fc, fs, n, beta=7.0):
     """Windowed-sinc low-pass, unity gain at DC."""
@@ -76,7 +70,7 @@ def _floats(h):
     return [float(v) for v in h]
 
 
-class NFMReceiver(Receiver):
+class NFMReceiver(TunerGain, Receiver):
     BAND = 'NFM'
     FEATURES = frozenset({'squelch', 'ctcss', 'nfm_width'})
 
@@ -119,15 +113,6 @@ class NFMReceiver(Receiver):
 
     MPX_FULL         = 1.0          # the audio snapshot: 1.0 = full deviation at 1 kHz
 
-    # ---- AGC (tuner gain; not with direct sampling) ----
-    AGC_HI_DBFS      = -10.0        # wideband level: above this (or clipping), back off
-    AGC_LO_DBFS      = -24.0        # below this, clean for AGC_UP_WAIT_S, more gain
-    AGC_CLIP_PCT     = 0.01
-    AGC_UP_WAIT_S    = 2.0
-    AGC_STEP_DB      = 3.0
-    AGC_MAX_DB       = 40.2
-    AGC_SETTLE_S     = 0.25
-
     def __init__(self, freq=146.52e6, rf_gain=29.7, agc=True, audio_device="",
                  device_args="numchan=1 rtl=0", width='NFM', **_):
         Receiver.__init__(self, "NFM Receiver")
@@ -135,8 +120,6 @@ class NFMReceiver(Receiver):
         self.freq = freq
         self.samp_rate, self.ch_rate = self.SAMP_RATE, self.CH_RATE
         self.audio_rate = self.mpx_rate = self.CH_RATE
-        self.direct = 'direct_samp' in device_args
-        self.agc_enabled = bool(agc) and not self.direct
         c = self.connect
 
         # ---------------- source ----------------
@@ -146,16 +129,7 @@ class NFMReceiver(Receiver):
         self.src.set_freq_corr(0, 0)
         self.src.set_dc_offset_mode(0, 0)
         self.src.set_iq_balance_mode(0, 0)
-        self.src.set_gain_mode(False, 0)                # this receiver's own AGC, or manual
-        try:
-            vals = list(self.src.get_gain_range().values())
-        except Exception:
-            vals = []
-        self.gains = sorted(set(round(v, 1) for v in vals)) if len(vals) >= 5 else list(R82XX_GAINS)
-        self._gain_idx = int(np.argmin([abs(g - float(rf_gain)) for g in self.gains]))
-        self.gain_db = 0.0 if self.direct else self.gains[self._gain_idx]
-        if not self.direct:
-            self.src.set_gain(self.gain_db, 0)
+        self._gain_setup(rf_gain, agc, 'direct_samp' in device_args)   # tuner AGC (radio/receiver.py)
 
         # ---------------- channel ----------------
         r1 = self.samp_rate / self.DECIM1
@@ -286,7 +260,6 @@ class NFMReceiver(Receiver):
         self._q_slow = None
         self._tune_cnr = []
         self._blank_until = time.monotonic() + self.TUNE_SETTLE_S
-        self._agc_t = self._agc_clean_t = time.monotonic()
         self._wbw = np.hanning(self.WB_N)
         self._ct_w = np.hanning(self.CT_WIN)
         self._ct_f = np.fft.rfftfreq(16384, 1.0 / self.CT_RATE)
@@ -385,22 +358,6 @@ class NFMReceiver(Receiver):
             self._muted = bool(muted)
             self._apply_gain()
 
-    def set_force_mono(self, on):
-        """Narrow FM is mono already."""
-
-    def set_manual_gain(self, db):
-        with self._lock:
-            self.agc_enabled = False
-            if not self.direct:
-                self._gain_idx = int(np.argmin([abs(g - float(db)) for g in self.gains]))
-                self.gain_db = self.gains[self._gain_idx]
-                self.src.set_gain(self.gain_db, 0)
-
-    def set_agc(self, on):
-        with self._lock:
-            self.agc_enabled = bool(on) and not self.direct
-            self._agc_clean_t = time.monotonic()
-
     def cnr_since_tune(self):
         with self._lock:
             return list(self._tune_cnr)
@@ -480,29 +437,6 @@ class NFMReceiver(Receiver):
                 if not getattr(self, '_said', False):
                     self._said = True
                     print(f"NFM measurement: {type(e).__name__}: {e}")
-
-    def _agc(self, now):
-        """Tuner gain: back off on clipping or a loud band, step up after a clean spell."""
-        if not self.agc_enabled or now - self._agc_t < self.AGC_SETTLE_S:
-            return
-        loud = self.clip_pct > self.AGC_CLIP_PCT or self.composite_dbfs > self.AGC_HI_DBFS
-        quiet = self.composite_dbfs < self.AGC_LO_DBFS
-        if not quiet or loud:
-            self._agc_clean_t = now
-        idx = self._gain_idx
-        if loud:
-            while idx > 0 and self.gains[self._gain_idx] - self.gains[idx] < self.AGC_STEP_DB:
-                idx -= 1
-        elif quiet and now - self._agc_clean_t > self.AGC_UP_WAIT_S:
-            while idx + 1 < len(self.gains) and self.gains[idx + 1] <= self.AGC_MAX_DB and \
-                    self.gains[idx] - self.gains[self._gain_idx] < self.AGC_STEP_DB:
-                idx += 1
-            self._agc_clean_t = now
-        if idx != self._gain_idx:
-            self._gain_idx = idx
-            self.gain_db = self.gains[idx]
-            self.src.set_gain(self.gain_db, 0)
-            self._agc_t = now
 
     def _measure(self, now):
         settled = now >= self._blank_until

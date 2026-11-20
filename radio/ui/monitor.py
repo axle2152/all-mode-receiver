@@ -122,7 +122,7 @@ class MonitorLogic:
                 off = md['mean'] or 0.0
         if md['n'] and mod_valid:
             pos, neg = md['max'] - off, off - md['min']
-            if band == 'AM':                   # AM: the negative side (clicks only go up)
+            if not fm:                         # AM, sync AM: the negative side (clicks only go up)
                 pct = raw = neg
             if md.get('peaks') is not None:
                 self.peak_hist.append((now, md['peaks'], off))

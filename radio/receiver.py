@@ -19,10 +19,83 @@ the controls for the features a receiver has, and calls nothing else on it.
 import math
 import time
 
+import numpy as np
 from gnuradio import gr, blocks, filter, audio
 import osmosdr
 
 from . import addons as _addons
+
+
+# R82xx tuner gain steps (dB), when the dongle doesn't list its own
+R82XX_GAINS = [0.0, 0.9, 1.4, 2.7, 3.7, 7.7, 8.7, 12.5, 14.4, 15.7, 16.6, 19.7, 20.7, 22.9,
+               25.4, 28.0, 29.7, 32.8, 33.8, 36.4, 37.2, 38.6, 40.2, 42.1, 43.4, 43.9, 44.5,
+               48.0, 49.6]
+
+
+class TunerGain:
+    """A receiver's own tuner AGC (narrow FM, HF), for a receiver that measures the wideband level
+    and clipping (self.composite_dbfs, self.clip_pct): the tuner's gain stepped down on clipping or
+    a loud band, up after a clean spell, so the gain is always known (the S-meter needs it). No
+    tuner with direct sampling. Call _gain_setup() once the source is open, _agc() on each new
+    wideband reading."""
+    AGC_HI_DBFS      = -10.0        # wideband level: above this (or clipping), back off
+    AGC_LO_DBFS      = -24.0        # below this, clean for AGC_UP_WAIT_S, more gain
+    AGC_CLIP_PCT     = 0.01
+    AGC_UP_WAIT_S    = 2.0
+    AGC_STEP_DB      = 3.0
+    AGC_MAX_DB       = 40.2
+    AGC_SETTLE_S     = 0.25
+
+    def _gain_setup(self, rf_gain, agc, direct):
+        self.direct = bool(direct)
+        self.agc_enabled = bool(agc) and not self.direct
+        self.src.set_gain_mode(False, 0)                # this receiver's own AGC, or manual
+        try:
+            vals = list(self.src.get_gain_range().values())
+        except Exception:
+            vals = []
+        self.gains = sorted(set(round(v, 1) for v in vals)) if len(vals) >= 5 else list(R82XX_GAINS)
+        self._gain_idx = int(np.argmin([abs(g - float(rf_gain)) for g in self.gains]))
+        self.gain_db = 0.0 if self.direct else self.gains[self._gain_idx]
+        if not self.direct:
+            self.src.set_gain(self.gain_db, 0)
+        self._agc_t = self._agc_clean_t = time.monotonic()
+
+    def set_manual_gain(self, db):
+        with self._lock:
+            self.agc_enabled = False
+            if not self.direct:
+                self._gain_idx = int(np.argmin([abs(g - float(db)) for g in self.gains]))
+                self.gain_db = self.gains[self._gain_idx]
+                self.src.set_gain(self.gain_db, 0)
+
+    def set_agc(self, on):
+        with self._lock:
+            self.agc_enabled = bool(on) and not self.direct
+            self._agc_clean_t = time.monotonic()
+
+    def _agc(self, now):
+        """Tuner gain: back off on clipping or a loud band, step up after a clean spell."""
+        if not self.agc_enabled or now - self._agc_t < self.AGC_SETTLE_S:
+            return
+        loud = self.clip_pct > self.AGC_CLIP_PCT or self.composite_dbfs > self.AGC_HI_DBFS
+        quiet = self.composite_dbfs < self.AGC_LO_DBFS
+        if not quiet or loud:
+            self._agc_clean_t = now
+        idx = self._gain_idx
+        if loud:
+            while idx > 0 and self.gains[self._gain_idx] - self.gains[idx] < self.AGC_STEP_DB:
+                idx -= 1
+        elif quiet and now - self._agc_clean_t > self.AGC_UP_WAIT_S:
+            while idx + 1 < len(self.gains) and self.gains[idx + 1] <= self.AGC_MAX_DB and \
+                    self.gains[idx] - self.gains[self._gain_idx] < self.AGC_STEP_DB:
+                idx += 1
+            self._agc_clean_t = now
+        if idx != self._gain_idx:
+            self._gain_idx = idx
+            self.gain_db = self.gains[idx]
+            self.src.set_gain(self.gain_db, 0)
+            self._agc_t = now
 
 
 class Receiver(gr.top_block):

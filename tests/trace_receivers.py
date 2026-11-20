@@ -7,8 +7,8 @@ trace_receivers.py - prove a change leaves the receivers' signal chains alone
     python3 tests/trace_receivers.py --compare before.json after.json
 
 Builds the AM receiver (all three sources), the FM receiver (with and without IQ
-recording) and the narrow FM receiver (tuner and direct sampling) against the GNU Radio
-stand-in with tracing on, takes each through a scripted
+recording), the narrow FM receiver (tuner and direct sampling) and the HF receiver (SSB, CW,
+sync AM) against the GNU Radio stand-in with tracing on, takes each through a scripted
 session (start, tune, filters, tone, stereo, mono, gain, mute, readouts) on a pretend clock,
 and writes every event to a JSON file: each block made and its arguments, each connection,
 each call on a block, what each step returned, and the receiver's plain attributes at the end.
@@ -42,6 +42,12 @@ def record(out):
         nfm.time = FakeTime()
     except ImportError:                   # older code, from before narrow FM
         nfm = None
+    try:
+        import radio.hf as hf
+        import radio.agc
+        hf.time = FakeTime()
+    except ImportError:                   # older code, from before the HF receiver
+        hf = None
     try:                                  # the receivers alone: installed add-ons stay out, so
         import radio.addons               # traces compare the same thing on any machine
         radio.addons._entry_points = lambda: []
@@ -109,6 +115,8 @@ def record(out):
             step('width', lambda: tb.set_width('NFM'))
         if tb.has('squelch'):
             step('sql', lambda: tb.set_squelch(3))
+        if tb.has('hf_mode'):
+            step('usb', lambda: tb.set_mode('USB'))
         step('mute', lambda: tb.set_mute(False))
         step('start', lambda: tb.start())
         run(tb, 3.0, 'blend1')
@@ -136,6 +144,12 @@ def record(out):
             step('tsq', lambda: tb.set_tone_squelch(100.0))
         if tb.has('squelch'):
             step('sql0', lambda: tb.set_squelch(0))
+        if tb.has('hf_width'):
+            step('hfw', lambda: tb.set_width(1800))
+        if tb.has('hf_mode'):
+            step('cw', lambda: tb.set_mode('CW'))
+            step('sam', lambda: tb.set_mode('SAM_L', 6000))
+            run(tb, 1.0, 'blend_sam')
         if tb.has('mono'):
             step('mono1', lambda: tb.set_force_mono(True))
             step('mono0', lambda: tb.set_force_mono(False))
@@ -173,6 +187,13 @@ def record(out):
         log(('session', f'NFM {args}'))
         tb = nfm.NFMReceiver(freq=146.94e6, rf_gain=29.7, agc=True, device_args=args, audio_device='')
         common(tb, 146.52e6)
+        step('readout', lambda: tb.readout())
+    for src in (() if hf is None else ('direct_q', 'native', 'upconverter')):
+        SIM.reset(); SIM.fake_clock = True; SIM.vary = True; np.random.seed(1)
+        log(('session', f'HF {src}'))
+        tb = hf.HFReceiver(freq=14.2e6, rf_gain=29.7, agc=True, am_source=src, upconverter_hz=125e6,
+                           audio_device='', mode='USB')
+        common(tb, 7.185e6)
         step('readout', lambda: tb.readout())
     json.dump(_log.EVENTS, open(out, 'w'), indent=0)
     print(f"{len(_log.EVENTS)} events -> {out}")

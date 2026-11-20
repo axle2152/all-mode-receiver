@@ -30,6 +30,14 @@ TIPS = dict(
     nfm_dev="The station's peak deviation, against its channel's limit (5 or 2.5 kHz).",
     nfm_tone="The CTCSS (PL) tone the station sends under its audio, and how much it deviates. "
              "Repeaters use it to know who to repeat; the Tone key listens only while it's there.",
+    hf_quality="How far the signal stands above the band's noise, inside the filter. Above 20 dB is "
+               "comfortable copy; under 6 dB it's in the noise.",
+    hf_level="The signal's level inside the filter, in dB below full scale.",
+    hf_bw="The filter: the Width key steps it. SSB 1.8 to 3 kHz, CW 250 Hz to 2.4 kHz, synchronous "
+          "AM 3 to 8 kHz (on the sideband chosen).",
+    hf_agc="How much the AGC is lifting the signal. It comes down at once on a loud signal, holds "
+           "between words, then recovers; an empty frequency stops it short of full gain.",
+    lamp_sync="Synchronous AM: the receiver has locked onto the station's carrier.",
     lamp_sql="A station is opening the squelch.",
     lamp_tone="A CTCSS (PL) tone is heard.",
     lamp_tsq="Tone squelch is on: the speaker plays only while its tone is heard.",

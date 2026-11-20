@@ -7,7 +7,7 @@ test_bandplan.py - the bands behind the Bands panel. Needs neither GNU Radio nor
 Checks every band is sane (edges, step, keys unique, the panel's labels), the mode each band
 and each part of a band is usually heard in (CW at the bottom of the amateur bands, AM on
 shortwave, narrow FM on 2 m...), snapping to channels (FM's odd tenths, CB, a stepping key's
-ranges), the channelized bands' channel tables (CB's out-of-order 23, stepping, GMRS repeater
+ranges, SSB's finer raster), the channelized bands' channel tables, the HF filters (CB's out-of-order 23, stepping, GMRS repeater
 pairs), the repeater offsets, and which band a frequency falls in.
 """
 import os
@@ -72,6 +72,11 @@ def main():
                          ('PUBLIC', 460.004 * M, 460.0 * M), ('PUBLIC', 860.009 * M, 860.0125 * M)):
         got = B.snap(B.band(key), f)
         check(f'{key}: {f / M:g} MHz snaps to {want / M:g}', abs(got - want) < 1, f'{got / M:g}')
+    check("SSB's 100 Hz raster: 14200.07 kHz snaps to 14200.1", abs(B.snap(B.band('HAM20'), 14200.07 * k, 100) - 14200.1 * k) < 1)
+    check('60 m keeps its half-kHz origin on it', abs(B.snap(B.band('HAM60'), 5357.04 * k, 100) - 5357.0 * k) < 1)
+    bad = [m for m in B.FILTERS if B.DEFAULT_FILTER[m] not in B.FILTERS[m] or B.MODE_RX[m] != 'HF']
+    check("each HF mode's filter starts on one of its widths", not bad, ', '.join(bad))
+    check('SSB and CW tune in 100 Hz steps', all(B.MODE_STEP[m] == 100 for m in ('USB', 'LSB', 'CW')))
     pub = B.band('PUBLIC')
     check('Police/Fire steps through VHF, UHF and 800 MHz', [r[3] for r in pub.ranges] ==
           ['PUBLIC SAFETY VHF', 'PUBLIC SAFETY UHF', 'PUBLIC SAFETY 800'])

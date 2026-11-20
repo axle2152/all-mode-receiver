@@ -264,14 +264,16 @@ the monitor, and modes on the tuner.
   and FM bandwidth rows in Settings); Squelch for narrow FM; Fine tune (two small keys) nudges
   by less than the band's step (10 Hz on SSB and CW, 100 Hz or so on AM). Done: the keys, the
   kinds, a mode on any frequency (changing receiver if it must), presets remembering their mode,
-  Fine tune (AM 100 Hz, FM 5 kHz, SSB/CW 10 Hz, narrow FM 500 Hz). Kinds whose receiver isn't
-  built (synchronous AM, SSB, CW) say NOT YET; Width comes with them. Narrow FM's two kinds
-  switch width without a restart; Squelch is on the Bands panel, its level in Settings.
+  Fine tune (AM 100 Hz, FM 5 kHz, SSB/CW 10 Hz, narrow FM 500 Hz). Every kind plays now.
+  Width (where Wide was) steps the mode's filters: AM 2.5, 5, 8, 10.2 kHz then WIDE; FM auto,
+  wide, narrow; narrow FM 5 or 2.5 kHz; SSB, CW and sync AM their own (each remembered), shown
+  on the second text row. Narrow FM's two kinds, and SSB, CW and sync AM, change without a
+  restart; Squelch is on the Bands panel, its level in Settings.
 - [x] Each band picks its usual mode, and so does tuning into a part of a band with its own: AM
   on medium wave, shortwave and the airband; narrow FM on 2 m, marine and weather; on the
   amateur HF bands LSB below 10 MHz and USB above (20 m is USB), and CW in their CW parts.
-  Where there's no usual mode, the radio stays on the one it's on. SSB and CW need Phase 6.
-  Done: crossing into such a part changes mode only when its receiver is built (else it stays).
+  Where there's no usual mode, the radio stays on the one it's on. Done, SSB and CW included
+  (crossing into a part whose receiver isn't built would leave the mode as it is).
 - [x] The tuner display: legends AM, FM, USB, LSB, CW; AUTO, STEREO, MONO, RDS, TONE; TUNED,
   MEMORY. A second dot-matrix line. Band info (a latching key) switches the text between the
   band information (band, kind of mode, filter, repeater offset, tone) and the station's own
@@ -299,7 +301,9 @@ the monitor, and modes on the tuner.
   - Public service and utility bands differ by country too (airband channels 8.33 kHz apart
     in much of Europe and 25 kHz in the US; CB on AM in the US and mostly FM in Europe).
 - [ ] Tuning steps by mode, with a setting to change them: 5 kHz for AM and narrowband FM on
-  the shortwave and amateur bands, 10 Hz or 1 Hz for SSB and CW.
+  the shortwave and amateur bands, 10 Hz or 1 Hz for SSB and CW. Done so far: SSB and CW step
+  100 Hz (Fine tune 10 Hz), and a band key brings back exactly where the band was left. The
+  setting is still to come.
 - [x] Channelized bands (the owner's idea): CB (40), FRS/GMRS (22; GMRS repeater pairs on
   15-22), weather (WX1-7), MURS (1-5) and marine VHF (US numbering; 18A shows as 18) tune
   channel to channel, in channel order (CB's 23 between 22 and 24), the number keys pick a
@@ -307,22 +311,36 @@ the monitor, and modes on the tuner.
   to 40, marine to 88). No presets there: Memory pressed twice sets the band's home channel,
   and Settings > Reception chooses whether the band key goes to it or to where it was left,
   and whether these bands step by channel or by their ordinary spacing.
-- [ ] Presets by band (the owner's choice over pages): 24 for each band, except the
+- [x] Presets by band (the owner's choice over pages): 24 for each band, except the
   channelized ones; a preset stores band, mode, frequency and filter, and on narrow FM the
   repeater offset (or Rev) and the PL tone. Existing presets carry over (FM to FM, AM to the
   band each is in). Done so far: 24 per band (the CH digits show the band's own), the first
   run's seeds on FM 1-4 and MW 1-4, an older single list carried over slot for slot; the mode;
   on narrow FM the offset, the tone and tone squelch (in the settings file as
-  'NFM 146.94 OFS-600 PL100.0 TSQ'). The filter joins when Width lands.
+  'NFM 146.94 OFS-600 PL100.0 TSQ'); on SSB, CW and sync AM the filter ('HF 14.0525 CW W500').
+  AM's width stays a setting of its own, as before.
 
 ## Phase 6: Shortwave, VHF/UHF and more analog modes
 
-- [ ] One HF front end (direct sampling, a V4, or an upconverter) at about 1 Msps like the AM
+- [x] One HF front end (direct sampling, a V4, or an upconverter) at about 1 Msps like the AM
   receiver, with switchable demodulators, so changing mode doesn't reopen the dongle:
   - AM
   - synchronous AM, with either sideband selectable to dodge interference
   - SSB (upper and lower), DSB, CW
-- [ ] Filter width and passband shift, a notch, AGC with selectable speed for SSB and CW
+
+  Done (radio/hf.py, tests/test_hf.py in real GNU Radio 3.10.1 and 3.10.9): SSB, CW (dial on
+  the carrier, a 600 Hz tone) and sync AM on either sideband, switching without a restart; the
+  AM receiver's sources (direct sampling below 28.8 MHz, the tuner above, so 6 m, 2 m and 70 cm
+  SSB too); a complex sideband filter about 150 Hz from pass to stop (the other sideband 78 dB
+  down in the test); sync AM's PLL hears the carrier alone (+/-150 Hz) and turns the whole
+  channel by its phase, so a strong neighbour can't wobble it (an interferer on the other side
+  68 dB down). Plain AM stays on the AM receiver (C-QUAM, the add-ons), so AM to sync AM reopens
+  the dongle for a moment. DSB is still to come.
+- [ ] Filter width and passband shift, a notch, AGC with selectable speed for SSB and CW. Done
+  so far: the filter widths (the Width key), and the AGC (radio/agc.py, tests/test_agc.py):
+  look-ahead attack (no overshoot), hang and decay by mode, its ceiling set from the band's
+  noise so an empty frequency plays 20 dB under a station. Still to come: a speed setting,
+  passband shift, a notch.
 - [ ] Impulse and noise blankers. The window already has their controls, but the blankers
   themselves were never written, so the controls do nothing yet. Written here, once, for AM
   broadcast and shortwave alike.

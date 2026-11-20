@@ -37,6 +37,11 @@ MODE_TEXT = {'AM': 'AM', 'SAM_U': 'SYNC AM USB', 'SAM_L': 'SYNC AM LSB', 'FM': '
 DATA_MODES = ('AM', 'SAM_U', 'SAM_L', 'FM')             # can carry station data (RDS, PMDS...)
 FINE_STEP = {'AM': 100, 'SAM_U': 10, 'SAM_L': 10, 'FM': 5000, 'NFM': 500, 'NFM2': 500,   # Hz, Fine tune
              'USB': 10, 'LSB': 10, 'CW': 10}
+MODE_STEP = {'USB': 100, 'LSB': 100, 'CW': 100}         # Hz: the tuning keys' step, where finer than the band's
+# The HF receiver's filters (Hz), stepped by the Width key, and where each mode starts
+FILTERS = {'USB': (1800, 2400, 2700, 3000), 'LSB': (1800, 2400, 2700, 3000), 'CW': (250, 500, 1000, 2400),
+           'SAM_U': (3000, 4500, 6000, 8000), 'SAM_L': (3000, 4500, 6000, 8000)}
+DEFAULT_FILTER = {'USB': 2700, 'LSB': 2700, 'CW': 500, 'SAM_U': 4500, 'SAM_L': 4500}
 
 # group: (title on the panel, its row)
 GROUPS = {'shortwave': ('SHORTWAVE (METRES)', 0), 'broadcast': ('BROADCAST', 0),
@@ -218,9 +223,11 @@ def usual_mode(b, freq):
     return b.mode
 
 
-def snap(b, freq):
-    """The nearest channel on band b, within its edges (or its range's)."""
-    lo, hi, step, _ = range_for(b, freq)
+def snap(b, freq, step=None):
+    """The nearest channel on band b, within its edges (or its range's); on a finer raster when
+    `step` is given (SSB's 100 Hz)."""
+    lo, hi, band_step, _ = range_for(b, freq)
+    step = step or band_step
     origin = b.origin if not b.ranges else lo
     n = round((freq - origin) / step)
     f = origin + n * step
