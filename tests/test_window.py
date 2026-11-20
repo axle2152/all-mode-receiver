@@ -343,6 +343,20 @@ def child(appdir, band, fonts, secs):
             app._digit(0)
             if (round(app.freq), ch()) != (27405000, '40'):
                 mine.append(f'4 then 0 on CB: {app.freq / 1e6:g} MHz, CH {ch()!r}')
+            app._direct = '27.150'                      # typed between channels: tuned as typed
+            app._direct_enter()
+            if (app.bandkey, round(app.freq), ch()) != ('CB', 27150000, ''):
+                mine.append(f'typed 27.150 on CB: {app.bandkey} at {app.freq / 1e6:g} MHz, CH {ch()!r} '
+                            '(want 27.150, no channel)')
+            app._step(+1, manual=True)
+            if (round(app.freq), ch()) != (27155000, '16'):
+                mine.append(f'a step up from 27.150: {app.freq / 1e6:g} MHz, CH {ch()!r} (want 16 on 27.155)')
+            app._direct = '1083'                        # and on MW, off the 10 kHz steps
+            app._direct_enter()
+            if (app.bandkey, round(app.freq)) != ('MW', 1083000):
+                mine.append(f'typed 1083 kHz: {app.bandkey} at {app.freq / 1e3:g} kHz (want MW, 1083)')
+            app._direct = '27405'
+            app._direct_enter()
             app._memory()
             app._memory()
             if app.home_channels.get('CB') != app.freq or 'HOME CHANNEL 40' not in (app._dm_msg or ('',))[0]:

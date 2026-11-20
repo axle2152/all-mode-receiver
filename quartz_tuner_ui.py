@@ -51,8 +51,9 @@ Tuner (top unit)
                     Enter to tune, Esc to cancel, Backspace to correct. FM: 885 =
                     88.5 MHz, or type a decimal (162.55); AM: kHz (1720), or a
                     decimal for MHz (5.905). It goes to the band the frequency is in
-                    (9580 = 31 m shortwave, in AM); outside every band it needs
-                    Band limits: Override.
+                    (9580 = 31 m shortwave, in AM), exactly as typed (27.150 on CB
+                    stays between channels; the next step goes to the nearest);
+                    outside every band it needs Band limits: Override.
     Display         TUNED = the retune has settled and there is a carrier the
                     receiver can hold; STEREO = the back end's stereo indicator.
                     The bar shows signal quality (POOR / FAIR / GOOD, from the

@@ -918,7 +918,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             return
         self.mode = mode
         if BP.MODE_RX[mode] != self.band:
-            self._switch_family(BP.MODE_RX[mode], self.freq)
+            self._switch_family(BP.MODE_RX[mode], self.freq, snap=False)
         self._save_settings()
         self._refresh_keys()
 
@@ -963,11 +963,11 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                 out[f'{self.bandkey}#{self._range_index(b, self.freq)}'] = self.freq
         return out
 
-    def _band_key(self, key, freq=None, mode=None):
+    def _band_key(self, key, freq=None, mode=None, exact=False):
         """A key on the Bands panel (or a frequency typed or recalled that falls in band `key`):
         tune there, in the band's usual mode (or `mode`, a preset's). A band remembers where it was
         left; a key that steps through ranges (Police/Fire) moves to its next range when pressed
-        again."""
+        again. `exact`: a frequency typed or recalled is tuned as it is, not put on a channel."""
         if not self.power_on:
             return False
         b = BP.band(key)
@@ -979,7 +979,10 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                 freq = self.home_channels[key]
             else:
                 freq = self.band_freqs.get(key, BP.home(b))
-        freq = BP.nearest_channel(b, freq) if b.channels and self.channel_steps else BP.snap(b, freq)
+        if exact:
+            freq = float(round(freq))
+        else:
+            freq = BP.nearest_channel(b, freq) if b.channels and self.channel_steps else BP.snap(b, freq)
         if mode not in BP.MODES or not self._rx_ok(mode):
             mode = BP.usual_mode(b, freq)
         rx = BP.MODE_RX.get(mode)
@@ -993,42 +996,46 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.bandkey = key
         self.mode = mode
         if rx != self.band:
-            self._switch_family(rx, freq)
+            self._switch_family(rx, freq, snap=not exact)
         else:
             self._memory_until = 0.0
             self._seek_cancel()
-            self._tune_to(freq)
+            self._tune_to(freq, snap=not exact)
         self._save_settings()
         self._refresh_keys()
         return True
 
     def _go_to(self, freq, family=None, mode=None):
-        """Tune to a frequency typed or recalled: in the band it falls in, in its usual mode (a
-        preset in the mode it was stored in); with Band limits: Override, anywhere, on the
-        receiver it was stored on (or the one in use)."""
+        """Tune to a frequency typed or recalled, exactly (27.150 MHz on CB stays 27.150, between
+        channels): in the band it falls in, in its usual mode (a preset in the mode it was stored
+        in); with Band limits: Override, anywhere, on the receiver it was stored on (or the one in
+        use)."""
         if mode is None and family is not None:        # an older preset: its receiver's band
             b = self._band_for_family(freq, family, prefer=self.bandkey)
         else:
             b = BP.band_for(freq, prefer=self.bandkey)
         if b is not None:
-            return self._band_key(b.key, freq, mode=mode)
+            return self._band_key(b.key, freq, mode=mode, exact=True)
         if mode in BP.MODES:
             family = BP.MODE_RX[mode]
         if not self.override:
             self._message('OUT OF BAND')
             return False
         family = family or self.band
+        lo, hi = self._limits(family)
+        freq = min(max(freq, lo), hi)
         if family != self.band:
-            self._switch_family(family, freq)
+            self._switch_family(family, freq, snap=False)
         else:
-            self._tune_to(freq)
+            self._tune_to(freq, snap=False)
         if mode in BP.MODES and self._rx_ok(mode) and BP.MODE_RX[mode] == self.band:
             self.mode = mode
         self._save_settings()
         return True
 
-    def _switch_family(self, band, freq):
-        """Change receiver (FM or AM) and tune to freq: the receiver restarts."""
+    def _switch_family(self, band, freq, snap=True):
+        """Change receiver (FM or AM) and tune to freq (on the band's steps, or with snap=False
+        as it is): the receiver restarts."""
         if not self.power_on:
             return
         self._memory_until = 0.0
@@ -1043,7 +1050,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.band = band
         if BP.MODE_RX.get(self.mode) != band:          # the new receiver's plain mode
             self.mode = 'FM' if band == 'FM' else 'AM'
-        self.freq = self._snap(freq)
+        self.freq = self._snap(freq) if snap else float(round(freq))
         self._tuned_t = time.monotonic()
         self._q_on = False
         self._mon_retuned()
@@ -1097,13 +1104,14 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         return 'direct_q', FM_DEVICE_ARGS + (',direct_samp=2' if freq < XOVER_HZ else '')
 
     def _fit(self, band, freq):
-        """A frequency the receiver `band` ('AM', 'FM') will take at start: on its band's raster
-        (any band it plays), or with Band limits: Override, anywhere the tuner reaches (to 1 kHz)."""
+        """A frequency the receiver `band` ('AM', 'FM') will take at start: where it was left in
+        any band it plays (typed or fine-tuned off the band's steps, it stays there), or with Band
+        limits: Override, anywhere the tuner reaches."""
         if self.override:
             lo, hi = self._limits(band)
-            return round(min(max(freq, lo), hi), -3)
+            return float(round(min(max(freq, lo), hi)))
         b = self._band_for_family(freq, band)
-        return BP.snap(b, freq) if b is not None else self._snap_in(band, freq)
+        return float(round(freq)) if b is not None else self._snap_in(band, freq)
 
     def _plan(self):
         return BP.band(self.bandkey)
@@ -1170,7 +1178,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if usual and usual != old_usual and usual != self.mode and self._rx_ok(usual):
             self.mode = usual                          # into a part of the band with a mode of its own
             if BP.MODE_RX[usual] != self.band:
-                self._switch_family(BP.MODE_RX[usual], self.freq)
+                self._switch_family(BP.MODE_RX[usual], self.freq, snap=False)
                 return
         self._tuned_t = time.monotonic()
         self._q_on = False

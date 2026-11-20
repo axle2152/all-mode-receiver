@@ -248,7 +248,8 @@ the monitor, and modes on the tuner.
     Repeater: Rev and Tone
   Done: a third unit between the tuner and the monitor. Each band key tunes to its band in its
   usual receiver and remembers where it was left; Police/Fire steps through VHF, UHF and
-  800 MHz; Direct finds the band a typed frequency is in; presets find theirs. FM/AM left the
+  800 MHz; Direct finds the band a typed frequency is in and tunes it exactly as typed (not
+  onto the nearest channel); presets find theirs. FM/AM left the
   tuner; Direct sits under the Tuning keys (the owner's choice), beside Wide. A Bands key (and
   Settings > Panel) shows or hides the panel. A band change across 28.8 MHz reopens the dongle
   (direct sampling below, the tuner above), and says so. Bands that need narrow FM, SSB or CW
