@@ -485,6 +485,12 @@ class AdvancedWindow:
             self._hist_pts.append((q, q, tb.stereo_indicator))
             self._hist_draw(True)
             return
+        if self.band == 'NFM':
+            self._dash_nfm(tb)
+            return
+        if self.band == 'HF':
+            self._dash_hf(tb)
+            return
 
         data = [a for a in tb.addons if a.alive]          # add-ons running on this receiver
         meters = [(i, m) for i, m in enumerate(a.meter() for a in data) if m]   # (index, meter)
@@ -552,6 +558,76 @@ class AdvancedWindow:
         self._hist_pts.append((pre, q, tb.eq_active))
         self._hist_draw(False)
 
+    def _dash_hf(self, tb):
+        """SSB, CW, sync AM: signal over the noise, the filter, the AGC, sync AM's lock."""
+        sam = tb.mode.startswith('SAM')
+        self._lamps.set_lamps(([('sync', 'LOCKED', SEG_ON['good'], TIPS['lamp_sync'])] if sam else [])
+                              + [('agc', 'AGC', SEG_ON['good'], TIPS['lamp_agc']),
+                                 ('clip', 'CLIP', SEG_ON['poor'], TIPS['lamp_clip'])])
+        if sam:
+            self._lamps.show('sync', tb.locked)
+        self._lamps.show('agc', tb.agc_enabled)
+        self._lamps.show('clip', tb.clip_pct > 0.01)
+        self._meters.set_rows([
+            ('q', 'Signal over noise', 'high', TIPS['hf_quality'], None),
+            ('lvl', 'Level', 'high', TIPS['hf_level'], None),
+            ('bw', 'Filter', 'help', TIPS['hf_bw'], None),
+            ('agc', 'AGC gain', 'help', TIPS['hf_agc'], None)])
+        q = tb.cnr_db
+        self._meters.show('q', q / 40, f"{q:4.1f} dB")
+        self._meters.show('lvl', (tb.channel_dbfs + 80) / 80, f"{tb.channel_dbfs:5.1f}")
+        self._meters.show('bw', tb.width / 8000, f"{tb.width / 1000:g} kHz" if tb.width >= 1000 else f"{tb.width} Hz")
+        self._meters.show('agc', min(1.0, max(0.0, tb.agc_gain_db / 100)), f"{tb.agc_gain_db:+5.1f} dB")
+        self._signal_bars(q, None)
+        kind = {'USB': 'Upper sideband', 'LSB': 'Lower sideband', 'CW': f'CW, {tb.CW_PITCH:.0f} Hz tone',
+                'SAM_U': 'Synchronous AM, upper sideband', 'SAM_L': 'Synchronous AM, lower sideband'}[tb.mode]
+        self._ps_var.set(f"{self.freq / 1e3:.2f} kHz" if self.freq < 30e6 else f"{self.freq / 1e6:.4f} MHz")
+        self._id_var.set(f"{kind}\n" + (('carrier locked' if tb.locked else 'searching for carrier') if sam
+                                         else 'signal' if q >= tb.SEEK_MIN_DB else 'no signal'))
+        self._rt_var.set(f"Level {tb.channel_dbfs:.1f} dBFS   AGC {tb.agc_gain_db:+.1f} dB"
+                         + (f"   carrier offset {tb.carrier_hz:+.1f} Hz" if sam else ''))
+        self._rdsd_var.set(tb.readout())
+        self._hist_pts.append((q, q, tb.locked if sam else q >= tb.SEEK_MIN_DB))
+        self._hist_draw(True)
+
+    def _dash_nfm(self, tb):
+        """Narrow FM: squelch, tone, quieting, deviation."""
+        self._lamps.set_lamps([
+            ('sql', 'STATION', SEG_ON['good'], TIPS['lamp_sql']),
+            ('tone', 'TONE', SEG_ON['help'], TIPS['lamp_tone']),
+            ('tsq', 'TONE SQL', SEG_ON['help'], TIPS['lamp_tsq']),
+            ('agc', 'AGC', SEG_ON['good'], TIPS['lamp_agc']),
+            ('clip', 'CLIP', SEG_ON['poor'], TIPS['lamp_clip'])])
+        self._lamps.show('sql', tb.squelch_open)
+        self._lamps.show('tone', tb.ctcss_hz is not None)
+        self._lamps.show('tsq', tb.tone_squelch is not None)
+        self._lamps.show('agc', tb.agc_enabled)
+        self._lamps.show('clip', tb.clip_pct > 0.01)
+        self._meters.set_rows([
+            ('q', 'Signal quality', 'high', TIPS['nfm_quality'], None),
+            ('lvl', 'Level', 'high', TIPS['nfm_level'], None),
+            ('bw', 'Bandwidth', 'help', TIPS['nfm_bw'], None),
+            ('mod', 'Deviation', 'limit', TIPS['nfm_dev'], 0.8),
+            ('ct', 'CTCSS tone', 'help', TIPS['nfm_tone'], None)])
+        q = tb.cnr_db
+        self._meters.show('q', q / 40, f"{q:4.1f} dB")
+        self._meters.show('lvl', (tb.channel_dbfs + 60) / 60, f"{tb.channel_dbfs:5.1f}")
+        self._meters.show('bw', tb.if_khz / 10, f"\u00b1{tb.if_khz:3.1f} kHz")
+        pk = self.mon.mod_peak()
+        dev = pk[1] if pk and tb.squelch_open else 0.0
+        self._meters.show('mod', dev / tb.dev_khz / 1.25, f"{dev:3.1f} kHz")
+        self._meters.show('ct', min(1.0, tb.ctcss_khz / 1.0) if tb.ctcss_hz else 0,
+                          f"{tb.ctcss_hz:5.1f} Hz" if tb.ctcss_hz else 'none')
+        self._signal_bars(q, None)
+        self._ps_var.set(f"{self.freq / 1e6:.4f} FM")
+        sq = (f'squelch {tb.squelch_level}' if tb.squelch_level else 'squelch off')
+        self._id_var.set(f"Narrow FM {tb.dev_khz:g} kHz\n"
+                         + ('station heard' if tb.squelch_open else 'no station') + f', {sq}')
+        self._rt_var.set(f"Carrier offset {tb.carrier_hz:+.0f} Hz   level {tb.channel_dbfs:.1f} dBFS")
+        self._rdsd_var.set(tb.readout())
+        self._hist_pts.append((q, q, tb.squelch_open))
+        self._hist_draw(True)
+
     # ---- spectrum (MPX / RF), from the Delco with SCA markers added
     def _spec_reset(self):
         cv, mode = self._spec, self._spec_mode.get()
@@ -564,12 +640,14 @@ class AdvancedWindow:
         self._spec_db_ids = [cv.create_text(x0 - 4, y0 + SPEC_H * k / SPEC_RANGE_DB, text='', anchor='e',
                                             font=('Courier', 7), fill='#3f6f68')
                              for k in range(0, SPEC_RANGE_DB + 1, 10)]
-        if self.band == 'AM' and mode == 'RF':
+        if self.band in ('AM', 'NFM', 'HF') and mode == 'RF':
             self._spec_title.config(text='CHANNEL SPECTRUM  (+/-24 kHz, dB re FS)')
             marks = [(-20, '-20'), (-10, '-10'), (0, '0'), (10, '+10'), (20, '+20')]
             fx = lambda khz: x0 + SPEC_W * (khz + 24) / 48
-        elif self.band == 'AM':
-            self._spec_title.config(text='AUDIO SPECTRUM  (L+R, dB re 100% modulation)')
+        elif self.band in ('AM', 'NFM', 'HF'):
+            self._spec_title.config(text={'AM': 'AUDIO SPECTRUM  (L+R, dB re 100% modulation)',
+                                          'NFM': 'AUDIO SPECTRUM  (dB re full deviation at 1 kHz)',
+                                          'HF': "AUDIO SPECTRUM  (dB re the AGC's level)"}[self.band])
             marks = [(5, '5'), (10, '10'), (15, '15'), (20, '20')]
             fx = lambda khz: x0 + SPEC_W * khz / 24
         elif mode == 'RF':
@@ -641,7 +719,7 @@ class AdvancedWindow:
             cv.create_text(fx(khz), y1 + 9, text=f'{khz:+d}' if khz else '0 kHz', font=('Courier', 7), fill='#3f6f68')
         tb = self.tb
         if not tb or self.band != 'FM' or not self.power_on:
-            cv.create_text((x0 + x1) / 2, (y0 + y1) / 2, text='FM only' if self.band == 'AM' else '',
+            cv.create_text((x0 + x1) / 2, (y0 + y1) / 2, text={'AM': 'FM only', 'NFM': 'Broadcast FM only', 'HF': 'Broadcast FM only'}.get(self.band, ''),
                            font=(fonts.UI_FAMILY, 9, 'bold'), fill='#3f6f68')
             return
         ifs = self._if_spectra(tb)
@@ -693,7 +771,7 @@ class AdvancedWindow:
             cv.create_text(xv(us), y1 + 8, text=f'{us} us' if us == 200 else str(us), font=('Courier', 7), fill='#3f6f68')
         tb = self.tb
         if not tb or self.band != 'FM' or not self.power_on:
-            cv.create_text((x0 + x1) / 2, (y0 + y1) / 2, text='FM only' if self.band == 'AM' else '',
+            cv.create_text((x0 + x1) / 2, (y0 + y1) / 2, text={'AM': 'FM only', 'NFM': 'Broadcast FM only', 'HF': 'Broadcast FM only'}.get(self.band, ''),
                            font=(fonts.UI_FAMILY, 9, 'bold'), fill='#3f6f68')
             return
         prof = self._echo_profile(tb)
@@ -742,7 +820,7 @@ class AdvancedWindow:
                        font=('Courier', 7), fill=SEG_ON['fair'])
         tb, mon = self.tb, self.mon
         if not tb or self.band != 'FM' or not self.power_on:
-            cv.create_text((x0 + x1) / 2, (y0 + y1) / 2, text='FM only' if self.band == 'AM' else '',
+            cv.create_text((x0 + x1) / 2, (y0 + y1) / 2, text={'AM': 'FM only', 'NFM': 'Broadcast FM only', 'HF': 'Broadcast FM only'}.get(self.band, ''),
                            font=(fonts.UI_FAMILY, 9, 'bold'), fill='#3f6f68')
             return
         if not mon.mod_valid:
@@ -803,6 +881,17 @@ class AdvancedWindow:
                 f"Peak dev {dev}   over 100% {fmt(over, '.2f', '%')}   "
                 f"pilot {fmt(tb.pilot_level / 1.8 * 100 * PILOT_COMP, '.1f', '%')}   RDS {fmt(st.get('rds'), '.1f', '%')}   SCA {sca}")
             carrier = f"{off_hz:+.0f} Hz ({ppm:+.1f} ppm)" if off_hz is not None else '--'
+        elif self.band == 'NFM':
+            freq = mon.frequent_peak(now) if mon.mod_valid else None
+            dev = (f"highest +{pk[2]:.2f}/-{pk[3]:.2f}  frequent {fmt(freq, '.2f')} kHz" if pk else
+                   'not measurable (no station, or under 20 dB C/N)' if not mon.mod_valid else '--')
+            ct = f'{tb.ctcss_hz:.1f} Hz at {tb.ctcss_khz:.2f} kHz' if tb.ctcss_hz else 'none'
+            self._mon1_var.set(f"Peak dev {dev}   over {tb.dev_khz:g} kHz {fmt(over, '.2f', '%')}   CTCSS {ct}")
+            carrier = f"{tb.carrier_hz:+.0f} Hz ({tb.carrier_hz / (self.freq / 1e6):+.1f} ppm)"
+        elif self.band == 'HF' and not tb.mode.startswith('SAM'):
+            self._mon1_var.set(f"{tb.mode}: no modulation to measure   filter {tb.width:g} Hz   "
+                               f"AGC {tb.agc_gain_db:+.1f} dB")
+            carrier = '--'
         else:
             neg = mon.frequent_peak(now, 'neg') if mon.mod_valid else None
             dev = (f"highest +{pk[2]:.0f}% / -{pk[3]:.0f}%  frequent negative {fmt(neg, '.0f', '%')}" if pk else

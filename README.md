@@ -9,8 +9,9 @@ good as the signal allows, clean up what it can, play at a correct, consistent l
 you what's going on. That goes for someone who just wants to listen, for someone who works in
 broadcasting, and for a ham or shortwave listener.
 
-Today it receives AM and FM broadcast. Shortwave and more modes are on the way (see
-[Where it's going](#where-its-going)).
+Today it receives AM and FM broadcast, shortwave, the amateur bands in SSB and CW,
+synchronous AM, and narrowband FM: ham repeaters, marine radio, NOAA weather, FRS/GMRS and the
+like. Digital modes are on the way (see [Where it's going](#where-its-going)).
 
 ## What it does
 
@@ -59,26 +60,63 @@ It also shows how many data groups arrive each second and how many are lost.
 - **Filter width.** Choose 2.5 kHz (to dig a weak station out of a crowded band), 5 kHz (what
   most AM radios do), 8 kHz (AMAX-class wideband) or 10.2 kHz (everything a US station may
   send). With AUTO on, it narrows by itself on weak stations or when the stations next door get
-  loud; with AUTO off it stays where you put it. The **Wide** key opens it to 12 kHz. Whenever
-  it's open wide enough to pass the 10 kHz whistle from neighbouring stations, that whistle is
-  notched out.
+  loud; with AUTO off it stays where you put it. The **Width** key steps through them and then
+  opens it to 12 kHz (WIDE). Whenever it's open wide enough to pass the 10 kHz whistle from
+  neighbouring stations, that whistle is notched out.
 - **NRSC-1 de-emphasis**, to undo the treble boost many US AM stations transmit.
 - **Station data from add-ons.** With an add-on installed that decodes station data on AM
   (see `docs/ADDONS.md`), the tuner shows it the way it shows RDS on FM: call letters, name,
   scrolling text and program type.
 - Carrier lock, carrier-to-noise, adjacent-channel strength and carrier offset readings.
 
+### Narrowband FM
+
+For the two-way radio channels: ham repeaters and simplex, marine radio, NOAA weather radio,
+FRS/GMRS, MURS and public safety.
+
+- **Squelch**, like a scanner's: the speaker stays quiet until someone transmits, and the noise
+  burst at the end of a transmission never reaches the speaker. It judges a signal by how clean
+  it is, not how loud, so it works the same whatever the dongle's gain. Pick how weak a station
+  may be and still open it (levels 1 to 9) in Settings.
+- **PL tones (CTCSS).** It names the tone a repeater sends under its audio (PL 100.0, say) and
+  keeps that tone out of the speaker. The **Tone** key then plays only the transmissions that
+  carry it, so a busy channel shared by several repeaters plays just the one you want.
+- **Rev** listens on a repeater's input, at the band's usual offset (600 kHz on 2 m, 5 MHz on
+  70 cm, 1.6 MHz on 1.25 m), to hear whether the other station is close enough to reach directly.
+- **Both widths:** 5 kHz deviation (25 kHz channels) and 2.5 kHz (12.5 kHz channels), played
+  equally loud. The FM key steps between them.
+- **Repeater presets** remember the offset and the tone, and tone squelch if it was on.
+- It follows a dongle's frequency error by itself (AFC), and sets the dongle's gain on its own
+  so the S-meter always knows it.
+
+### SSB, CW and synchronous AM
+
+For the amateur bands, utility stations and shortwave listening, one receiver does all three,
+so switching between them is instant.
+
+- **SSB** (upper and lower sideband) and **CW**, tuned the way a ham rig tunes: the dial reads
+  the carrier, the tuning keys and mouse wheel move 100 Hz, Fine tune 10 Hz, and CW plays as a
+  600 Hz tone. The opposite sideband stays out (more than 70 dB down).
+- **Synchronous AM.** It locks to a shortwave or medium wave station's carrier and lets you
+  listen to just one sideband, so a station next door that's splattering over one side
+  disappears, and the distortion that fading causes on an ordinary AM radio goes away.
+- **Filters** by mode, stepped with the **Width** key: SSB 1.8 to 3 kHz, CW 250 Hz to 2.4 kHz,
+  synchronous AM 3 to 8 kHz. Each mode remembers its own.
+- **AGC** like a good communications receiver: it comes down before a loud syllable arrives
+  (no thump), holds between words, then recovers. An empty frequency plays its noise well
+  below a station, not at full volume.
+
 ### The tuner
 
-- 24 presets, seek, step tuning, direct frequency entry from the keyboard, and mouse-wheel
-  tuning.
+- 24 presets on every band, seek, step tuning, direct frequency entry from the keyboard, and
+  mouse-wheel tuning.
 - With the band-limit override it tunes anywhere the dongle reaches, 100 kHz to 1766 MHz. It
   switches between direct sampling and the normal tuner by itself.
 - A frequency display that reads any frequency up to 9.99 GHz, down to 1 Hz: in kHz below
   30 MHz and MHz above, with as many digits as the tuning step needs (1080 kHz, 90.5 MHz,
   14230.50 kHz).
 - A signal meter that shows either how clean the signal is (poor, fair, good) or how strong
-  it is in S units, the way ham and shortwave radios measure it. Press S or METER to switch.
+  it is in S units, the way ham and shortwave radios measure it. Press S units (or S) to switch.
   For true S units, calibrate it once in Settings against a signal of known strength; until
   then it says UNCAL.
 - Phone-style signal bars, STEREO / TUNED / RDS indicators, and a dot-matrix line for the
@@ -105,6 +143,13 @@ It also shows how many data groups arrive each second and how many are lost.
   - an echo profile that shows how far away the reflecting hills or buildings are
   - a 30-second history of signal quality
 - Meters and indicators are delayed to match the sound, so what you see is what you hear.
+- A Bands panel with a key for every band: the shortwave broadcast bands, long wave, medium
+  wave and FM, the amateur bands from 160 m to 23 cm, air, marine, weather, public safety, CB,
+  FRS/GMRS and MURS. Each band remembers where you left it and picks its usual mode. On the
+  channelized bands (CB, FRS/GMRS, weather, MURS, marine) the radio goes channel to channel and
+  shows the channel number, and you can give each a home channel.
+- Panels that size themselves to your screen, so the lettering stays readable on a laptop, a
+  big monitor or a 4K screen (or pick a size in Settings).
 - An Advanced window with the full diagnostics.
 
 Hover the mouse over almost anything for a plain-words explanation of what it shows.
@@ -140,15 +185,15 @@ Some useful options; `--help` lists them all:
 | Option | What it does |
 |---|---|
 | `--freq 1080e3`, `--freq 90.5e6` | Start on this station (Hz) instead of the last one played |
-| `--scale 0.8` | Smaller (or larger) window |
+| `--scale 0.8` | A fixed size for this run (1.0 is 1480 pixels wide). Normally the window fits your screen: Settings > Panel > Size has FIT and fixed sizes. |
 | `--audio-device pulse` | Which sound output to use. On Linux, `pulse` or an ALSA name such as `plughw:0,0`. Leave it off for the system default. |
 | `--am-source native` | How the dongle reaches AM: `direct_q` (default), `native` (V4) or `upconverter` (with `--upconverter-hz`) |
 | `--log drive.csv` | FM: write the receiver's measurements to a spreadsheet file |
 | `--record-iq drive.cs8` | FM: record the raw radio signal (about 4.8 MB a second) |
 
 Keyboard: Left and Right tune, Shift+Left and Shift+Right seek, 0 to 9 recall presets, M stores
-one, F and A pick the band, O is mono, W is the AM Wide key, P is power, and D or Enter starts
-direct frequency entry.
+one, F and A pick FM and medium wave, O is mono, W is the Width key, P is power, and D or Enter
+starts direct frequency entry.
 
 The window looks best with the Nimbus Sans font (`fonts-urw-base35` on Ubuntu, usually already
 installed). Without it, it uses DejaVu or Liberation.
@@ -190,12 +235,16 @@ samples:
     python3 tests/test_am_width.py       # the AM filter follows the width settings and the Wide key
     python3 tests/test_addons.py         # add-ons plug in; a missing or broken one stays harmless
     python3 tests/test_display.py        # the frequency display reads every band right
+    python3 tests/test_bandplan.py       # the bands, their usual modes, channels and repeater offsets
+    python3 tests/test_agc.py            # the SSB/CW AGC: steady level, no overshoot, hang and decay
     python3 tests/test_window.py         # the whole window runs on AM and FM
 
 With GNU Radio installed (still no dongle needed), these run the real receivers on pretend
 test stations:
 
     python3 tests/test_gnuradio.py
+    python3 tests/test_nfm.py              # narrow FM: squelch, PL tones, tone squelch, both widths
+    python3 tests/test_hf.py               # SSB, CW, sync AM: sidebands, filters, carrier lock, AGC
     python3 addons/crosby/test_crosby.py   # the Crosby add-on: plays Crosby stereo, and only that
     python3 addons/btsc/test_btsc.py       # the BTSC add-on: plays TV stereo, and only that
 
@@ -219,9 +268,10 @@ else running, the kernel's TV-tuner driver has it. Unplug the dongle, run
 
 ## Where it's going
 
-- Shortwave and amateur bands, with presets in pages of 24
-- More modes: synchronous AM, SSB, DSB and CW, then narrowband FM and amateur digital modes,
-  with automatic identification of which digital system a signal is using
+- Amateur digital modes, with automatic identification of which digital system a signal is
+  using
+- A passband shift, a notch and noise reduction for SSB and CW
+- DCS (digital-coded squelch), alongside the PL tones narrowband FM decodes now
 - Later, possibly DRM and HD Radio
 
 The details, phase by phase, are in [docs/ROADMAP.md](docs/ROADMAP.md).

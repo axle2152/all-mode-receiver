@@ -9,7 +9,7 @@ from PIL import ImageTk
 from . import fonts
 from .art import render_key
 from .theme import (
-    BUTTON_BRUSH, BUTTON_SMALL, BUTTON_TRIM, DASH_BG, HINT_EDGE, HINT_FILL, HINT_HOT, HINT_INK,
+    BUTTON_BRUSH, BUTTON_SMALL, BUTTON_TRIM, DASH_BG,
     LAMP_INK_OFF, LAMP_OFF, SEG_OFF, SEG_ON, THEME)
 
 
@@ -29,7 +29,7 @@ class Key:
         self.img_up = ImageTk.PhotoImage(render_key(x1 - x0, y1 - y0, s, legend, False, icon, size))
         self.img_dn = ImageTk.PhotoImage(render_key(x1 - x0, y1 - y0, s, legend, True, icon, size))
         self.item = canvas.create_image(round(x0 * s), round(y0 * s), anchor='nw', image=self.img_up)
-        self._held = False
+        self._held, self._down = False, None
         canvas.tag_bind(self.item, '<ButtonPress-1>', self._press)
         canvas.tag_bind(self.item, '<ButtonRelease-1>', self._release)
         canvas.tag_bind(self.item, '<Enter>', lambda e: canvas.config(cursor='hand2'))
@@ -37,8 +37,10 @@ class Key:
         self.refresh()
 
     def refresh(self):
-        down = self._held or (self.latched is not None and self.latched())
-        self.canvas.itemconfig(self.item, image=self.img_dn if down else self.img_up)
+        down = bool(self._held or (self.latched is not None and self.latched()))
+        if down != self._down:                      # cheap enough to call every UI tick
+            self._down = down
+            self.canvas.itemconfig(self.item, image=self.img_dn if down else self.img_up)
 
     def _press(self, _e):
         self._held = True
@@ -54,25 +56,6 @@ class Key:
         if self.on_release:
             self.on_release()
         self.refresh()
-
-
-class Hint:
-    """Small, flat, low-contrast button that nearly disappears into the panel."""
-
-    def __init__(self, canvas, box, s, text, command):
-        x0, y0, x1, y1 = (v * s for v in box)
-        self.c = canvas
-        self.r = canvas.create_rectangle(x0, y0, x1, y1, fill=HINT_FILL, outline=HINT_EDGE)
-        self.t = canvas.create_text((x0 + x1) / 2, (y0 + y1) / 2 + 0.5, text=text,
-                                    font=(fonts.UI_FAMILY, max(6, round(6.5 * s)), 'bold'), fill=HINT_INK)
-        for it in (self.r, self.t):
-            canvas.tag_bind(it, '<Enter>', lambda e: self._hot(True))
-            canvas.tag_bind(it, '<Leave>', lambda e: self._hot(False))
-            canvas.tag_bind(it, '<ButtonRelease-1>', lambda e: command())
-
-    def _hot(self, on):
-        self.c.itemconfig(self.t, fill=HINT_HOT if on else HINT_INK)
-        self.c.config(cursor='hand2' if on else '')
 
 
 # ---------------------------------------------------------------------------
