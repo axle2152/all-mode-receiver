@@ -19,7 +19,8 @@ from .theme import (
     LEG_Y, MB_ROWS, MB_SCALE, MB_SEGS, MB_X0, MB_X1, MHZ_Y, MON_STATS, NUMS, NUM_H, NUM_PITCH,
     NUM_T, NUM_W, PHOSPHOR, Q_SCALE, SCALES, SCALE_Y, SIG_BOT, SIG_H0, SIG_H1, SIG_PITCH,
     SIG_RISE, SIG_W, SIG_X, SS, STAT_Y, S_SCALE, UNCAL_Y, UNIT_X, VFD_BOX, ghost_of, rgb_of,
-    LEG_PX, LINE2_N, LINE2_TOP, LINE2_X, MON_LAB_PX, MON_SMALL_PX, SCALE_PX, UNIT_PX)
+    LEG_PX, LINE2_N, LINE2_TOP, LINE2_X, MON_LAB_PX, MON_SMALL_PX, SCALE_PX, UNIT_PX,
+    MENU_BOX, MENU_COLS, MENU_ROWS, MENU_ROW_Y, MENU_X0)
 
 
 # 5x7 dot-matrix characters (the Delco's table)
@@ -143,13 +144,16 @@ class VfdBase:
             base += layer[..., None] * ghost_of(self._col.get(g, PHOSPHOR))
         self.base = base
         self._delta = {}
-        for key, (y, x, shape, under, cover) in self._raw.items():
-            if shape.size == 0:
-                self._delta[key] = (y, x, np.zeros((0, 0, 3), np.float32))
-                continue
-            ghost = ghost_of(self._col.get(self._group(key), PHOSPHOR))
-            self._delta[key] = (y, x, (shape[..., None] * self._colour(key) - under
-                                       - cover[..., None] * ghost).astype(np.float32))
+        for key in self._raw:
+            self._delta[key] = self._delta_for(key)
+
+    def _delta_for(self, key):
+        """What lighting this element adds to the unlit tube, in its colour."""
+        y, x, shape, under, cover = self._raw_for(key)
+        if shape.size == 0:
+            return (y, x, np.zeros((0, 0, 3), np.float32))
+        ghost = ghost_of(self._col.get(self._group(key), PHOSPHOR))
+        return (y, x, (shape[..., None] * self._colour(key) - under - cover[..., None] * ghost).astype(np.float32))
 
     # subclasses provide these
     def _setup(self):
@@ -495,3 +499,52 @@ class MonitorVfd(VfdBase):
                 else:
                     y = top + 7 if key[2] == units[0] else top + NUM_H
                 draw_text(d, ux * k, y * k, key[2], self.small_font, 255, tracking=0.3 * k)
+
+
+class MenuVfd(VfdBase):
+    """The Bands & Modes display: MENU_ROWS lines of MENU_COLS 5x7 characters, the same dots as the
+    tuner's text. st = {'rows': [text, ...]}. Each character in each place is drawn (and its glow
+    worked out) the first time it's shown, then kept: a 4 x 60 tube of single dots would take
+    tens of seconds to prepare at 4K, and a page only ever shows a few hundred of them."""
+    BOX = MENU_BOX
+    SEED = 5
+    FULL = '\x7f'                       # every dot of a cell (the unlit tube's ghost)
+
+    def _all_keys(self, ghost=False):
+        if ghost:
+            return [('cell', r, c, self.FULL) for r in range(MENU_ROWS) for c in range(MENU_COLS)]
+        return []                        # the rest: drawn the first time they're lit
+
+    def _group(self, key):
+        return 'menu'
+
+    def _blur_for(self, key):
+        return DOT_BLUR * self.k
+
+    def _draw_element(self, d, img, key):
+        _, r, c, ch = key
+        k = self.k
+        rows = [0x1F] * 7 if ch == self.FULL else (_GLYPHS.get(ch) or _GLYPHS.get(_plain(ch), _GLYPHS[' ']))
+        for y in range(7):
+            for x in range(5):
+                if (rows[y] >> (4 - x)) & 1:
+                    px = MENU_X0 + (c * 6 + x) * DOT_PITCH
+                    py = MENU_ROW_Y[r] + y * DOT_PITCH
+                    d.rectangle([px * k, py * k, (px + DOT_SIZE) * k, (py + DOT_SIZE) * k], fill=255)
+
+    def _lit_keys(self, st):
+        if st.get('all'):
+            return [('cell', r, c, self.FULL) for r in range(MENU_ROWS) for c in range(MENU_COLS)]
+        keys = []
+        for r, text in enumerate(st['rows'][:MENU_ROWS]):
+            for c, ch in enumerate(text[:MENU_COLS]):
+                if ch != ' ':
+                    keys.append(('cell', r, c, ch))
+        return keys
+
+    def render(self, st):
+        if st is not None:
+            for key in self._lit_keys(st):
+                if key not in self._delta:
+                    self._delta[key] = self._delta_for(key)
+        return super().render(st)

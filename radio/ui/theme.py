@@ -60,7 +60,7 @@ COLOR_ITEMS = {
               ('signal', 'Signal bar', _PH), ('sig_label', 'Meter scale, UNCAL', _PH),
               ('ch_label', 'CH label', _PH), ('ch_digits', 'Channel digits', _PH),
               ('rds_call', 'RDS call letters', _PH), ('rds_ps', 'RDS station name', _PH),
-              ('rds_rt', 'RDS RadioText', _PH)),
+              ('rds_rt', 'RDS RadioText', _PH), ('menu', 'Bands & Modes display', _PH)),
     'monitor': (('lr', 'L / R bars', _PH), ('lr_hot', 'L / R above 0 dBFS', _HOT),
                 ('mod', 'MOD bar', _PH), ('mod_hot', 'MOD above 100%', _HOT),
                 ('lufs', 'LUFS bar', _PH), ('hold', 'Peak-hold marker', None),
@@ -110,22 +110,24 @@ MONO_KEY   = (938, 159, 998, 185)
 METER_KEY  = (1006, 159, 1070, 185)     # S units (or signal quality) on the signal bar
 TUNE_DOWN  = (1192, 51, 1314, 83)
 TUNE_UP    = (1328, 51, 1450, 83)
-DIRECT_KEY = (1316, 107, 1384, 133)     # type a frequency on the preset keys
-WIDE_KEY   = (1392, 107, 1450, 133)     # AM filter: Wide
+DIRECT_KEY = (1370, 107, 1450, 133)     # type a frequency on the preset keys
 FINE_DN    = (1192, 107, 1232, 133)     # fine tune: a small nudge down / up
 FINE_UP    = (1240, 107, 1280, 133)
-MODE_BOXES = tuple((1192 + i * 66.5, 159, 1250.5 + i * 66.5, 185) for i in range(4))   # AM FM SSB CW
-BANDINFO_KEY = (1078, 159, 1158, 185)   # the text: band information, or the station's own data
+TUNER_BAND_KEYS = tuple((1192 + i * 66.5, 159, 1250.5 + i * 66.5, 185) for i in range(4))   # FM AM LW SW
 LABEL_Y, LOWER_LABEL_Y, ROW3_LABEL_Y = 43, 99, 151
 
-# Bands layout (base coordinates): the shortwave and amateur keys share one width so their
-# columns line up; LW, MW, FM and Direct sit at the right; three rows under printed headings
-BANDS_H    = 196
-BAND_ROWS  = (44, 98, 152)              # key tops; each heading sits 8 px above its row
-BAND_KEY_H = 30
-BAND_X0, BAND_X1 = 200, 1450
-BAND_W, BAND_GAP, GROUP_GAP = 50, 6, 26
-HEADING_PX = 12.0
+# Bands & Modes layout (base coordinates): a dot-matrix display with ten soft keys under it
+# (the display labels them), group keys, Filter and Squelch at the right, Rev and Tone at the left
+BANDS_H    = 200
+MENU_WIN   = (230, 20, 1150, 128)
+MENU_BOX   = (233, 23, 1147, 125)
+MENU_ROWS, MENU_COLS = 4, 60
+MENU_X0, MENU_ROW_Y = 16, (11, 33, 55, 79)
+SOFT_X0, SOFT_X1, SOFT_Y, N_SOFT = 236, 1144, (146, 172), 10
+GROUP_KEYS = tuple((1192 + c * 88, (51, 91)[r], 1274 + c * 88, (81, 121)[r]) for r in range(2) for c in range(3))
+FILTER_DN, FILTER_UP = (1192, 152, 1250, 178), (1256, 152, 1314, 178)
+SQL_DN, SQL_UP = (1328, 152, 1386, 178), (1392, 152, 1450, 178)
+REV_KEY, TONE_KEY = (30, 107, 100, 133), (108, 107, 178, 133)
 
 # Monitor layout
 RESET_KEY  = (30, 107, 104, 133)

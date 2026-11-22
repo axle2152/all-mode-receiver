@@ -213,19 +213,49 @@ def child(appdir, band, fonts, secs):
         def key_for(fn):
             return next((k for k in app.keys if k.on_press == fn), None)
 
-        def key_for_band(kid):
-            return next((k for k in app.keys if k.latched is not None and k.canvas is app.bcanvas
-                         and app.bandkey != kid and not k.latched() and _is_band_key(k, kid)), None) \
-                or next((k for k in app.keys if k.canvas is app.bcanvas and _is_band_key(k, kid)), None)
+        from radio.ui import bandplan as BP
+        from radio.ui.app import MENU_GROUPS
 
-        def _is_band_key(k, kid):
-            saved, app.bandkey = app.bandkey, kid       # the key whose latch follows this band
-            try:
-                return bool(k.latched and k.latched())
-            finally:
-                app.bandkey = saved
+        class OnTheUnit:
+            """A band (or mode) picked on the Bands & Modes unit, as a person would: its group key,
+            then its soft key, paging with MORE> (or the group key again) until it's there."""
+            def __init__(self, ident, group):
+                self.ident, self.group = ident, group
+
+            @property
+            def _down(self):
+                return self.ident in (app.bandkey, app.mode)
+
+        def key_for_band(kid):
+            return OnTheUnit(kid, BP.band(kid).group)
+
+        def key_on(canvas, legend):
+            return next((k for k in app.keys if k.canvas is canvas and k.legend == legend), None)
+
+        def soft_keys():
+            return [k for k in app.keys if k.canvas is app.bcanvas and k.legend == '' and k.box[1] == 146]
+
+        def pick(ident, group):
+            gk = key_on(app.bcanvas, dict(MENU_GROUPS)[group])
+            if app.menu_group != group:
+                press(gk)
+            for _ in range(3):
+                items = app._menu_items()
+                i = next((i for i, it in enumerate(items) if it[2] == ident), None)
+                if i is not None:
+                    press(soft_keys()[i])
+                    return True
+                press(soft_keys()[len(items) - 1])     # MORE>
+            return False
+
+        def pick_mode(m):
+            return pick(m, 'mode')
 
         def press(k):
+            if isinstance(k, OnTheUnit):
+                if not pick(k.ident, k.group):
+                    mine.append(f'{k.ident}: not found on the {k.group} soft keys')
+                return
             k._press(None)
             k._release(None)
             root.update()
@@ -298,8 +328,8 @@ def child(appdir, band, fonts, secs):
                     mine.append(f'Bands key: shown {app.bands_on}, mapped {app.bcanvas.winfo_ismapped()}, '
                                 f'key down {kbnd._down}')
         kb = {kid: key_for_band(kid) for kid in ('SW41', 'FM', 'MW', 'HAM2', 'AIR', 'CB')}
-        if None in kb.values():
-            mine.append(f'band keys missing: {[k for k, v in kb.items() if v is None]}')
+        if len(soft_keys()) != 10 or None in [key_on(app.bcanvas, g) for _, g in MENU_GROUPS]:
+            mine.append(f'Bands & Modes keys missing: {len(soft_keys())} soft keys')
         else:
             press(kb['SW41'])
             if (app.bandkey, app.band) != ('SW41', 'AM') or not 7.2e6 <= app.freq <= 7.45e6 or not kb['SW41']._down:
@@ -407,32 +437,35 @@ def child(appdir, band, fonts, secs):
             # modes: a mode key switches receiver on the same frequency; a kind not built says so
             press(kb['FM'])
             f0 = app.freq
-            app._mode_key('AM')
+            pick_mode('AM')
             if (app.mode, app.band, round(app.freq)) != ('AM', 'AM', round(f0)):
                 mine.append(f'AM mode on FM: mode {app.mode} on {app.band} at {app.freq / 1e6:g} MHz')
             app._memory()
             app._channel(7)                             # a preset remembers its mode
-            for key, want in (('AM', 'SAM_U'), ('AM', 'SAM_L'), ('SSB', 'USB'), ('SSB', 'LSB'), ('CW', 'CW')):
-                app._mode_key(key)                      # sync AM, SSB and CW: the HF receiver
+            for want in ('SAM_U', 'SAM_L', 'USB', 'LSB', 'CW'):
+                pick_mode(want)                         # sync AM, SSB and CW: the HF receiver
                 if (app.mode, app.band, round(app.freq)) != (want, 'HF', round(f0)):
-                    mine.append(f'{key} key: mode {app.mode} on {app.band} at {app.freq / 1e6:g} MHz (want {want})')
-            app._mode_key('FM')
+                    mine.append(f'{want} soft key: mode {app.mode} on {app.band} at {app.freq / 1e6:g} MHz')
+            pick_mode('FM')
             if (app.mode, app.band) != ('FM', 'FM'):
                 mine.append(f'FM key: mode {app.mode} on {app.band}')
             app._channel(7)
             if (app.mode, app.band, round(app.freq)) != ('AM', 'AM', round(f0)):
                 mine.append(f'preset 7 (stored in AM on FM): mode {app.mode} on {app.band}')
-            # the two text rows: the band, then the mode and filter; Band info
+            # the text: the band on the tuner; the mode and filter on the unit, or with it hidden,
+            # on the tuner's second row
             press(kb['MW'])
             app._dm_msg = None                          # the DIRECT SAMPLING message takes the row a while
-            st = app._vfd_state()
-            if st['rds'][2] != 'MEDIUM WAVE' or not st['line2'].startswith('AM  FILTER') or 'AM' not in st['legends']:
-                mine.append(f"MW text {st['rds']!r} / {st['line2']!r}, legends {sorted(st['legends'])}")
-            info = app.band_info
-            app._toggle_band_info()
-            if app.band_info == info:
-                mine.append('Band info key did nothing on AM')
-            app._toggle_band_info()
+            st, rows = app._vfd_state(), app._menu_state()['rows']
+            if st['rds'][2] != 'MEDIUM WAVE' or st['line2'] or 'AM' not in st['legends'] \
+                    or not rows[0].startswith('MEDIUM WAVE') or 'FILTER' not in rows[0] \
+                    or not rows[2].startswith('FILTER') or not rows[1].startswith('BROADCAST') \
+                    or '530-1710 kHz' not in rows[1]:
+                mine.append(f"MW text {st['rds']!r} / {st['line2']!r}, unit {rows[:3]!r}")
+            app._toggle_bands()
+            if not app._vfd_state()['line2'].startswith('AM  FILTER'):
+                mine.append(f"unit hidden: tuner's second row {app._vfd_state()['line2']!r}")
+            app._toggle_bands()
             # fine tune: off the raster; the next step comes back onto it
             app._tune_to(1080e3)
             app._fine(+1)
@@ -457,7 +490,10 @@ def child(appdir, band, fonts, secs):
 
         # ---- narrow FM: 2 m on its own receiver, Squelch, Rev, Tone, a repeater preset
         nfm = []
-        line2 = lambda: app._vfd_state()['line2']
+        from radio.ui.theme import FILTER_DN, FILTER_UP, SQL_DN, SQL_UP, TONE_KEY
+        line2 = lambda: app._menu_state()['rows'][0]   # the unit's status: band, mode, filter, offset, tone
+        filt = lambda: app._menu_state()['rows'][2]    # the filters on offer, and narrow FM's squelch
+        key_at = lambda box: next((k for k in app.keys if k.box == box), None)
         msg = lambda: (app._dm_msg or ('',))[0]
 
         def nfm_1():
@@ -494,15 +530,16 @@ def child(appdir, band, fonts, secs):
             if app.tsq_hz is not None or 'NO TONE' not in msg():
                 nfm.append(f'Tone with no tone heard: {app.tsq_hz}, message {msg()!r}')
             app._heard = (app.freq, 100.0)              # as if the repeater's tone had been heard
-            st = app._vfd_state()
-            if 'PL 100.0' not in st['line2']:
-                nfm.append(f'tone heard: second row {st["line2"]!r} (want PL 100.0)')
-            app._tone_key()
+            info = app._menu_state()['rows'][1]
+            if 'PL 100.0' not in line2() or 'REPEATER  146.940 out, 146.340 in' not in info \
+                    or 'TONE 100.0 HEARD' not in info:
+                nfm.append(f'tone heard: status {line2()!r}, second row {info!r}')
+            press(key_at(TONE_KEY))
             st = app._vfd_state()
             if (app.tsq_hz, tb.tone_squelch) != (100.0, 100.0) or 'TONE' not in st['legends'] \
-                    or 'TSQ 100.0' not in st['line2']:
+                    or 'TSQ 100.0' not in line2():
                 nfm.append(f'Tone: tone squelch {app.tsq_hz} (receiver {tb.tone_squelch}), legends '
-                           f'{sorted(st["legends"])}, row {st["line2"]!r}')
+                           f'{sorted(st["legends"])}, status {line2()!r}')
             app._memory()
             app._channel(5)
             c = app._band_presets()[4]
@@ -518,21 +555,23 @@ def child(appdir, band, fonts, secs):
             app._apply_mode()
             if (round(app.freq), app.tsq_hz, tb.tone_squelch) != (146940000, 100.0, 100.0):
                 nfm.append(f'preset 5: {app.freq / 1e6:g} MHz, tone squelch {app.tsq_hz} / {tb.tone_squelch}')
-            app._squelch_key()
-            if app.squelch_on or tb.squelch_level != 0 or msg() != 'SQUELCH OFF':
-                nfm.append(f'Squelch key: on {app.squelch_on}, receiver level {tb.squelch_level}, {msg()!r}')
-            app._squelch_key()
+            for _ in range(3):                         # squelch 3 down to off, then up to 1
+                press(key_at(SQL_DN))
+            if app.squelch_on or tb.squelch_level != 0 or 'SQUELCH OFF' not in filt():
+                nfm.append(f'Squelch - to off: on {app.squelch_on}, receiver level {tb.squelch_level}, {filt()!r}')
+            press(key_at(SQL_UP))
+            if (app.squelch_on, tb.squelch_level) != (True, 1) or 'SQUELCH #-------- 1' not in filt():
+                nfm.append(f'Squelch +: on {app.squelch_on}, receiver level {tb.squelch_level}, {filt()!r}')
             app._sql_var.set(5)                         # Settings > Squelch
             app._squelch_level_changed()
             if (app.squelch_on, tb.squelch_level) != (True, 5):
                 nfm.append(f'squelch level 5: on {app.squelch_on}, receiver level {tb.squelch_level}')
             app._sql_var.set(3)
             app._squelch_level_changed()
-            app._mode_key('FM')                         # narrow FM 2.5: no restart
-            if (app.mode, tb.width) != ('NFM2', 'NFM2') or not line2().startswith('FM NARROW 2.5'):
-                nfm.append(f'FM key on narrow FM: mode {app.mode}, receiver {tb.width}, row {line2()!r}')
-            app._mode_key('FM')
-            app._mode_key('FM')
+            press(key_at(FILTER_DN))                   # narrow FM 2.5: no restart
+            if (app.mode, tb.width) != ('NFM2', 'NFM2') or 'FM NARROW 2.5' not in line2() or '[2.5]' not in filt():
+                nfm.append(f'Filter narrower on narrow FM: mode {app.mode}, receiver {tb.width}, {line2()!r}')
+            press(key_at(FILTER_UP))
             app._toggle_advanced()
             root.after(1500, nfm_3)
 
@@ -544,7 +583,7 @@ def child(appdir, band, fonts, secs):
 
         def nfm_end():
             press(kb['MW' if band == 'AM' else 'FM'])
-            app._squelch_key()
+            press(key_at(SQL_UP))
             if 'NARROW FM ONLY' not in msg():
                 nfm.append(f'Squelch key off narrow FM: {msg()!r}')
             problems.extend(nfm)
@@ -582,16 +621,17 @@ def child(appdir, band, fonts, secs):
                 return hf_end()
             if (tb.mode, tb.width) != ('USB', 2700):
                 hf.append(f'the HF receiver started in {tb.mode} at {tb.width} Hz (want USB, 2700)')
-            app._width_key()
-            st = app._vfd_state()
-            if (tb.width, app.hf_widths['USB']) != (3000, 3000) or 'FILTER 3 kHz' not in st['line2']:
-                hf.append(f'Width on USB: receiver {tb.width}, row {st["line2"]!r} (want 3 kHz)')
-            app._width_key()
+            press(key_at(FILTER_UP))
+            if (tb.width, app.hf_widths['USB']) != (3000, 3000) or 'FILTER 3 kHz' not in line2() \
+                    or '[3.0]' not in filt():
+                hf.append(f'Filter wider on USB: receiver {tb.width}, {line2()!r} / {filt()!r} (want 3 kHz)')
+            for _ in range(3):
+                press(key_at(FILTER_DN))
             if tb.width != 1800:
-                hf.append(f'Width again: {tb.width} Hz (want round to 1800)')
-            app._mode_key('SSB')
-            app._mode_key('CW')
-            app._width_key()
+                hf.append(f'Filter narrower three times: {tb.width} Hz (want 1800)')
+            pick_mode('LSB')
+            pick_mode('CW')
+            press(key_at(FILTER_UP))
             if app.tb is not tb or (tb.mode, tb.width) != ('CW', 1000) or 'CW' not in app._vfd_state()['legends']:
                 hf.append(f'SSB then CW and Width, without a restart: {tb.mode} at {tb.width} Hz, '
                           f'same receiver {app.tb is tb}')
@@ -605,8 +645,8 @@ def child(appdir, band, fonts, secs):
             app._tick()
             if (app.mode, tb.mode, tb.width) != ('USB', 'USB', 1800):
                 hf.append(f'back in the phone part: {app.mode} (receiver {tb.mode} at {tb.width} Hz; want USB 1800)')
-            app._mode_key('AM')                        # AM: the AM receiver; again: sync AM, here
-            app._mode_key('AM')
+            pick_mode('AM')                            # AM: the AM receiver; sync AM: here
+            pick_mode('SAM_U')
             if (app.mode, app.band) != ('SAM_U', 'HF') or 'FILTER 4.5 kHz' not in line2():
                 hf.append(f'AM then sync AM: {app.mode} on {app.band}, row {line2()!r}')
             app._toggle_advanced()
@@ -616,28 +656,32 @@ def child(appdir, band, fonts, secs):
             if 'Synchronous AM' not in app._id_var.get() or 'Filter' not in app._rdsd_var.get():
                 hf.append(f'Advanced on sync AM: {app._id_var.get()!r} / {app._rdsd_var.get()[:40]!r}')
             app._toggle_advanced()
-            press(kb['MW'])                            # Width on AM: 8 kHz, 10.2, Wide, back to 2.5
+            press(kb['MW'])                            # the filter on AM: 8 kHz, 10.2, Wide (and no further)
             app.am_normal_hz, app.am_wide = 8000, False
             got = []
-            for _ in range(3):
-                app._width_key()
+            for k in (FILTER_UP, FILTER_UP, FILTER_UP, FILTER_DN):
+                press(key_at(k))
                 got.append('WIDE' if app.am_wide else app.am_normal_hz)
-            if got != [10200, 'WIDE', 2500] or not line2().startswith('AM  FILTER'):
-                hf.append(f'Width on AM from 8 kHz: {got}, row {line2()!r}')
+            app._filter_step(+1, wrap=True)             # W on the keyboard steps round
+            app._filter_step(+1, wrap=True)
+            got.append('WIDE' if app.am_wide else app.am_normal_hz)
+            if got != [10200, 'WIDE', 'WIDE', 10200, 2500] or not line2().startswith('MEDIUM WAVE'):
+                hf.append(f'the filter on AM from 8 kHz: {got}, {line2()!r}')
             app.am_normal_hz = 8000
-            press(kb['FM'])                            # on FM: auto, wide, narrow
+            press(kb['FM'])                            # on FM: narrow, auto, wide
             app.if_mode = 'auto'
             got = []
-            for _ in range(3):
-                app._width_key()
+            for k in (FILTER_UP, FILTER_UP, FILTER_DN, FILTER_DN):
+                press(key_at(k))
                 got.append(app.if_mode)
-            if got != ['wide', 'narrow', 'auto']:
-                hf.append(f'Width on FM: {got}')
+            if got != ['wide', 'wide', 'auto', 'narrow']:
+                hf.append(f'the filter on FM: {got}')
+            app.if_mode = 'auto'
             press(kb['HAM2'])                          # on narrow FM: 5 kHz, then 2.5
-            app._width_key()
+            press(key_at(FILTER_DN))
             if app.mode != 'NFM2':
-                hf.append(f'Width on narrow FM: {app.mode} (want NFM2)')
-            app._width_key()
+                hf.append(f'Filter narrower on narrow FM: {app.mode} (want NFM2)')
+            press(key_at(FILTER_UP))
             with open(os.path.join(appdir, 'quartz_tuner_settings.json')) as f:
                 saved = json.load(f)
             if saved.get('hf_widths', {}).get('CW') != 1000 or saved.get('hf_widths', {}).get('USB') != 1800:
@@ -645,6 +689,27 @@ def child(appdir, band, fonts, secs):
             hf_end()
 
         def hf_end():
+            # the tuner's band keys: FM, AM, LW; SW back to the last shortwave band, again the next
+            tk_ = {l: key_on(app.canvas, l) for l in ('FM', 'AM', 'LW', 'SW')}
+            got = []
+            for l in ('FM', 'AM', 'LW'):
+                press(tk_[l])
+                got.append((app.bandkey, tk_[l]._down))
+            app.last_sw = 'SW41'
+            press(tk_['SW'])
+            got.append((app.bandkey, tk_['SW']._down))
+            press(tk_['SW'])
+            rows = app._menu_state()['rows']
+            got.append((app.bandkey, app.menu_group))
+            if got != [('FM', True), ('MW', True), ('LW', True), ('SW41', True), ('SW31', 'shortwave')] \
+                    or '[31]' not in rows[3]:
+                hf.append(f'the tuner band keys: {got}, soft labels {rows[3]!r}')
+            ka = key_on(app.bcanvas, 'Amateur')        # a long group: its key again shows its next page
+            press(ka)
+            first = app._menu_items()[0][2]
+            press(ka)
+            if (first, app._menu_items()[0][2], app._menu_items()[-1][0]) != ('HAM160', 'HAM10', 'MORE>'):
+                hf.append(f'Amateur key and again: pages start {first}, {app._menu_items()[0][2]}')
             press(kb['MW' if band == 'AM' else 'FM'])
             problems.extend(hf)
             real_print('INFO SSB, CW, sync AM and Width:', 'ok' if not hf else '; '.join(hf))

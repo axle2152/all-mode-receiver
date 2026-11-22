@@ -255,6 +255,21 @@ the monitor, and modes on the tuner.
   (direct sampling below, the tuner above), and says so. Bands that need SSB or CW say NOT YET
   until that receiver exists. Narrow FM's bands play (2 m, 70 cm, marine, weather, FRS/GMRS,
   MURS, public safety), and Squelch joined Rev and Tone on the panel (no room on the tuner).
+  Since replaced by the Bands & Modes unit (next).
+- [x] Bands & Modes (the owner's redesign: the Bands panel was busy, and the FM mode key was
+  easily pressed for the FM band). Version 2 of two mock-ups: the middle unit is a dot-matrix
+  display, 4 lines of 60 characters (radio/ui/vfd.py MenuVfd: the tuner's dots, each character
+  drawn and cached the first time it's shown, so a page takes a third of a second at 4K), with
+  ten soft keys under it that do what its bottom line shows. Group keys (Broadcast, Shortwave,
+  Amateur, Public, Personal, Mode) put a group's bands, or every mode, on the soft keys; a long
+  group pages (MORE>, or its key again), and the group follows the band in use. The display:
+  the band, mode and filter (narrow FM's offset and tone, SSB and CW's step); the band's range
+  and the modes of its parts, or a repeater's input and the tone heard; the filters on offer
+  with the one in use, and narrow FM's squelch; the soft keys' labels. Filter narrower / wider
+  and Squelch - / + at the right (off, then 1 to 9), Rev and Tone at the left. The tuner: band
+  keys FM, AM, LW and SW (the last shortwave band, again the next) where the mode keys were;
+  Width and Band info gone; the tuner's text is the station's own, or the band, and with the
+  unit hidden its second row carries the mode and filter.
 - [x] A band plan behind those keys: each band's edges, default mode, tuning step and filter
   widths, and the parts of a band with a mode of their own. Done (radio/ui/bandplan.py,
   tests/test_bandplan.py), for the Americas; filter widths come with the receivers.
@@ -268,7 +283,8 @@ the monitor, and modes on the tuner.
   Width (where Wide was) steps the mode's filters: AM 2.5, 5, 8, 10.2 kHz then WIDE; FM auto,
   wide, narrow; narrow FM 5 or 2.5 kHz; SSB, CW and sync AM their own (each remembered), shown
   on the second text row. Narrow FM's two kinds, and SSB, CW and sync AM, change without a
-  restart; Squelch is on the Bands panel, its level in Settings.
+  restart; Squelch is on the Bands panel, its level in Settings. Since then the modes are soft
+  keys on Bands & Modes, every kind its own key, and Width its Filter keys.
 - [x] Each band picks its usual mode, and so does tuning into a part of a band with its own: AM
   on medium wave, shortwave and the airband; narrow FM on 2 m, marine and weather; on the
   amateur HF bands LSB below 10 MHz and USB above (20 m is USB), and CW in their CW parts.
@@ -280,7 +296,8 @@ the monitor, and modes on the tuner.
   data (RDS, RBDS, PMDS: a shortwave station could carry PMDS); on modes that can carry no data
   (SSB, CW) it stays on band information. Done: with no station data the text shows the band
   anyway; in the station view the second row has the RDS programme type, else the mode. WIDE
-  left the legends for the text (AM's filter: WIDE, AUTO or its width).
+  left the legends for the text (AM's filter: WIDE, AUTO or its width). Since then Band info is
+  gone: the band information is on the Bands & Modes display.
 - [x] Repeaters: Rev listens on the input, at the band's usual offset (2 m +/-600 kHz, 1.25 m
   -1.6 MHz, 70 cm +/-5 MHz); CTCSS (PL) and DCS decoded and shown, and tone squelch. Done for
   CTCSS: the tone named (any of the 50 standard ones, to a fraction of a hertz, so 67.0 and

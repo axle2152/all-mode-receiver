@@ -60,8 +60,8 @@ It also shows how many data groups arrive each second and how many are lost.
 - **Filter width.** Choose 2.5 kHz (to dig a weak station out of a crowded band), 5 kHz (what
   most AM radios do), 8 kHz (AMAX-class wideband) or 10.2 kHz (everything a US station may
   send). With AUTO on, it narrows by itself on weak stations or when the stations next door get
-  loud; with AUTO off it stays where you put it. The **Width** key steps through them and then
-  opens it to 12 kHz (WIDE). Whenever it's open wide enough to pass the 10 kHz whistle from
+  loud; with AUTO off it stays where you put it. The Filter keys step through them and then
+  open it to 12 kHz (WIDE). Whenever it's open wide enough to pass the 10 kHz whistle from
   neighbouring stations, that whistle is notched out.
 - **NRSC-1 de-emphasis**, to undo the treble boost many US AM stations transmit.
 - **Station data from add-ons.** With an add-on installed that decodes station data on AM
@@ -77,14 +77,14 @@ FRS/GMRS, MURS and public safety.
 - **Squelch**, like a scanner's: the speaker stays quiet until someone transmits, and the noise
   burst at the end of a transmission never reaches the speaker. It judges a signal by how clean
   it is, not how loud, so it works the same whatever the dongle's gain. Pick how weak a station
-  may be and still open it (levels 1 to 9) in Settings.
+  may be and still open it (off, or levels 1 to 9) with its - and + keys.
 - **PL tones (CTCSS).** It names the tone a repeater sends under its audio (PL 100.0, say) and
   keeps that tone out of the speaker. The **Tone** key then plays only the transmissions that
   carry it, so a busy channel shared by several repeaters plays just the one you want.
 - **Rev** listens on a repeater's input, at the band's usual offset (600 kHz on 2 m, 5 MHz on
   70 cm, 1.6 MHz on 1.25 m), to hear whether the other station is close enough to reach directly.
 - **Both widths:** 5 kHz deviation (25 kHz channels) and 2.5 kHz (12.5 kHz channels), played
-  equally loud. The FM key steps between them.
+  equally loud. The Filter keys step between them.
 - **Repeater presets** remember the offset and the tone, and tone squelch if it was on.
 - It follows a dongle's frequency error by itself (AFC), and sets the dongle's gain on its own
   so the S-meter always knows it.
@@ -100,7 +100,7 @@ so switching between them is instant.
 - **Synchronous AM.** It locks to a shortwave or medium wave station's carrier and lets you
   listen to just one sideband, so a station next door that's splattering over one side
   disappears, and the distortion that fading causes on an ordinary AM radio goes away.
-- **Filters** by mode, stepped with the **Width** key: SSB 1.8 to 3 kHz, CW 250 Hz to 2.4 kHz,
+- **Filters** by mode, stepped with the Filter keys: SSB 1.8 to 3 kHz, CW 250 Hz to 2.4 kHz,
   synchronous AM 3 to 8 kHz. Each mode remembers its own.
 - **AGC** like a good communications receiver: it comes down before a loud syllable arrives
   (no thump), holds between words, then recovers. An empty frequency plays its noise well
@@ -108,6 +108,8 @@ so switching between them is instant.
 
 ### The tuner
 
+- FM, AM, LW and SW keys, as on a world-band tuner: SW goes back to the shortwave band you were
+  last on, and pressed again, to the next one.
 - 24 presets on every band, seek, step tuning, direct frequency entry from the keyboard, and
   mouse-wheel tuning.
 - With the band-limit override it tunes anywhere the dongle reaches, 100 kHz to 1766 MHz. It
@@ -143,11 +145,16 @@ so switching between them is instant.
   - an echo profile that shows how far away the reflecting hills or buildings are
   - a 30-second history of signal quality
 - Meters and indicators are delayed to match the sound, so what you see is what you hear.
-- A Bands panel with a key for every band: the shortwave broadcast bands, long wave, medium
-  wave and FM, the amateur bands from 160 m to 23 cm, air, marine, weather, public safety, CB,
-  FRS/GMRS and MURS. Each band remembers where you left it and picks its usual mode. On the
-  channelized bands (CB, FRS/GMRS, weather, MURS, marine) the radio goes channel to channel and
-  shows the channel number, and you can give each a home channel.
+- A **Bands & Modes** unit in the style of 1980s and 90s gear: a dot-matrix display, with a row
+  of keys under it that do whatever the display shows above them. A group key (Broadcast,
+  Shortwave, Amateur, Public, Personal) puts that group's bands on those keys: the shortwave
+  broadcast bands, long wave, medium wave and FM, the amateur bands from 160 m to 23 cm, air,
+  marine, weather, public safety, CB, FRS/GMRS and MURS. The Mode key puts every mode there
+  instead. The display also shows the band's range and modes, the filters on offer (stepped with
+  the Filter keys), and narrow FM's squelch and repeater details. Each band remembers where you
+  left it and picks its usual mode. On the channelized bands (CB, FRS/GMRS, weather, MURS,
+  marine) the radio goes channel to channel and shows the channel number, and you can give each
+  a home channel. Hide the unit, and the tuner and monitor make a plain broadcast radio.
 - Panels that size themselves to your screen, so the lettering stays readable on a laptop, a
   big monitor or a 4K screen (or pick a size in Settings).
 - An Advanced window with the full diagnostics.
@@ -192,8 +199,8 @@ Some useful options; `--help` lists them all:
 | `--record-iq drive.cs8` | FM: record the raw radio signal (about 4.8 MB a second) |
 
 Keyboard: Left and Right tune, Shift+Left and Shift+Right seek, 0 to 9 recall presets, M stores
-one, F and A pick FM and medium wave, O is mono, W is the Width key, P is power, and D or Enter
-starts direct frequency entry.
+one, F and A pick FM and medium wave, O is mono, W steps to the next filter, P is power, and D or
+Enter starts direct frequency entry.
 
 The window looks best with the Nimbus Sans font (`fonts-urw-base35` on Ubuntu, usually already
 installed). Without it, it uses DejaVu or Liberation.

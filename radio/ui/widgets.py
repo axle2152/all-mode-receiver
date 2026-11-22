@@ -25,6 +25,7 @@ class Key:
                  on_press=None, on_release=None, latched=None):
         x0, y0, x1, y1 = box
         self.canvas, self.latched = canvas, latched
+        self.legend, self.box = legend, box            # what it says and where (tests find keys by them)
         self.on_press, self.on_release = on_press, on_release
         self.img_up = ImageTk.PhotoImage(render_key(x1 - x0, y1 - y0, s, legend, False, icon, size))
         self.img_dn = ImageTk.PhotoImage(render_key(x1 - x0, y1 - y0, s, legend, True, icon, size))

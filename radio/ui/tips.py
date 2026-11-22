@@ -21,7 +21,7 @@ def _pty_name(pty):
 TIPS = dict(
     squelch="Narrow FM's squelch keeps the speaker quiet between transmissions. Level 1 opens on a "
             "weak station (4 dB above the noise), 9 only on a strong one (25 dB); 3 suits most "
-            "listening. The Squelch key on the Bands panel turns it on or off.",
+            "listening. Squelch - and + on the Bands & Modes unit set it too (- from 1: off).",
     nfm_quality="How clean the narrow FM station is: how far it quiets the receiver's noise, which "
                 "follows its carrier-to-noise ratio in 12.5 kHz. Above 20 dB is clean.",
     nfm_level="The station's level at the receiver, in dB below full scale.",

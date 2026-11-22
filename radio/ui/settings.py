@@ -188,7 +188,7 @@ class SettingsWindow:
                                variable=self._size_var, width=6, command=self._size_changed, **rb)
             w.pack(side=tk.LEFT, padx=1)
             tips.bind(w, TIPS['ui_size'])
-        r = row(t, 'BANDS PANEL')
+        r = row(t, 'BANDS & MODES')
         self._bands_var = tk.BooleanVar(value=self.bands_on)
         tk.Checkbutton(r, text='Show under the tuner', variable=self._bands_var, command=self._toggle_bands,
                        **cb).pack(side=tk.LEFT)
@@ -387,7 +387,9 @@ class SettingsWindow:
         try:
             if panel == 'tuner':
                 self.vfd.set_colors(self._colors_for('tuner'))
+                self.menu.set_colors(self._colors_for('tuner'))
                 self._refresh_vfd(force=True)
+                self._refresh_menu(force=True)
             elif panel == 'monitor':
                 self.mvfd.set_colors(self._colors_for('monitor'))
                 self._mshown = None
@@ -438,8 +440,9 @@ class SettingsWindow:
         g = float(self._glow_var.get()) / 100.0
         if abs(g - self.glow) < 1e-6:
             return
-        self.glow = self.vfd.glow = self.mvfd.glow = g
+        self.glow = self.vfd.glow = self.mvfd.glow = self.menu.glow = g
         self._refresh_vfd(force=True)
+        self._refresh_menu(force=True)
         self._mshown = None
         self._save_settings()
 

@@ -14,7 +14,7 @@ Owner: Michael Foley, KK4EKN (GitHub axle2152).
   and HF share); `am.py`, `fm/`, `nfm.py` (narrowband FM: squelch, CTCSS, tone squelch) and
   `hf.py` (SSB, CW, synchronous AM, switched without a restart; its AGC in `agc.py`) are the
   receivers (GNU Radio top blocks); `ui/bandplan.py` the bands, modes and filters behind the
-  Bands panel; `meters.py` the read-only metering taps; `addons.py` finds installed add-ons;
+  Bands & Modes unit (a dot-matrix menu display, `vfd.MenuVfd`, with soft keys); `meters.py` the read-only metering taps; `addons.py` finds installed add-ons;
   `ui/` is the window (`app.py` with the Settings and Advanced windows as mixins in
   `settings.py` and `advanced.py`; displays, widgets, artwork, fonts, theme, constants in
   their own modules).

@@ -38,14 +38,15 @@ from .settings import SettingsWindow
 from .tips import _pty_name
 from . import bandplan as BP
 from .theme import (
-    ADV_KEY, BANDINFO_KEY, BANDS_KEY, DIRECT_KEY, FINE_DN, FINE_UP, MODE_BOXES, BAND_GAP, BAND_KEY_H, BAND_ROWS, BAND_W, BAND_X0, BAND_X1, BANDS_H, BASE_H, BASE_W,
-    COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, GROUP_GAP, HEADING_PX,
+    ADV_KEY, BANDS_KEY, DIRECT_KEY, FINE_DN, FINE_UP, TUNER_BAND_KEYS, BANDS_H, BASE_H, BASE_W,
+    COLOR_DEFAULTS, COLOR_PANEL, CRT_BOX, CRT_WIN, FILTER_DN, FILTER_UP, GROUP_KEYS, MENU_BOX, MENU_COLS,
+    MENU_WIN, N_SOFT, REV_KEY, SOFT_X0, SOFT_X1, SOFT_Y, SQL_DN, SQL_UP, TONE_KEY,
     DOT_FIELDS, ECHO_KEY, FREEZE_KEY, HOLD_KEY, IF_KEY, KEY_PX, LABEL_PX, LABEL_Y, LINE2_N, LIP,
     LOWER_LABEL_Y, MEM_KEY, METER_KEY, MONITOR_KEY, MONO_KEY, MPX_KEY, PAD_GAP, PAD_PX, PAD_ROWS,
     PAD_W, PAD_X, POWER_KEY, PPM_KEY, PRINT, PRINT_SOFT, RACK_GAP, RESET_KEY, ROW3_LABEL_Y,
     SCALE_Y, SET_KEY, SIG_BOT, SIG_H1, SIG_PITCH, SIG_X, SMALL_PX, SPEC_AVG, SS, TUNE_DOWN,
-    TUNE_UP, VFD_BOX, VU_KEY, WELL, WIDE_KEY, WIN)
-from .vfd import MonitorVfd, TunerVfd
+    TUNE_UP, VFD_BOX, VU_KEY, WELL, WIN)
+from .vfd import MenuVfd, MonitorVfd, TunerVfd
 from .widgets import Key
 
 
@@ -54,6 +55,20 @@ FREQ_ATTR = {'AM': 'am_freq', 'FM': 'fm_freq', 'NFM': 'nfm_freq', 'HF': 'hf_freq
 FAMILY_MODE = {'AM': 'AM', 'FM': 'FM', 'NFM': 'NFM', 'HF': 'USB'}
 RX_CLASS = {'AM': AMReceiver, 'FM': FMStereoReceiver, 'NFM': NFMReceiver, 'HF': HFReceiver}
 NO_MOD = ('USB', 'LSB', 'CW')                   # modes with no modulation to measure
+
+# The Bands & Modes unit: its group keys, and the soft keys' labels where a band's own won't do
+MENU_GROUPS = (('broadcast', 'Broadcast'), ('shortwave', 'Shortwave'), ('amateur', 'Amateur'),
+               ('public', 'Public'), ('personal', 'Personal'), ('mode', 'Mode'))
+MENU_LABEL = {'AIR': 'AIR', 'MARINE': 'MARINE', 'WX': 'WX', 'PUBLIC': 'POLICE', 'FRS': 'FRS', 'MURS': 'MURS'}
+MODE_SOFT = (('AM', 'AM'), ('SAM_U', 'SAM U'), ('SAM_L', 'SAM L'), ('FM', 'FM'), ('NFM', 'NFM'),
+             ('NFM2', 'NFM N'), ('USB', 'USB'), ('LSB', 'LSB'), ('CW', 'CW'))
+GROUP_INFO = {'broadcast': 'long wave, medium wave (AM) and FM',
+              'shortwave': 'the broadcast bands, 120 m to 11 m, in AM',
+              'amateur': '160 m to 23 cm, each part in its usual mode',
+              'public': 'air (AM), marine, NOAA weather, police and fire',
+              'personal': 'CB (AM), FRS/GMRS and MURS',
+              'mode': 'SAM: synchronous AM, one sideband   NFM N: 2.5 kHz'}
+TUNER_BANDS = (('FM', 'FM'), ('AM', 'MW'), ('LW', 'LW'), ('SW', None))   # the tuner's band keys
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +113,11 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._home_ask_until = 0.0
         self.bandkey = self._start_band_key(saved.get('bandkey'))
         self.mode = self._start_mode(saved.get('mode'))
-        self.band_info = bool(saved.get('band_info', False))   # the text: band information, not the station's
+        self.last_sw = saved.get('last_sw', 'SW31')    # the tuner's SW key goes back to it
+        self.menu_group = saved.get('menu_group') or BP.band(self.bandkey).group   # what the soft keys pick
+        self.menu_page = self._page_of(self.menu_group)
+        self._menu_band = self.bandkey
+        self._menu_shown = None
         self.squelch_on = bool(saved.get('squelch', True))      # narrow FM: the Squelch key...
         self.squelch_level = saved.get('squelch_level', SQUELCH_DEFAULT)   # ...and Settings' level
         self.tsq_hz, self._tsq_freq = None, None        # tone squelch: its tone, and the channel it's for
@@ -293,7 +312,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             out['presets'] = {key: [self._parse_channel(c) for c in lst]
                               for key, lst in raw['presets'].items()
                               if key in BP.BY_KEY and isinstance(lst, list) and len(lst) == N_CHANNELS}
-        for key in ('fm_mono', 'power', 'agc', 'monitor', 'bands', 'band_info', 'peak_hold', 'squelch'):
+        for key in ('fm_mono', 'power', 'agc', 'monitor', 'bands', 'peak_hold', 'squelch'):
             if isinstance(raw.get(key), bool):
                 out[key] = raw[key]
         for key, name in (('stereo_blend', 'blend'), ('hi_cut', 'hicut'), ('dip_hicut', 'dip_hicut'),
@@ -356,6 +375,10 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             out['ui_size'] = v
         if raw.get('bandkey') in BP.BY_KEY:
             out['bandkey'] = raw['bandkey']
+        if raw.get('last_sw') in BP.BY_KEY and BP.band(raw['last_sw']).group == 'shortwave':
+            out['last_sw'] = raw['last_sw']
+        if raw.get('menu_group') in dict(MENU_GROUPS):
+            out['menu_group'] = raw['menu_group']
         if isinstance(raw.get('home_channels'), dict):
             out['home_channels'] = {key: float(v) for key, v in raw['home_channels'].items()
                                     if key in BP.BY_KEY and num(v) and BP.channel_at(BP.band(key), v)}
@@ -464,7 +487,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             'ui_size': self.ui_size,
             'bandkey': self.bandkey,
             'mode': self.mode,
-            'band_info': bool(self.band_info),
+            'last_sw': self.last_sw,
+            'menu_group': self.menu_group,
             'home_channels': {key: round(v, 1) for key, v in self.home_channels.items()},
             'channel_steps': bool(self.channel_steps),
             'band_key_goes': self.band_key_goes,
@@ -657,7 +681,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             tb.set_stereo_system(self.am_stereo)
         if tb.has('blankers'):
             tb.set_blankers(impulse=self.am_ib, noise=self.am_nb)
-        self._apply_mode(tb)
+        self._mode_applied = None                      # a new receiver: send it all (a new one can
+        self._apply_mode(tb)                           # reuse a gone one's id, so never assume)
 
     def _nfm_width(self):
         return self.mode if self.mode in ('NFM', 'NFM2') else 'NFM'
@@ -743,6 +768,10 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self.crt = Crt(s)
         self.crt.set_colors(self._colors_for('screen'))
         self.crt_item = mc.create_image(round(CRT_BOX[0] * s), round(CRT_BOX[1] * s), anchor='nw')
+        self.menu = MenuVfd(s, self._colors_for('tuner'))
+        self.menu.glow = self.glow
+        self.menu_item = bc.create_image(round(MENU_BOX[0] * s), round(MENU_BOX[1] * s), anchor='nw')
+        self._menu_shown = None
 
         self.keys = []
         K = lambda cv, *a, **kw: self.keys.append(Key(cv, *a, s=s, **kw)) or self.keys[-1]
@@ -770,24 +799,23 @@ class TunerApp(SettingsWindow, AdvancedWindow):
           on_press=lambda: self._tune_press(+1), on_release=self._tune_release)
         K(c, FINE_DN, icon='left', size=KEY_PX, on_press=lambda: self._fine(-1))
         K(c, FINE_UP, icon='right', size=KEY_PX, on_press=lambda: self._fine(+1))
-        for box, key in zip(MODE_BOXES, BP.MODE_KEYS):
-            K(c, box, legend=key, size=KEY_PX, on_press=lambda key=key: self._mode_key(key),
-              latched=lambda key=key: BP.MODE_KEY.get(self.mode) == key)
-        K(c, BANDINFO_KEY, legend='Band info', size=KEY_PX - 1, on_press=self._toggle_band_info,
-          latched=lambda: self.band_info or self.mode not in BP.DATA_MODES)
+        for box, (label, _) in zip(TUNER_BAND_KEYS, TUNER_BANDS):
+            K(c, box, legend=label, size=KEY_PX, on_press=lambda l=label: self._tuner_band(l),
+              latched=lambda l=label: self._tuner_band_lit(l))
         K(c, DIRECT_KEY, legend='Direct', size=KEY_PX, on_press=self._direct_toggle,
           latched=lambda: self._direct is not None)
-        K(c, WIDE_KEY, legend='Width', size=KEY_PX, on_press=self._width_key)
-        nfm_keys = {'SQL': (self._squelch_key, lambda: self.squelch_on and self.band == 'NFM'),
-                    'REV': (self._rev_key, lambda: self.rev_from is not None),
-                    'TONE': (self._tone_key, lambda: self.tsq_hz is not None)}
-        for kid, label, box in self._band_layout()[0]:
-            if kid in nfm_keys:
-                fn, lit = nfm_keys[kid]
-                K(bc, box, legend=label, size=KEY_PX, on_press=fn, latched=lit)
-            else:
-                K(bc, box, legend=label, size=KEY_PX, on_press=lambda kid=kid: self._band_key(kid),
-                  latched=lambda kid=kid: self.bandkey == kid)
+        # the Bands & Modes unit
+        for i, box in enumerate(self._soft_boxes()):
+            K(bc, box, on_press=lambda i=i: self._soft(i))
+        for box, (gid, label) in zip(GROUP_KEYS, MENU_GROUPS):
+            K(bc, box, legend=label, size=KEY_PX - 1, on_press=lambda g=gid: self._menu_group_key(g),
+              latched=lambda g=gid: self.menu_group == g)
+        K(bc, FILTER_DN, icon='left', size=KEY_PX, on_press=lambda: self._filter_step(-1))
+        K(bc, FILTER_UP, icon='right', size=KEY_PX, on_press=lambda: self._filter_step(+1))
+        K(bc, SQL_DN, legend='-', size=KEY_PX + 3, on_press=lambda: self._squelch_step(-1))
+        K(bc, SQL_UP, legend='+', size=KEY_PX + 3, on_press=lambda: self._squelch_step(+1))
+        K(bc, REV_KEY, legend='Rev', size=KEY_PX, on_press=self._rev_key, latched=lambda: self.rev_from is not None)
+        K(bc, TONE_KEY, legend='Tone', size=KEY_PX, on_press=self._tone_key, latched=lambda: self.tsq_hz is not None)
 
         K(mc, RESET_KEY, legend='Reset', size=KEY_PX, on_press=self._mon_reset)
         K(mc, PPM_KEY, legend='PPM', size=KEY_PX, on_press=lambda: self._set_meter_mode('ppm'),
@@ -816,12 +844,13 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             r.bind(str(n), lambda e, n=n: self._digit(n))
         for ch, fn in (('m', self._memory), ('f', lambda: self._band_key('FM')),
                        ('a', lambda: self._band_key('MW')), ('o', self._toggle_mono),
-                       ('w', self._width_key), ('p', self._toggle_power),
+                       ('w', lambda: self._filter_step(+1, wrap=True)), ('p', self._toggle_power),
                        ('d', self._direct_toggle), ('i', self._addon_window),
                        ('s', self._meter_toggle)):
             r.bind(ch, lambda e, fn=fn: fn())
             r.bind(ch.upper(), lambda e, fn=fn: fn())
         self._refresh_vfd(force=True)
+        self._refresh_menu(force=True)
 
     def _colors_for(self, panel):
         return {k: v for k, v in self.colors.items() if COLOR_PANEL.get(k) == panel}
@@ -836,7 +865,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             plate = brushed_plate(W, H, seed=seed).convert('RGBA')
             art = Image.new('RGBA', (round(BASE_W * s * SS), round(bh * s * SS)), (0, 0, 0, 0))
             d = ImageDraw.Draw(art)
-            {'tuner': self._draw_tuner_panel, 'bands': self._draw_bands_panel,
+            {'tuner': self._draw_tuner_panel, 'bands': self._draw_menu_panel,
              'monitor': self._draw_monitor_panel}[kind](d)
             plate.alpha_composite(art.resize((W, H), Image.LANCZOS))
             ph = ImageTk.PhotoImage(plate)
@@ -874,7 +903,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._nameplate(d, self.badge)
         self._draw_bezel(d, WIN)
         boxes = [POWER_KEY, BANDS_KEY, MONITOR_KEY, ADV_KEY, SET_KEY, MEM_KEY, MONO_KEY, METER_KEY,
-                 BANDINFO_KEY, TUNE_DOWN, TUNE_UP, FINE_DN, FINE_UP, DIRECT_KEY, WIDE_KEY] + list(MODE_BOXES)
+                 TUNE_DOWN, TUNE_UP, FINE_DN, FINE_UP, DIRECT_KEY] + list(TUNER_BAND_KEYS)
         for i in range(10):
             row, col = divmod(i, 5)
             xa = PAD_X + col * (PAD_W + PAD_GAP)
@@ -886,49 +915,34 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                            (PAD_X, LABEL_Y, 'Presets 1-24'),
                            (MONO_KEY[0], ROW3_LABEL_Y, 'Stereo'), (METER_KEY[0], ROW3_LABEL_Y, 'Display'),
                            (TUNE_DOWN[0], LABEL_Y, 'Tuning'), (FINE_DN[0], LOWER_LABEL_Y, 'Fine tune'),
-                           (MODE_BOXES[0][0], ROW3_LABEL_Y, 'Mode'),
-                           (DIRECT_KEY[0], LOWER_LABEL_Y, 'Frequency'),
-                           (WIDE_KEY[0], LOWER_LABEL_Y, 'Filter')):
+                           (TUNER_BAND_KEYS[0][0], ROW3_LABEL_Y, 'Band'),
+                           (DIRECT_KEY[0], LOWER_LABEL_Y, 'Frequency')):
             draw_text(d, x * k, y * k, text, lab, PRINT)
         draw_text(d, pad_r * k, LABEL_Y * k, 'To store: Memory, then channel', small, PRINT_SOFT, align='r')
         draw_text(d, TUNE_UP[2] * k, LABEL_Y * k, 'Tap for manual, hold for auto', small,
                   PRINT_SOFT, align='r')
-        draw_text(d, TUNE_UP[2] * k, ROW3_LABEL_Y * k, 'Press again for the next kind', small,
+        draw_text(d, TUNE_UP[2] * k, ROW3_LABEL_Y * k, 'SW again: the next band', small,
                   PRINT_SOFT, align='r')
 
-    def _band_layout(self):
-        """The Bands panel: (keys as (id, legend, box), headings as (x, y, text)). The shortwave
-        and amateur keys share one width, so their columns line up under each other."""
-        f = font('key', KEY_PX)
-        wide = lambda t: max(BAND_W, round(text_width(t, f)) + 22)
-        keys, heads = [], []
-        y0, y1, y2 = BAND_ROWS
+    @staticmethod
+    def _soft_boxes():
+        """The ten keys under the Bands & Modes display."""
+        gap = 8
+        w = (SOFT_X1 - SOFT_X0 - gap * (N_SOFT - 1)) / N_SOFT
+        return [(SOFT_X0 + i * (w + gap), SOFT_Y[0], SOFT_X0 + i * (w + gap) + w, SOFT_Y[1]) for i in range(N_SOFT)]
 
-        def run(x, y, items, title, width=None):
-            heads.append((x, y - 8, title))
-            for kid, label in items:
-                w = width or wide(label)
-                keys.append((kid, label, (x, y, x + w, y + BAND_KEY_H)))
-                x += w + BAND_GAP
-            return x - BAND_GAP
-        group = lambda g: [(b.key, b.label) for b in BP.BANDS if b.group == g]
-        run(BAND_X0, y0, group('shortwave'), BP.GROUPS['shortwave'][0], BAND_W)
-        bc = group('broadcast')
-        run(BAND_X1 - sum(wide(l) for _, l in bc) - BAND_GAP * (len(bc) - 1), y0, bc, BP.GROUPS['broadcast'][0])
-        run(BAND_X0, y1, group('amateur'), BP.GROUPS['amateur'][0], BAND_W)
-        x = run(BAND_X0, y2, group('public'), BP.GROUPS['public'][0]) + GROUP_GAP
-        x = run(x, y2, group('personal'), BP.GROUPS['personal'][0]) + GROUP_GAP
-        run(x, y2, [('SQL', 'Squelch'), ('REV', 'Rev'), ('TONE', 'Tone')], 'NARROW FM')
-        return keys, heads
-
-    def _draw_bands_panel(self, d):
+    def _draw_menu_panel(self, d):
         k = self.s * SS
-        keys, heads = self._band_layout()
-        self._nameplate(d, 'Bands')
-        self._draw_wells(d, [box for _, _, box in keys])
-        hf = font('badge', HEADING_PX * k)
-        for x, y, text in heads:
-            draw_text(d, x * k, y * k, text, hf, PRINT, tracking=0.8 * k)
+        lab, small = font('label', LABEL_PX * k), font('label', SMALL_PX * k)
+        self._nameplate(d, 'Bands & Modes')
+        self._draw_bezel(d, MENU_WIN)
+        self._draw_wells(d, self._soft_boxes() + list(GROUP_KEYS)
+                         + [FILTER_DN, FILTER_UP, SQL_DN, SQL_UP, REV_KEY, TONE_KEY])
+        for x, y, text in ((REV_KEY[0], LOWER_LABEL_Y, 'Repeater'), (GROUP_KEYS[0][0], LABEL_Y, 'Bands'),
+                           (FILTER_DN[0], FILTER_DN[1] - 8, 'Filter'), (SQL_DN[0], SQL_DN[1] - 8, 'Squelch')):
+            draw_text(d, x * k, y * k, text, lab, PRINT)
+        draw_text(d, SOFT_X1 * k, (SOFT_Y[1] + 20) * k, 'The keys under the display do what it shows above them',
+                  small, PRINT_SOFT, align='r')
 
     def _draw_monitor_panel(self, d):
         k = self.s * SS
@@ -1014,14 +1028,9 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         """A receiver for this mode is built (and could be loaded)."""
         return RX_CLASS.get(BP.MODE_RX.get(mode)) is not None
 
-    def _mode_key(self, key):
-        """AM, FM, SSB, CW: that mode, or pressed again, its next kind (AM: synchronous on USB or
-        LSB; FM: broadcast, narrow, narrow 2.5; SSB: USB, LSB)."""
-        if not self.power_on:
-            return
-        kinds = BP.KEY_MODES[key]
-        mode = kinds[(kinds.index(self.mode) + 1) % len(kinds)] if BP.MODE_KEY.get(self.mode) == key else kinds[0]
-        if mode == self.mode:
+    def _set_mode(self, mode):
+        """A Mode soft key: that mode on the frequency you're on (changing receiver if it must)."""
+        if not self.power_on or mode == self.mode:
             return
         if not self._rx_ok(mode):
             self._message(f'{BP.MODE_TEXT[mode]} NOT YET')
@@ -1033,6 +1042,20 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._save_settings()
         self._refresh_keys()
 
+    def _tuner_band(self, label):
+        """The tuner's band keys: FM, AM (medium wave), LW; SW goes back to the shortwave band you
+        were last on, and pressed on shortwave, to the next one."""
+        key = dict(TUNER_BANDS)[label]
+        if label == 'SW':
+            sw = [b.key for b in BP.BANDS if b.group == 'shortwave']
+            key = sw[(sw.index(self.bandkey) + 1) % len(sw)] if self.bandkey in sw else \
+                (self.last_sw if self.last_sw in sw else sw[0])
+        self._band_key(key)
+
+    def _tuner_band_lit(self, label):
+        key = dict(TUNER_BANDS)[label]
+        return BP.band(self.bandkey).group == 'shortwave' if key is None else self.bandkey == key
+
     def _fine(self, direction):
         """Fine tune: a small nudge off the band's raster (AM 100 Hz, SSB and CW 10 Hz...)."""
         if not self.power_on:
@@ -1040,16 +1063,6 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         self._seek_cancel()
         self._memory_until = 0.0
         self._tune_to(self.freq + direction * BP.FINE_STEP[self.mode], snap=False)
-
-    def _toggle_band_info(self):
-        """Band info: the text shows the band and mode, not the station's own data. Modes that can
-        carry no data (SSB, CW, narrow FM) show band information only."""
-        if self.mode not in BP.DATA_MODES:
-            self._message(f'{BP.MODE_TEXT[self.mode]}: NO STATION DATA')
-            return
-        self.band_info = not self.band_info
-        self._refresh_keys()
-        self._save_settings()
 
     def _band_for_family(self, freq, family, prefer=None):
         """The band freq falls in that the receiver `family` ('AM', 'FM') plays in its usual mode:
@@ -1105,6 +1118,8 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             return False
         self.band_freqs = self._band_freqs_now()
         self.bandkey = key
+        if b.group == 'shortwave':
+            self.last_sw = key
         self.mode = mode
         if rx != self.band:
             self._switch_family(rx, freq, snap=not exact)
@@ -1786,10 +1801,11 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         return None, 'OUT OF RANGE'
 
     def _text_lines(self, tb, station):
-        """The dot matrix's two rows: the station's own data (RDS, RBDS, PMDS) when it sends some,
-        Band info is up and the mode can carry it; otherwise the band, then the mode and filter."""
-        detail = self._mode_detail()
-        if any(f.strip() for f in station) and not self.band_info and self.mode in BP.DATA_MODES:
+        """The tuner's two text rows: the station's own data (RDS, RBDS, PMDS) and its programme
+        type when it sends some; otherwise the band. The mode and filter are on the Bands & Modes
+        display; with that unit hidden, the second row shows them instead."""
+        detail = '' if self.bands_on else self._mode_detail()
+        if any(f.strip() for f in station) and self.mode in BP.DATA_MODES:
             pty = getattr(tb, 'rds_pty', None)
             return station, (_pty_name(pty).upper() if pty else detail)
         b = self._plan()
@@ -1832,44 +1848,222 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             return f'FILTER {w / 1000:g} kHz' if w >= 1000 else f'FILTER {w} Hz'
         return ''                                      # narrow FM: the mode says it
 
-    def _width_key(self):
-        """Width: the next filter for the mode in use. AM: 2.5, 5, 8, 10.2 kHz, then Wide (12 kHz,
-        with the 10 kHz notch); FM: auto, wide, narrow; narrow FM: 5 or 2.5 kHz deviation; SSB,
-        CW and sync AM: their filters (BP.FILTERS)."""
+    def _filter_choices(self):
+        """(the filters the mode in use offers, narrowest first, and the one in use)."""
+        if self.band == 'AM':
+            return list(AM_WIDTHS) + ['WIDE'], 'WIDE' if self.am_wide else self.am_normal_hz
+        if self.band == 'FM':
+            return ['narrow', 'auto', 'wide'], self.if_mode
+        if self.band == 'NFM':
+            return ['NFM2', 'NFM'], self._nfm_width()
+        m = self._hf_mode()
+        return list(BP.FILTERS[m]), self.hf_widths[m]
+
+    def _filter_step(self, direction, wrap=False):
+        """Filter narrower (-1) or wider (+1): AM 2.5, 5, 8, 10.2 kHz, then Wide (12 kHz, with the
+        10 kHz notch); FM narrow, auto, wide; narrow FM 2.5 or 5 kHz; SSB, CW and sync AM their
+        own (BP.FILTERS). W on the keyboard steps round."""
         if not self.power_on:
             return
-        tb = self.tb
+        choices, cur = self._filter_choices()
+        i = choices.index(cur) if cur in choices else len(choices) - 1
+        i = (i + direction) % len(choices) if wrap else min(max(i + direction, 0), len(choices) - 1)
+        new, tb = choices[i], self.tb
         if self.band == 'AM':
-            if self.am_wide:
-                self.am_wide, self.am_normal_hz = False, AM_WIDTHS[0]
-            elif self.am_normal_hz in AM_WIDTHS and self.am_normal_hz != AM_WIDTHS[-1]:
-                self.am_normal_hz = AM_WIDTHS[AM_WIDTHS.index(self.am_normal_hz) + 1]
-            else:
-                self.am_wide = True
+            self.am_wide = new == 'WIDE'
+            if not self.am_wide:
+                self.am_normal_hz = new
             if tb is not None and tb.has('am_width'):
                 tb.set_auto_ceiling(self.am_normal_hz)
                 tb.set_wide(self.am_wide)
             if getattr(self, '_amw_var', None) is not None:
                 self._amw_var.set(self.am_normal_hz)
         elif self.band == 'FM':
-            order = ('auto', 'wide', 'narrow')
-            self.if_mode = order[(order.index(self.if_mode) + 1) % 3] if self.if_mode in order else 'auto'
+            self.if_mode = new
             if tb is not None and tb.has('fm_bandwidth'):
                 tb.set_if_mode(self.if_mode)
             if getattr(self, '_if_var', None) is not None:
                 self._if_var.set(self.if_mode)
         elif self.band == 'NFM':
-            self.mode = 'NFM2' if self.mode == 'NFM' else 'NFM'
-            self._apply_mode()
+            self.mode = new
         else:
-            m = self._hf_mode()
-            ws = BP.FILTERS[m]
-            cur = self.hf_widths[m]
-            self.hf_widths[m] = ws[(ws.index(cur) + 1) % len(ws)] if cur in ws else BP.DEFAULT_FILTER[m]
-            self._apply_mode()
-        self._message(self._filter_text() or BP.MODE_TEXT[self.mode])
+            self.hf_widths[self._hf_mode()] = new
+        self._apply_mode()
+        if not self.bands_on:                          # with the unit hidden, say it on the tuner
+            self._message(self._filter_text() or BP.MODE_TEXT[self.mode])
         self._refresh_keys()
         self._save_settings()
+
+    def _squelch_step(self, direction):
+        """Squelch - / +: narrow FM's squelch off, then levels 1 to 9 (Settings > Reception too)."""
+        if not self.power_on:
+            return
+        if self.band != 'NFM':
+            self._message('SQUELCH: NARROW FM ONLY')
+            return
+        level = self.squelch_level if self.squelch_on else 0
+        level = min(max(level + direction, 0), 9)
+        self.squelch_on = level > 0
+        if level:
+            self.squelch_level = level
+        if getattr(self, '_sql_var', None) is not None:
+            self._sql_var.set(self.squelch_level)
+        if not self.bands_on:
+            self._message(f'SQUELCH {level}' if level else 'SQUELCH OFF')
+        self._apply_mode()
+        self._save_settings()
+
+    # ---- the Bands & Modes display
+    def _page_of(self, group):
+        """The page of a long group (shortwave, amateur) the band in use is on."""
+        keys = [b.key for b in BP.BANDS if b.group == group]
+        if len(keys) <= N_SOFT or self.bandkey not in keys:
+            return 0
+        return keys.index(self.bandkey) // (N_SOFT - 1)
+
+    def _menu_items(self):
+        """What the soft keys do now: [(label, action, the band or mode it picks)] for the group
+        shown; a long group's pages end in MORE>."""
+        g = self.menu_group
+        if g == 'mode':
+            return [(lab, (lambda m=m: self._set_mode(m)), m) for m, lab in MODE_SOFT]
+        items = [(MENU_LABEL.get(b.key, b.label), (lambda key=b.key: self._band_key(key)), b.key)
+                 for b in BP.BANDS if b.group == g]
+        if len(items) <= N_SOFT:
+            return items
+        per = N_SOFT - 1
+        pages = [items[i:i + per] for i in range(0, len(items), per)]
+        self.menu_page %= len(pages)
+        return pages[self.menu_page] + [('MORE>', self._menu_more, None)]
+
+    def _menu_more(self):
+        self.menu_page += 1
+
+    def _soft(self, i):
+        """A key under the display: what the display shows above it."""
+        if not self.power_on:
+            return
+        items = self._menu_items()
+        if i < len(items):
+            items[i][1]()
+        self._refresh_keys()
+        self._refresh_menu()
+
+    def _menu_group_key(self, group):
+        """A group key: its bands (or the modes) on the soft keys; pressed again, a long group's
+        next page."""
+        if not self.power_on:
+            return
+        if self.menu_group == group:
+            self.menu_page += 1
+        else:
+            self.menu_group, self.menu_page = group, self._page_of(group)
+        self._menu_band = self.bandkey                 # chosen now: the band's own group can wait
+        self._refresh_keys()
+        self._refresh_menu()
+        self._save_settings()
+
+    @staticmethod
+    def _fit_row(parts, n=MENU_COLS):
+        """Parts on one display row: two spaces between them, one if it's tight, then cut."""
+        for sep in ('   ', '  ', ' '):
+            text = sep.join(p for p in parts if p)
+            if len(text) <= n:
+                return text
+        return text[:n]
+
+    @staticmethod
+    def _in_khz(b):
+        """Long, medium and shortwave broadcast read in kHz; amateur and the rest in MHz."""
+        return b.hi < 1.8e6 or b.group == 'shortwave'
+
+    def _range_text(self, b):
+        lo, hi, _, _ = BP.range_for(b, self._out_freq())
+        if self._in_khz(b):
+            return f'{lo / 1e3:g}-{hi / 1e3:g} kHz'
+        return f'{lo / 1e6:.3f}-{hi / 1e6:.3f} MHz'
+
+    def _menu_info(self):
+        """The second row: about the band in use (its range and modes, or a repeater's input and
+        tone), or the group shown, or the modes."""
+        g, b, out = self.menu_group, self._plan(), self._out_freq()
+        title = dict(MENU_GROUPS)[g].upper()
+        if g == 'mode':
+            return f'MODE   {GROUP_INFO["mode"]}'
+        off = self._offset_here() if self.band == 'NFM' else 0
+        if off:
+            tone = self._known_tone()
+            return self._fit_row([f'REPEATER  {out / 1e6:.3f} out, {(out + off) / 1e6:.3f} in',
+                                  f'TONE {tone:.1f} HEARD' if tone else ''])
+        if g != b.group:
+            return self._fit_row([title, GROUP_INFO[g]])
+        if b.channels:
+            what = [f'{len(b.channels)} CHANNELS', BP.MODE_TEXT.get(b.mode, '')]
+            home = self.home_channels.get(b.key)
+            if home is not None:
+                what.append(f'HOME CH {BP.channel_at(b, home)}')
+            return self._fit_row([title, self._range_text(b)] + what)
+        fmt = (lambda f: f'{f / 1e3:g}') if self._in_khz(b) else (lambda f: f'{f / 1e6:.3f}')
+        modes = ([BP.MODE_TEXT[b.mode]] if b.mode else []) + [f'{BP.MODE_TEXT[m]} {fmt(lo)}-{fmt(hi)}'
+                                                             for lo, hi, m in b.parts]
+        return self._fit_row([title, self._range_text(b), '; '.join(modes)])
+
+    def _menu_filter_row(self):
+        """The third row: the filters on offer, the one in use in brackets; narrow FM's squelch."""
+        choices, cur = self._filter_choices()
+        if self.band == 'AM':
+            lab, unit = (lambda c: 'WIDE' if c == 'WIDE' else f'{c / 1000:g}'), ''
+        elif self.band == 'FM':
+            lab, unit = (lambda c: c.upper()), ''
+        elif self.band == 'NFM':
+            lab, unit = (lambda c: '2.5' if c == 'NFM2' else '5'), ' kHz'
+        elif max(choices) >= 1000 and min(choices) >= 1000:
+            lab, unit = (lambda c: f'{c / 1000:.1f}'), ' kHz'
+        else:
+            lab, unit = (lambda c: f'{c}'), ' Hz'
+        item = lambda c: f'[{lab(c)}]' if c == cur else f' {lab(c)} '
+        if self.band == 'AM':                          # the widths in kHz, then Wide
+            text = 'FILTER ' + ''.join(item(c) for c in choices[:-1]) + ' kHz ' + item('WIDE') \
+                + ('  AUTO' if self.am_auto_width else '')
+        else:
+            text = 'FILTER ' + ''.join(item(c) for c in choices) + unit
+        if self.band == 'NFM':
+            level = self.squelch_level if self.squelch_on else 0
+            sql = f"SQUELCH {'#' * level}{'-' * (9 - level)} {level}" if level else 'SQUELCH OFF'
+            text = text.ljust(MENU_COLS - len(sql)) + sql
+        return text[:MENU_COLS]
+
+    def _menu_state(self):
+        """The Bands & Modes display: where you are, about it, the filter, the soft keys' labels."""
+        if not self.power_on:
+            return None
+        if time.monotonic() < self._lamp_until:
+            return {'all': True}
+        if self.bandkey != self._menu_band:           # the band changed: its group comes up
+            self._menu_band = self.bandkey
+            if self.menu_group != 'mode':
+                self.menu_group = BP.band(self.bandkey).group
+                self.menu_page = self._page_of(self.menu_group)
+        b, out = self._plan(), self._out_freq()
+        name = BP.display_name(b, out) if BP.in_band(b, out) else 'OUT OF BAND'
+        step = BP.MODE_STEP.get(self.mode)
+        status = self._fit_row([name, self._mode_detail(), f'STEP {step} Hz' if step else ''])
+        here = self.mode if self.menu_group == 'mode' else self.bandkey
+        w = MENU_COLS // N_SOFT
+        labels = ''
+        for lab, _, ident in self._menu_items():
+            mark = (f'[{lab}]' if len(lab) <= w - 2 else f'>{lab}') if ident == here else lab
+            labels += mark[:w].center(w)
+        return {'rows': [status, self._menu_info(), self._menu_filter_row(), labels]}
+
+    def _refresh_menu(self, force=False):
+        st = self._menu_state()
+        key = self._state_key(st)
+        if not force and key == self._menu_shown:
+            return
+        self._menu_shown = key
+        self._menu_img = ImageTk.PhotoImage(self.menu.render(st))
+        self.bcanvas.itemconfig(self.menu_item, image=self._menu_img)
 
     # ---- narrow FM: squelch, repeaters, tones
     def _out_freq(self):
@@ -1910,19 +2104,6 @@ class TunerApp(SettingsWindow, AdvancedWindow):
         if self._here is not None and self._here.get('tone'):
             return self._here['tone']
         return None
-
-    def _squelch_key(self):
-        """Squelch (Bands panel): narrow FM's squelch on or off; its level is in Settings."""
-        if not self.power_on:
-            return
-        if self.band != 'NFM':
-            self._message('SQUELCH: NARROW FM ONLY')
-            return
-        self.squelch_on = not self.squelch_on
-        self._message(f'SQUELCH {self.squelch_level}' if self.squelch_on else 'SQUELCH OFF')
-        self._apply_mode()
-        self._refresh_keys()
-        self._save_settings()
 
     def _rev_key(self):
         """Rev: listen on the repeater's input (its output plus the offset), and back."""
@@ -2390,6 +2571,10 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             self._refresh_vfd()
         except Exception as e:
             self._report('tuner display', e)
+        try:
+            self._refresh_menu()
+        except Exception as e:
+            self._report('Bands & Modes display', e)
         try:
             self._monitor_step(now)
         except Exception as e:
