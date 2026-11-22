@@ -17,6 +17,7 @@ into the real NFMReceiver with a silent sound card that keeps what it was sent. 
   - CTCSS: the tone named (100.0, and 67.0 not taken for its neighbour 69.3), none when there's
     none; tone squelch plays the right tone and stays shut on another
   - 2.5 kHz deviation ('NFM2') plays as loud as 5 kHz
+  - the audio reaches the sound card steadily, not in lumps (that left it short: "aU")
 
 If GNU Radio isn't installed, it says so and stops.
 """
@@ -139,7 +140,9 @@ def play(x, cnr_db=30.0, secs=None, width='NFM', squelch=3, tone_sq=None, watch=
     seen, errors = [], []
     rx.start()
     t0 = time.monotonic()
+    flow = []
     while time.monotonic() - t0 < secs:
+        flow.append((time.monotonic() - t0, rx.audio_sink.left.nitems_read(0)))
         try:
             rx.update_blend()
         except Exception as e:
@@ -151,7 +154,21 @@ def play(x, cnr_db=30.0, secs=None, width='NFM', squelch=3, tone_sq=None, watch=
     rx.wait()
     rx.errors = errors
     rx.secs = time.monotonic() - t0
+    rx.steady_ms = steadiness_ms(flow)
     return rx, np.asarray(rx.audio_sink.left.data()), seen
+
+
+def steadiness_ms(flow, rate=48000, after=1.0):
+    """How much buffering the sound card would need for this flow of samples: the peak-to-peak
+    lead or lag of what arrived against a steady rate (the dongle's own lumps not included).
+    FFT filters in the audio path once made it a quarter of a second, and with the dongle's
+    lumps the sound card ran dry ("aU")."""
+    t = np.array([f[0] for f in flow if f[0] > after])
+    n = np.array([f[1] for f in flow if f[0] > after], float)
+    if len(t) < 10:
+        return float('inf')
+    lead = n - rate * t
+    return float(lead.max() - lead.min()) / rate * 1e3
 
 
 def tone_db(a, hz, fs=FS):
@@ -201,6 +218,7 @@ def main():
     check('CTCSS kept out of the audio', ct < -45, f'{ct:.0f} dB re the tone')
     mon = rx.monitor()
     check('meters see the audio', bool(mon and mon['audio']['blocks']), f"{len(mon['audio']['blocks']) if mon else 0} blocks")
+    check('the audio flows steadily (under 45 ms of lumps)', rx.steady_ms < 45, f'{rx.steady_ms:.0f} ms')
 
     for c in (10.0, 20.0):
         rx, _, _ = play(station(3.5, ctcss=None), cnr_db=c, squelch=0)

@@ -112,6 +112,12 @@ compares the sessions both have). For the window, compare screenshots of the old
 
 ## Careful with
 
+- The audio path must flow steadily. An FFT filter passes samples on in lumps of its FFT size
+  less its taps (4501 taps at 48 kHz: a quarter of a second), and the RTL already delivers in
+  136 ms transfers at 960 ksps; lumps much over AM's 64 ms leave the sound card short ("aU"
+  under the window). Use plain FIR filters at a decimated rate in audio paths, and give a
+  Python block 10 ms a call (`set_output_multiple`), or a plain FIR upstream has it called
+  hundreds of times a second. `test_nfm.py` and `test_hf.py` check the flow.
 - HD Radio (NRSC-5) and AMBE/IMBE voice (D-STAR, DMR, System Fusion, NXDN, P25): the owner has
   patent and licensing concerns. Don't add decoders for them without the owner's go-ahead;
   identifying the system and reading header data is fine.

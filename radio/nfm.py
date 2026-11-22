@@ -16,7 +16,10 @@ Signal chain (960 ksps from the RTL -> 48 kHz complex channel)
   audio         de-emphasis (750 us, 0 dB at 1 kHz: the 6 dB/octave pre-emphasis land-mobile
                 and amateur transmitters use), then 300 Hz to 3 kHz, steep at the bottom so
                 the CTCSS tone (67 to 254 Hz) stays out of the speaker, then the squelch gate,
-                volume and the same bass / treble as the other receivers
+                volume and the same bass / treble as the other receivers. The voice filter
+                runs at 12 kHz as a plain FIR, so the audio flows on steadily: as an FFT
+                filter at 48 kHz it came in quarter-second lumps, and the sound card ran dry
+                ("aU") between them
   squelch       noise squelch, as in a scanner: the discriminator's noise just above the voice
                 band, against what it gives with no signal at all (worked out at start for the
                 filters in use). That "quieting" follows the carrier-to-noise ratio in 12.5 kHz
@@ -92,7 +95,10 @@ class NFMReceiver(TunerGain, Receiver):
     DEEMPH_US        = 750.0
     AUDIO_LO_HZ      = 300.0        # -6 dB here; the CTCSS tones are 70 dB down
     AUDIO_HI_HZ      = 3000.0
-    VOICE_TAPS       = 4501         # 47 ms at 48 kHz: steep enough below 300 Hz
+    VOICE_DECIM      = 4            # the voice filter runs at 12 kHz...
+    VOICE_TAPS       = 1125         # ...47 ms long: steep enough below 300 Hz
+    RESAMPLE_TAPS    = 63           # down to 12 kHz and back: flat to 3.4 kHz, 70 dB from 9 kHz
+    RESAMPLE_HZ      = 6000.0
     NFM_AUDIO_GAIN   = 0.5          # full deviation at 1 kHz -> half the sound card's range
     GATE_S           = 0.003        # the squelch gate's ramp
 
@@ -147,12 +153,16 @@ class NFMReceiver(TunerGain, Receiver):
         g = abs(1 - p * complex(math.cos(w1), -math.sin(w1))) / (1 - p)   # 0 dB at 1 kHz
         self.norm = blocks.multiply_const_ff(1.0)        # kHz -> 1.0 = full deviation
         self.deemph = filter.iir_filter_ffd([g * (1 - p)], [1.0, -p], False)
-        self.voice = filter.fft_filter_fff(1, _floats(_kaiser_bp(self.AUDIO_LO_HZ, self.AUDIO_HI_HZ, self.ch_rate,
+        vr = self.ch_rate // self.VOICE_DECIM
+        lp = _kaiser_lp(self.RESAMPLE_HZ, self.ch_rate, self.RESAMPLE_TAPS)
+        self.voice_dn = filter.fir_filter_fff(self.VOICE_DECIM, _floats(lp))
+        self.voice = filter.fir_filter_fff(1, _floats(_kaiser_bp(self.AUDIO_LO_HZ, self.AUDIO_HI_HZ, vr,
                                                                   self.VOICE_TAPS)))
+        self.voice_up = filter.interp_fir_filter_fff(self.VOICE_DECIM, _floats(lp * self.VOICE_DECIM))
         self.gate_src = analog.sig_source_f(self.ch_rate, analog.GR_CONST_WAVE, 0, 0.0, 0.0)
         self.gate_ramp = filter.single_pole_iir_filter_ff(1 - math.exp(-1.0 / (self.GATE_S * self.ch_rate)))
         self.gate = blocks.multiply_ff(1)
-        c(self.demod, self.norm, self.deemph, self.voice, (self.gate, 0))
+        c(self.demod, self.norm, self.deemph, self.voice_dn, self.voice, self.voice_up, (self.gate, 0))
         c(self.gate_src, self.gate_ramp, (self.gate, 1))
         self._out_gain, self._muted = (1.0, 1.0), False
         hr = 10 ** (-self._tone_atten_db(0, 0) / 20)
@@ -199,7 +209,7 @@ class NFMReceiver(TunerGain, Receiver):
         c(self.if_filter, self.snap_if_vec, self.snap_if)
         self.snap_aud_vec = blocks.stream_to_vector(gr.sizeof_float, 4096)
         self.snap_aud = blocks.probe_signal_vf(4096)
-        c(self.voice, self.snap_aud_vec, self.snap_aud)
+        c(self.voice_up, self.snap_aud_vec, self.snap_aud)
         self.WB_N = 4096
         self.snap_wb_vec = blocks.stream_to_vector(gr.sizeof_gr_complex, self.WB_N)
         self.snap_wb_keep = blocks.keep_one_in_n(gr.sizeof_gr_complex * self.WB_N,
@@ -223,6 +233,8 @@ class NFMReceiver(TunerGain, Receiver):
                 c(self.gate, k1, k2, (self.audio_meter, idx + 2))
             self.mod_meter = rx_meters.ModMeterBlock(scale=1.0, over_pos=5.0, over_neg=5.0)
             c(self.demod, self.mod_meter)
+            for m in (self.audio_meter, self.mod_meter):    # 10 ms a call: Python costs per call
+                m.set_output_multiple(self.ch_rate // 100)
 
         # ---------------- state ----------------
         self.width = None

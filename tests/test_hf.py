@@ -17,6 +17,7 @@ silent sound card that keeps what it was sent:
     runs, without a restart
   - the AGC: a strong carrier keyed on comes out without overshoot; an empty channel plays
     its noise about 20 dB under a station
+  - the audio reaches the sound card steadily, not in lumps (that left it short: "aU")
 
 If GNU Radio isn't installed, it says so and stops.
 """
@@ -132,11 +133,12 @@ def play(x, mode, width=None, n0=1e-12, actions=(), watch=()):
     todo, seen, errors = sorted(actions, key=lambda a: a[0]), [], []
     rx.start()
     t0 = time.monotonic()
-    marks = []
+    marks, flow = [], []
     while time.monotonic() - t0 < secs:
         now = time.monotonic() - t0
+        flow.append((now, rx.audio_sink.left.nitems_read(0)))
         while todo and now >= todo[0][0]:
-            marks.append((now, rx.audio_sink.left.nitems_read(0) if False else len(rx.audio_sink.left.data())))
+            marks.append((now, rx.audio_sink.left.nitems_read(0)))
             todo.pop(0)[1](rx)
         try:
             rx.update_blend()
@@ -148,7 +150,21 @@ def play(x, mode, width=None, n0=1e-12, actions=(), watch=()):
     rx.stop()
     rx.wait()
     rx.errors, rx.secs, rx.marks = errors, time.monotonic() - t0, marks
+    rx.steady_ms = steadiness_ms(flow)
     return rx, np.asarray(rx.audio_sink.left.data()), seen
+
+
+def steadiness_ms(flow, rate=48000, after=1.0):
+    """How much buffering the sound card would need for this flow of samples: the peak-to-peak
+    lead or lag of what arrived against a steady rate (the dongle's own lumps not included).
+    FFT filters in the audio path once made it a quarter of a second, and with the dongle's
+    lumps the sound card ran dry ("aU")."""
+    t = np.array([f[0] for f in flow if f[0] > after])
+    n = np.array([f[1] for f in flow if f[0] > after], float)
+    if len(t) < 10:
+        return float('inf')
+    lead = n - rate * t
+    return float(lead.max() - lead.min()) / rate * 1e3
 
 
 def level_db(a, hz):
@@ -187,6 +203,7 @@ def main():
     check('samples from the dongle', abs(rate_in / rx.samp_rate - 1) < 0.1, f'{rate_in / 1e3:.0f}k a second')
     check('samples to the sound card', abs(len(a) / rx.secs / FS - 1) < 0.1, f'{len(a) / rx.secs / 1e3:.1f}k a second')
     check('updates run without errors', not rx.errors, rx.errors[0] if rx.errors else 'none')
+    check('the audio flows steadily (under 45 ms of lumps)', rx.steady_ms < 45, f'{rx.steady_ms:.0f} ms')
     s = a[-2 * FS:]
     check('the tone comes out at 1000 Hz', abs(peak_hz(s) - 1000) < 5, f'{peak_hz(s):.0f} Hz')
     got = level_db(s, 1000)
@@ -219,6 +236,8 @@ def main():
     for mode, hears in (('SAM_U', False), ('SAM_L', True)):
         rx, a, _ = play(st, mode, n0=n0_for(0.05, 45, 10e3))
         s = a[-2 * FS:]
+        if mode == 'SAM_U':
+            check('sync AM: the audio flows steadily', rx.steady_ms < 45, f'{rx.steady_ms:.0f} ms')
         tone_ = level_db(s, 1100)
         intf = level_db(s, 2500) - tone_
         check(f'{mode}: carrier found and locked', rx.locked and abs(rx.carrier_hz - 30) < 3,

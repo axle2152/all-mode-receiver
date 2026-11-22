@@ -25,8 +25,12 @@ Signal chain (960 ksps from the RTL -> 48 kHz complex channel)
   AGC           radio/agc.py: look-ahead attack, hang and decay by mode; its ceiling comes from
                 the channel's noise floor, so an empty frequency plays its noise NOISE_BELOW_DB
                 under a station
-  audio         the real part, a DC block (the carrier, on sync AM), then the same volume and
-                bass / treble as the other receivers
+  audio         the real part, a DC block (the carrier, on sync AM), up to 48 kHz, then the
+                same volume and bass / treble as the other receivers
+
+The detector, filter and AGC run at 24 kHz (DET_RATE) with plain FIR filters, so the audio
+flows on steadily: as FFT filters at 48 kHz they passed it on in 30 to 50 ms lumps, which with
+the dongle's own (136 ms at 960 ksps) left the sound card short now and then ("aU").
 
 Quality figure: the signal-to-noise ratio in the passband (the filter's output power against
 the channel's noise floor across that width; the floor is a low percentile of the channel
@@ -79,11 +83,14 @@ class HFReceiver(TunerGain, Receiver):
     SSB_LOW_HZ       = 300.0        # voice starts this far from the carrier (200 Hz at 3 kHz wide)
     CW_PITCH         = 600.0        # the tone a CW signal tuned on the dial plays at
     SAM_EDGE_HZ      = 50.0         # sync AM's filter reaches this far past the carrier
-    SB_TAPS          = 1535         # about 150 Hz from pass to stop (80 dB)
+    DET_DECIM        = 2            # the detector runs at 24 kHz
+    SB_TAPS          = 769          # about 150 Hz from pass to stop (80 dB), at 24 kHz
+    RESAMPLE_TAPS    = 47           # 48 -> 24 kHz and back: flat to 9 kHz, 70 dB from 15 kHz
+    RESAMPLE_HZ      = 12000.0
     PLL_BW_HZ        = 25.0
     PLL_RANGE_HZ     = 300.0
     CARRIER_HZ       = 150.0        # the PLL hears the carrier alone: +/-150 Hz around it
-    CARRIER_TAPS     = 721
+    CARRIER_TAPS     = 361          # at 24 kHz
 
     # ---- AGC: (hang s, decay dB/s) by mode ----
     AGC_REF          = 0.5
@@ -108,6 +115,7 @@ class HFReceiver(TunerGain, Receiver):
             self.UPCONVERTER_HZ = float(upconverter_hz)
         self.freq = freq
         self.samp_rate, self.ch_rate = self.SAMP_RATE, self.CH_RATE
+        self.det_rate = self.CH_RATE // self.DET_DECIM
         self.audio_rate = self.mpx_rate = self.CH_RATE
         c = self.connect
 
@@ -132,32 +140,37 @@ class HFReceiver(TunerGain, Receiver):
         self.rot = blocks.rotator_cc(0.0)               # sync AM's coarse carrier correction
         c(self.src, self.xlate, self.dec2, self.rot)
 
-        # ---------------- detectors: straight (SSB, CW) or carrier-locked (sync AM) ----------------
+        # ---------------- detectors: straight (SSB, CW) or carrier-locked (sync AM), at 24 kHz ----------------
+        rs = _kaiser_lp(self.RESAMPLE_HZ, self.ch_rate, self.RESAMPLE_TAPS)
+        self.dec3 = filter.fir_filter_ccf(self.DET_DECIM, [float(v) for v in rs])
+        c(self.rot, self.dec3)
         self.sel_d = blocks.multiply_const_cc(1.0)
-        self.car_lp = filter.fft_filter_ccc(1, [complex(v) for v in _kaiser_lp(self.CARRIER_HZ, self.ch_rate,
-                                                                                  self.CARRIER_TAPS)])
-        w = 2 * math.pi / self.ch_rate
+        self.car_lp = filter.fir_filter_ccf(1, [float(v) for v in _kaiser_lp(self.CARRIER_HZ, self.det_rate,
+                                                                              self.CARRIER_TAPS)])
+        w = 2 * math.pi / self.det_rate
         self.pll = analog.pll_refout_cc(w * self.PLL_BW_HZ, w * self.PLL_RANGE_HZ, -w * self.PLL_RANGE_HZ)
         self.sam_dly = blocks.delay(gr.sizeof_gr_complex, (self.CARRIER_TAPS - 1) // 2)
         self.sam = blocks.multiply_conjugate_cc(1)      # the channel turned by the carrier's phase
         self.sel_s = blocks.multiply_const_cc(0.0)
         self.det = blocks.add_cc(1)
-        c(self.rot, self.sel_d, (self.det, 0))
-        c(self.rot, self.car_lp, self.pll, (self.sam, 1))
-        c(self.rot, self.sam_dly, (self.sam, 0))
+        c(self.dec3, self.sel_d, (self.det, 0))
+        c(self.dec3, self.car_lp, self.pll, (self.sam, 1))
+        c(self.dec3, self.sam_dly, (self.sam, 0))
         c(self.sam, self.sel_s, (self.det, 1))
         self.bfo = blocks.rotator_cc(0.0)               # CW: the carrier up to the pitch
-        self.sb = filter.fft_filter_ccc(1, [1.0 + 0j])
-        self.agc = AGCBlock(self.ch_rate, ref=self.AGC_REF, max_gain=1e3)
+        self.sb = filter.fir_filter_ccc(1, [1.0 + 0j])
+        self.agc = AGCBlock(self.det_rate, ref=self.AGC_REF, max_gain=1e3)
+        self.agc.set_output_multiple(self.det_rate // 100)   # 10 ms a call: Python costs per call
         c(self.det, self.bfo, self.sb, self.agc)
 
         # ---------------- audio ----------------
-        self.dc_lp = filter.single_pole_iir_filter_ff(1 - math.exp(-2 * math.pi * 30.0 / self.ch_rate))
+        self.dc_lp = filter.single_pole_iir_filter_ff(1 - math.exp(-2 * math.pi * 30.0 / self.det_rate))
         self.dc_hp = blocks.sub_ff(1)
         self.post = blocks.multiply_const_ff(1.0)
+        self.up = filter.interp_fir_filter_fff(self.DET_DECIM, [float(v) for v in rs * self.DET_DECIM])
         c(self.agc, (self.dc_hp, 0))
         c(self.agc, self.dc_lp, (self.dc_hp, 1))
-        c(self.dc_hp, self.post)
+        c(self.dc_hp, self.post, self.up)
         self._out_gain, self._muted, self._ready = (1.0, 1.0), False, False
         hr = 10 ** (-self._tone_atten_db(0, 0) / 20)
         self.audio_sink = self._make_audio_sink(self.audio_rate, audio_device)
@@ -165,11 +178,11 @@ class HFReceiver(TunerGain, Receiver):
             vol = blocks.multiply_const_ff(0.0)
             setattr(self, f"vol_{ch}", vol)
             self._make_tone(ch, hr)
-            c(self.post, vol)
+            c(self.up, vol)
             self._connect_tone(vol, ch, idx)
 
         # ---------------- measurements ----------------
-        self._win = self.ch_rate // 50                   # 20 ms
+        self._win = self.det_rate // 50                  # 20 ms
         self.sb_mag = blocks.complex_to_mag_squared(1)   # power in the passband
         self.sb_int = blocks.integrate_ff(self._win)
         self.sb_probe = blocks.probe_signal_f()
@@ -183,7 +196,7 @@ class HFReceiver(TunerGain, Receiver):
         c(self.sb, self.snap_sb_vec, self.snap_sb)
         self.snap_aud_vec = blocks.stream_to_vector(gr.sizeof_float, 4096)
         self.snap_aud = blocks.probe_signal_vf(4096)
-        c(self.post, self.snap_aud_vec, self.snap_aud)
+        c(self.up, self.snap_aud_vec, self.snap_aud)
         self.WB_N = 4096
         self.snap_wb_vec = blocks.stream_to_vector(gr.sizeof_gr_complex, self.WB_N)
         self.snap_wb_keep = blocks.keep_one_in_n(gr.sizeof_gr_complex * self.WB_N,
@@ -203,10 +216,10 @@ class HFReceiver(TunerGain, Receiver):
                 k2 = filter.iir_filter_ffd(kb2, ka2, False)
                 setattr(self, f"kw1_{ch}", k1)
                 setattr(self, f"kw2_{ch}", k2)
-                c(self.post, (self.audio_meter, idx))
-                c(self.post, k1, k2, (self.audio_meter, idx + 2))
+                c(self.up, (self.audio_meter, idx))
+                c(self.up, k1, k2, (self.audio_meter, idx + 2))
             self.env = blocks.complex_to_mag(1)
-            self.env_car = filter.single_pole_iir_filter_ff(1 - math.exp(-1.0 / (0.25 * self.ch_rate)))
+            self.env_car = filter.single_pole_iir_filter_ff(1 - math.exp(-1.0 / (0.25 * self.det_rate)))
             self.env_floor = blocks.add_const_ff(1e-9)
             self.env_norm = blocks.divide_ff(1)
             self.env_m1 = blocks.add_const_ff(-1.0)
@@ -215,6 +228,8 @@ class HFReceiver(TunerGain, Receiver):
             c(self.env, (self.env_norm, 0))
             c(self.env, self.env_car, self.env_floor, (self.env_norm, 1))
             c(self.env_norm, self.env_m1, self.mod_meter)
+            self.audio_meter.set_output_multiple(self.audio_rate // 100)   # 10 ms a call, as the AGC
+            self.mod_meter.set_output_multiple(self.det_rate // 100)
 
         # ---------------- state ----------------
         self.mode, self.width = None, None
@@ -284,7 +299,7 @@ class HFReceiver(TunerGain, Receiver):
                 self.mode = mode
                 self.sel_d.set_k(0.0 if sam else 1.0)
                 self.sel_s.set_k(1.0 if sam else 0.0)
-                self.bfo.set_phase_inc(2 * math.pi * self.CW_PITCH / self.ch_rate if mode == 'CW' else 0.0)
+                self.bfo.set_phase_inc(2 * math.pi * self.CW_PITCH / self.det_rate if mode == 'CW' else 0.0)
                 self.post.set_k(self.SAM_GAIN if sam else 1.0)
                 self.agc.core.set_speed(*self.AGC_SPEED[mode])
                 if not sam:                              # the coarse correction is sync AM's alone
@@ -304,7 +319,7 @@ class HFReceiver(TunerGain, Receiver):
                 return
             self.width = hz
             lo, hi = self.passband()
-            self.sb.set_taps([complex(v) for v in _band_taps(lo, hi, self.ch_rate, self.SB_TAPS)])
+            self.sb.set_taps([complex(v) for v in _band_taps(lo, hi, self.det_rate, self.SB_TAPS)])
             self.bw = float(hz)
             self.if_khz = hz / 1e3
 
@@ -339,7 +354,7 @@ class HFReceiver(TunerGain, Receiver):
             return None
         try:
             played = self.audio_sink.nitems_read(0)
-            tap = self.post.nitems_written(0)
+            tap = self.up.nitems_written(0)
             front = self.xlate.nitems_written(0) * self.audio_rate / (self.samp_rate / self.DECIM1)
         except Exception:
             return None
