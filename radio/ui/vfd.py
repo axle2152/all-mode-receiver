@@ -11,14 +11,16 @@ from .art import SEGMENTS, down2d, glass_layers, segment_polys
 from .constants import (
     BLOOM_A1, BLOOM_A2, BLOOM_A3, BLOOM_R1, BLOOM_R2, BLOOM_R3, GLOW_DEFAULT, SIG_STEPS,
     _ASSET_DIR)
-from .fonts import draw_text, font
+from .fonts import draw_text, font, text_width
 from .theme import (
     ALWAYS_LIT, CH_H, CH_LABEL_X, CH_T, CH_TOP, CH_W, CH_X, COLOR_DEFAULTS, DIG_H, DIG_SLANT,
     DIG_T, DIG_TOP, DIG_W, DIG_X, DOT_BLUR, DOT_FIELDS, DOT_PITCH, DOT_SIZE, DOT_TOP, DP_GAP,
     DP_SIZE, FINE_H, FINE_T, FINE_TOP, FINE_W, FINE_X, GLASS_EDGE, GLASS_MID, KHZ_Y, LEGENDS,
     LEG_Y, MB_ROWS, MB_SCALE, MB_SEGS, MB_X0, MB_X1, MHZ_Y, MON_STATS, NUMS, NUM_H, NUM_PITCH,
     NUM_T, NUM_W, PHOSPHOR, Q_SCALE, SCALES, SCALE_Y, SIG_BOT, SIG_H0, SIG_H1, SIG_PITCH,
-    SIG_RISE, SIG_W, SIG_X, SS, STAT_Y, S_SCALE, UNCAL_Y, UNIT_X, VFD_BOX, ghost_of, rgb_of)
+    SIG_RISE, SIG_W, SIG_X, SS, STAT_Y, S_SCALE, UNCAL_Y, UNIT_X, VFD_BOX, ghost_of, rgb_of,
+    LEG_PX, LINE2_N, LINE2_TOP, LINE2_X, MON_LAB_PX, MON_SMALL_PX, SCALE_PX, UNIT_PX,
+    MENU_BOX, MENU_COLS, MENU_ROWS, MENU_ROW_Y, MENU_X0)
 
 
 # 5x7 dot-matrix characters (the Delco's table)
@@ -142,13 +144,16 @@ class VfdBase:
             base += layer[..., None] * ghost_of(self._col.get(g, PHOSPHOR))
         self.base = base
         self._delta = {}
-        for key, (y, x, shape, under, cover) in self._raw.items():
-            if shape.size == 0:
-                self._delta[key] = (y, x, np.zeros((0, 0, 3), np.float32))
-                continue
-            ghost = ghost_of(self._col.get(self._group(key), PHOSPHOR))
-            self._delta[key] = (y, x, (shape[..., None] * self._colour(key) - under
-                                       - cover[..., None] * ghost).astype(np.float32))
+        for key in self._raw:
+            self._delta[key] = self._delta_for(key)
+
+    def _delta_for(self, key):
+        """What lighting this element adds to the unlit tube, in its colour."""
+        y, x, shape, under, cover = self._raw_for(key)
+        if shape.size == 0:
+            return (y, x, np.zeros((0, 0, 3), np.float32))
+        ghost = ghost_of(self._col.get(self._group(key), PHOSPHOR))
+        return (y, x, (shape[..., None] * self._colour(key) - under - cover[..., None] * ghost).astype(np.float32))
 
     # subclasses provide these
     def _setup(self):
@@ -228,9 +233,13 @@ class TunerVfd(VfdBase):
 
     def _setup(self):
         k = self.k
-        self.leg_font = font('vfd', 9.5 * k)
-        self.unit_font = font('vfd', 11.5 * k)
-        self.scale_font = font('vfd', 8.0 * k)
+        self.leg_font = font('vfd', LEG_PX * k)
+        self.unit_font = font('vfd', UNIT_PX * k)
+        self.scale_font = font('vfd', SCALE_PX * k)
+        px = SCALE_PX - 1                               # +20 +40 +60: three wide labels 21 px apart,
+        while px > 8 and text_width('+40', font('vfd', px * k)) / k > 2 * SIG_PITCH - 3:
+            px -= 0.5                                   # so smaller in a wide font (DejaVu)
+        self.plus_font = font('vfd', px * k)
         self.digit_masks = self._load_digit_images()
 
     def _load_digit_images(self):
@@ -251,7 +260,7 @@ class TunerVfd(VfdBase):
         return im.convert('L')
 
     def _digit_keys(self, slot, ch, ghost=False):
-        avail = 'abcdeg' if slot == ('ch', 0) else 'abcdefg'
+        avail = 'abcdefg'                             # both CH digits whole: CB runs to 40, marine to 88
         if self.digit_masks and avail == 'abcdefg':
             c = 'ghost' if ghost else ch
             return [('img',) + slot + (c,)] if c in self.digit_masks else []
@@ -266,6 +275,7 @@ class TunerVfd(VfdBase):
         for slot in self.DIGIT_SLOTS:
             keys += self._digit_keys(slot, '8', ghost)
         keys += [('dot', f, c, r, k) for f, _, n in DOT_FIELDS for c in range(n) for r in range(7) for k in range(5)]
+        keys += [('dot', 'l2', c, r, k) for c in range(LINE2_N) for r in range(7) for k in range(5)]
         return keys
 
     def _blur_for(self, key):
@@ -286,7 +296,7 @@ class TunerVfd(VfdBase):
         if kind == 'bar':
             return 'signal'
         if kind == 'dot':
-            return 'rds_' + key[1]
+            return 'rds_rt' if key[1] == 'l2' else 'rds_' + key[1]     # the second row: RadioText's colour
         return None
 
     @staticmethod
@@ -327,6 +337,7 @@ class TunerVfd(VfdBase):
             keys += self._digit_keys(('ch', i), c)
         for (field, _, n), text in zip(DOT_FIELDS, st.get('rds', ('', '', ''))):
             keys += self._dot_keys(field, text[:n])
+        keys += self._dot_keys('l2', st.get('line2', '')[:LINE2_N])
         return keys
 
     def _draw_element(self, d, img, key):
@@ -334,9 +345,9 @@ class TunerVfd(VfdBase):
         kind = key[0]
         if kind == 'dot':
             _, field, c, r, col = key
-            fx = dict((f, x) for f, x, _ in DOT_FIELDS)[field]
+            fx = LINE2_X if field == 'l2' else dict((f, x) for f, x, _ in DOT_FIELDS)[field]
             x = fx + (c * 6 + col) * DOT_PITCH
-            y = DOT_TOP + r * DOT_PITCH
+            y = (LINE2_TOP if field == 'l2' else DOT_TOP) + r * DOT_PITCH
             d.rectangle([x * k, y * k, (x + DOT_SIZE) * k, (y + DOT_SIZE) * k], fill=255)
             return
         if kind == 'leg':
@@ -354,7 +365,8 @@ class TunerVfd(VfdBase):
             elif key == ('stxt', 'S'):
                 draw_text(d, (SIG_X - 4) * k, SCALE_Y * k, 'S', self.scale_font, 255, align='r')
             elif kind == 'stxt':
-                draw_text(d, mid(dict(S_SCALE)[key[1]]), SCALE_Y * k, key[1], self.scale_font, 255, align='m')
+                f = self.plus_font if key[1].startswith('+') else self.scale_font
+                draw_text(d, mid(dict(S_SCALE)[key[1]]), SCALE_Y * k, key[1], f, 255, align='m')
             else:
                 draw_text(d, mid(dict(Q_SCALE)[key[1]]), SCALE_Y * k, key[1], self.scale_font, 255,
                           align='m', tracking=0.5 * k)
@@ -387,8 +399,8 @@ class MonitorVfd(VfdBase):
 
     def _setup(self):
         k = self.k
-        self.lab_font = font('vfd', 8 * k)
-        self.small_font = font('vfd', 7 * k)
+        self.lab_font = font('vfd', MON_LAB_PX * k)
+        self.small_font = font('vfd', MON_SMALL_PX * k)
         self.pitch = (MB_X1 - MB_X0) / MB_SEGS
 
     @staticmethod
@@ -487,3 +499,52 @@ class MonitorVfd(VfdBase):
                 else:
                     y = top + 7 if key[2] == units[0] else top + NUM_H
                 draw_text(d, ux * k, y * k, key[2], self.small_font, 255, tracking=0.3 * k)
+
+
+class MenuVfd(VfdBase):
+    """The Bands & Modes display: MENU_ROWS lines of MENU_COLS 5x7 characters, the same dots as the
+    tuner's text. st = {'rows': [text, ...]}. Each character in each place is drawn (and its glow
+    worked out) the first time it's shown, then kept: a 4 x 60 tube of single dots would take
+    tens of seconds to prepare at 4K, and a page only ever shows a few hundred of them."""
+    BOX = MENU_BOX
+    SEED = 5
+    FULL = '\x7f'                       # every dot of a cell (the unlit tube's ghost)
+
+    def _all_keys(self, ghost=False):
+        if ghost:
+            return [('cell', r, c, self.FULL) for r in range(MENU_ROWS) for c in range(MENU_COLS)]
+        return []                        # the rest: drawn the first time they're lit
+
+    def _group(self, key):
+        return 'menu'
+
+    def _blur_for(self, key):
+        return DOT_BLUR * self.k
+
+    def _draw_element(self, d, img, key):
+        _, r, c, ch = key
+        k = self.k
+        rows = [0x1F] * 7 if ch == self.FULL else (_GLYPHS.get(ch) or _GLYPHS.get(_plain(ch), _GLYPHS[' ']))
+        for y in range(7):
+            for x in range(5):
+                if (rows[y] >> (4 - x)) & 1:
+                    px = MENU_X0 + (c * 6 + x) * DOT_PITCH
+                    py = MENU_ROW_Y[r] + y * DOT_PITCH
+                    d.rectangle([px * k, py * k, (px + DOT_SIZE) * k, (py + DOT_SIZE) * k], fill=255)
+
+    def _lit_keys(self, st):
+        if st.get('all'):
+            return [('cell', r, c, self.FULL) for r in range(MENU_ROWS) for c in range(MENU_COLS)]
+        keys = []
+        for r, text in enumerate(st['rows'][:MENU_ROWS]):
+            for c, ch in enumerate(text[:MENU_COLS]):
+                if ch != ' ':
+                    keys.append(('cell', r, c, ch))
+        return keys
+
+    def render(self, st):
+        if st is not None:
+            for key in self._lit_keys(st):
+                if key not in self._delta:
+                    self._delta[key] = self._delta_for(key)
+        return super().render(st)

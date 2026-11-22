@@ -1,20 +1,23 @@
 # all-mode-receiver project notes
 
 A software radio for an RTL-SDR dongle on GNU Radio, with a hi-fi tuner face (Tk + Pillow)
-and a monitor unit of broadcast-grade meters. Today AM and FM broadcast; headed for shortwave,
-more modes and amateur digital modes (see `docs/ROADMAP.md`). Owner: Michael Foley, KK4EKN
-(GitHub axle2152).
+and a monitor unit of broadcast-grade meters. Today AM and FM broadcast, shortwave, SSB, CW,
+synchronous AM and narrowband FM; headed for amateur digital modes (see `docs/ROADMAP.md`).
+Owner: Michael Foley, KK4EKN (GitHub axle2152).
 
 ## Where things are
 
 - `quartz_tuner_ui.py`: the launcher people run (its docstring is the user's guide to the
   keys). It only calls `radio.ui.app.main()`.
 - `radio/`: the package. `receiver.py` is the base every receiver derives from (dongle and
-  sound-card openers, lost-dongle watchdog, tone controls, add-on hook); `am.py` and `fm/`
-  are the receivers (GNU Radio top blocks); `meters.py` the read-only metering taps;
-  `addons.py` finds installed add-ons; `ui/` is the window (`app.py` with the Settings and
-  Advanced windows as mixins in `settings.py` and `advanced.py`; displays, widgets, artwork,
-  fonts, theme, constants in their own modules).
+  sound-card openers, lost-dongle watchdog, tone controls, add-on hook, the tuner AGC narrow FM
+  and HF share); `am.py`, `fm/`, `nfm.py` (narrowband FM: squelch, CTCSS, tone squelch) and
+  `hf.py` (SSB, CW, synchronous AM, switched without a restart; its AGC in `agc.py`) are the
+  receivers (GNU Radio top blocks); `ui/bandplan.py` the bands, modes and filters behind the
+  Bands & Modes unit (a dot-matrix menu display, `vfd.MenuVfd`, with soft keys); `meters.py` the read-only metering taps; `addons.py` finds installed add-ons;
+  `ui/` is the window (`app.py` with the Settings and Advanced windows as mixins in
+  `settings.py` and `advanced.py`; displays, widgets, artwork, fonts, theme, constants in
+  their own modules).
 - `rx_check.py`: runs a receiver without the window and reports per-stage sample counts and a
   verdict. First thing to ask for when a receiver misbehaves on a machine you can't see.
 - `tests/`: tests that need neither GNU Radio nor a dongle. `tests/standin/` is a stand-in
@@ -70,8 +73,12 @@ Run before every commit:
     python3 tests/test_am_width.py
     python3 tests/test_addons.py
     python3 tests/test_display.py
+    python3 tests/test_bandplan.py
+    python3 tests/test_agc.py
     python3 tests/test_window.py          # needs a screen; headless Linux: xvfb-run -a ...
     python3 tests/test_gnuradio.py        # needs GNU Radio (apt install gnuradio gr-osmosdr)
+    python3 tests/test_nfm.py             # needs GNU Radio; narrow FM on a pretend repeater
+    python3 tests/test_hf.py              # needs GNU Radio; SSB, CW, sync AM on pretend signals
     python3 addons/crosby/test_crosby.py  # needs GNU Radio; after changing radio/fm/ or add-ons
     python3 addons/btsc/test_btsc.py      # needs GNU Radio and scipy; the same
 
@@ -82,7 +89,8 @@ DejaVu set, or an empty folder). The stand-in tests and the trace tool ignore in
 The owner has no usable IQ recordings, so a refactor is proven with
 `tests/trace_receivers.py`: record a trace of the old code (check it out with
 `git worktree add`) and of the new, and `--compare` them. Identical means every block,
-setting and connection is unchanged. For the window, compare screenshots of the old and new
+setting and connection is unchanged (against code from before a receiver was added, it
+compares the sessions both have). For the window, compare screenshots of the old and new
 (both windows, AM and FM) pixel for pixel. Say what was compared in the commit message.
 
 ## PMDS stays out of this repository
@@ -99,11 +107,17 @@ setting and connection is unchanged. For the window, compare screenshots of the 
 - The private repository's `tests/test_addon.py` runs PMDS through this repository's real AM
   receiver in GNU Radio. Run it after changing `radio/am.py`, `radio/receiver.py`,
   `radio/addons.py` or the window's station display; keep the add-on interface stable.
-- Sample rates: AM takes 960 ksps from the dongle (the RTL-SDR silently dropped samples at
-  2.4 Msps on the owner's bench); FM still takes 2.4 Msps.
+- Sample rates: AM, narrow FM and HF take 960 ksps from the dongle (the RTL-SDR silently
+  dropped samples at 2.4 Msps on the owner's bench); FM still takes 2.4 Msps.
 
 ## Careful with
 
+- The audio path must flow steadily. An FFT filter passes samples on in lumps of its FFT size
+  less its taps (4501 taps at 48 kHz: a quarter of a second), and the RTL already delivers in
+  136 ms transfers at 960 ksps; lumps much over AM's 64 ms leave the sound card short ("aU"
+  under the window). Use plain FIR filters at a decimated rate in audio paths, and give a
+  Python block 10 ms a call (`set_output_multiple`), or a plain FIR upstream has it called
+  hundreds of times a second. `test_nfm.py` and `test_hf.py` check the flow.
 - HD Radio (NRSC-5) and AMBE/IMBE voice (D-STAR, DMR, System Fusion, NXDN, P25): the owner has
   patent and licensing concerns. Don't add decoders for them without the owner's go-ahead;
   identifying the system and reading header data is fine.

@@ -169,6 +169,11 @@ class ModMeterCore:
         self._tail = np.zeros(0)
         self._clear()
 
+    def set_limits(self, over_pos, over_neg):
+        """The over-modulation limits (narrow FM's follow its width: 5 or 2.5 kHz)."""
+        with self._lock:
+            self.over_pos, self.over_neg = float(over_pos), float(over_neg)
+
     def _clear(self):
         self._max, self._min = -1e30, 1e30
         self._sum, self._n, self._over = 0.0, 0, 0

@@ -12,7 +12,11 @@ from .. import TOP_DIR
 
 FM_MIN, FM_MAX, FM_STEP = 87.5e6, 107.9e6, 0.2e6
 AM_MIN, AM_MAX, AM_STEP = 530e3, 1710e3, 10e3
-BANDS = {'FM': (FM_MIN, FM_MAX, FM_STEP), 'AM': (AM_MIN, AM_MAX, AM_STEP)}
+NFM_MIN, NFM_MAX, NFM_STEP = 144e6, 148e6, 5e3        # narrow FM's home: 2 m
+HF_MIN, HF_MAX, HF_STEP = 14.0e6, 14.35e6, 1e3        # SSB and CW's: 20 m
+BANDS = {'FM': (FM_MIN, FM_MAX, FM_STEP), 'AM': (AM_MIN, AM_MAX, AM_STEP), 'NFM': (NFM_MIN, NFM_MAX, NFM_STEP),
+         'HF': (HF_MIN, HF_MAX, HF_STEP)}
+SQUELCH_DEFAULT = 3                        # narrow FM's squelch level (1-9: 4 to 25 dB C/N)
 # Settings > Reception > Band limits: Override lifts the band edges to what the
 # dongle can reach. With direct sampling available (AM source direct_q, an
 # RTL-SDR like the V3), either receiver crosses over at 28.8 MHz: the RTL2832's
@@ -26,6 +30,9 @@ TUNER_MIN  = 24e6
 FM_DEVICE_ARGS = 'numchan=1 rtl=0'
 DIRECT_WAIT_S = 10.0                       # direct frequency entry gives up after this
 N_CHANNELS = 24
+UI_SIZES   = ('fit', 0.75, 1.0, 1.25, 1.5, 2.0)    # Settings > Panel > Size ('fit': to the screen)
+SCALE_MIN, SCALE_MAX = 0.5, 3.0
+FIT_WIDTH  = 0.9                           # 'fit' fills this share of the screen's width
 AM_WIDTHS  = (2500, 5000, 8000, 10200)     # Settings > AM width (Hz); the Wide key is 12 kHz
 
 SEEK_MIN_CNR_DB = 6.0      # FM; AM uses its receiver's own SEEK_MIN_DB
@@ -47,7 +54,7 @@ TUNED_SETTLE_S = 0.3
 TUNED_HYST_DB  = 2.0
 
 SIG_STEPS      = 15                 # signal bar: 9 rising, then 6 at full height
-SIG_RANGE      = {'FM': (3.0, 33.0), 'AM': (7.5, 43.5)}   # AM was (12, 48) before its C/N was corrected
+SIG_RANGE      = {'FM': (3.0, 33.0), 'AM': (7.5, 43.5), 'NFM': (3.0, 33.0), 'HF': (3.0, 33.0)}   # AM was (12, 48) before its C/N was corrected
 SIG_FALL_PER_S = 8.0 * SIG_STEPS / 9      # steps a second: the bar falls as fast as the old 9-step ladder
 
 OUTPUT_DB_DEFAULT = -6.0
@@ -55,10 +62,12 @@ OUTPUT_DB_CHOICES = (-12.0, -9.0, -6.0, -3.0, 0.0)
 BADGE_DEFAULT     = 'Stereo Tuner'
 
 # Monitor
-MON_SETTLE_S   = {'FM': 0.5, 'AM': 0.9}   # discard readings this long after a retune
+MON_SETTLE_S   = {'FM': 0.5, 'AM': 0.9, 'NFM': 0.5, 'HF': 0.5}   # discard readings this long after a retune
 PPM_FALL_DB_S  = 13.3                     # IEC 60268-10 type I: 20 dB in 1.5 s
 PEAK_HOLD_S    = 1.5
 VU_TAU_S       = 0.045                    # two poles: 99% in about 300 ms
+AUDIO_GAP_S    = 0.3                      # no audio samples this long: silence, the meters fall
+                                          # (AM's arrive in 64 ms chunks, so some 50 ms ticks get none)
 MOD_HOLD_S     = 2.0
 # PEAK MOD on the face (FM): "peaks of frequent recurrence", the FCC's wording in
 # 47 CFR 73.1570. Read here as the highest deviation the station reaches at least

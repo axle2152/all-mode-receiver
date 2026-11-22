@@ -19,6 +19,36 @@ def _pty_name(pty):
 
 
 TIPS = dict(
+    squelch="Narrow FM's squelch keeps the speaker quiet between transmissions. Level 1 opens on a "
+            "weak station (4 dB above the noise), 9 only on a strong one (25 dB); 3 suits most "
+            "listening. Squelch - and + on the Bands & Modes unit set it too (- from 1: off).",
+    nfm_quality="How clean the narrow FM station is: how far it quiets the receiver's noise, which "
+                "follows its carrier-to-noise ratio in 12.5 kHz. Above 20 dB is clean.",
+    nfm_level="The station's level at the receiver, in dB below full scale.",
+    nfm_bw="The filter: +/-8 kHz for 5 kHz deviation (25 kHz channels), +/-5.5 kHz for 2.5 kHz "
+           "(12.5 kHz channels). The FM key steps between them.",
+    nfm_dev="The station's peak deviation, against its channel's limit (5 or 2.5 kHz).",
+    nfm_tone="The CTCSS (PL) tone the station sends under its audio, and how much it deviates. "
+             "Repeaters use it to know who to repeat; the Tone key listens only while it's there.",
+    hf_quality="How far the signal stands above the band's noise, inside the filter. Above 20 dB is "
+               "comfortable copy; under 6 dB it's in the noise.",
+    hf_level="The signal's level inside the filter, in dB below full scale.",
+    hf_bw="The filter: the Width key steps it. SSB 1.8 to 3 kHz, CW 250 Hz to 2.4 kHz, synchronous "
+          "AM 3 to 8 kHz (on the sideband chosen).",
+    hf_agc="How much the AGC is lifting the signal. It comes down at once on a loud signal, holds "
+           "between words, then recovers; an empty frequency stops it short of full gain.",
+    lamp_sync="Synchronous AM: the receiver has locked onto the station's carrier.",
+    lamp_sql="A station is opening the squelch.",
+    lamp_tone="A CTCSS (PL) tone is heard.",
+    lamp_tsq="Tone squelch is on: the speaker plays only while its tone is heard.",
+    chsteps="CB, FRS/GMRS, weather, MURS and marine radio come in numbered channels. BY CHANNEL: the "
+            "tuning keys step channel to channel, the number keys pick a channel, and CH shows its number. "
+            "ORDINARY STEPS: their usual spacing, like any other band.",
+    homech="On a channelized band, press Memory twice to make the channel you're on its home channel. "
+           "HOME CHANNEL: its band key always goes there (weather on your local station, say); "
+           "WHERE I LEFT IT: to the channel you were last on.",
+    ui_size="How big the tuner and the monitor are drawn. FIT fills most of the screen's width, so "
+            "the lettering stays readable on any screen, 4K included; 100% is 1480 pixels wide.",
     quality="How clean the station sounds after all the processing, measured from the FM signal "
             "itself. The white tick shows where it was before the echo canceller. Above 20 dB is clean; "
             "below 10 dB you will hear noise.",
