@@ -11,6 +11,9 @@ Signal chain (960 ksps from the RTL -> 48 kHz complex channel)
                 tuner above it (6 m, 2 m and 70 cm SSB too), native HF on a V4, or an
                 upconverter; the LO LO_OFFSET above the dial. This receiver's own tuner AGC
                 (radio/receiver.py) when there's a tuner
+  blankers      on the full 960 ksps, ahead of every filter (radio/blanker.py): pulses patched
+                with a straight line across; the impulse blanker takes only those far over the
+                band, the noise blanker (LOW, MED, HIGH) smaller ones too
   channel       two decimating filters; a coarse frequency correction that only synchronous
                 AM uses (from the channel spectrum, as the AM receiver does)
   detector      SSB and CW straight from the channel: the dial frequency is the carrier's, so
@@ -46,6 +49,7 @@ from gnuradio import gr, blocks, filter, analog
 
 from . import meters as rx_meters
 from .agc import AGCBlock, max_gain_for
+from .blanker import BlankerBlock, describe
 from .receiver import Receiver, TunerGain
 
 
@@ -64,7 +68,7 @@ def _band_taps(lo, hi, fs, n, beta=8.0):
 
 class HFReceiver(TunerGain, Receiver):
     BAND = 'HF'
-    FEATURES = frozenset({'hf_mode', 'hf_width'})
+    FEATURES = frozenset({'hf_mode', 'hf_width', 'blankers'})
 
     # ---- source (as the AM receiver) ----
     AM_SOURCE        = 'direct_q'   # 'direct_q' | 'native' | 'upconverter'
@@ -100,6 +104,15 @@ class HFReceiver(TunerGain, Receiver):
     SAM_GAIN         = 2.0          # sync AM's audio is half the sideband: as loud as SSB
     MPX_FULL         = AGC_REF      # the audio snapshot: the AGC's level
 
+    # ---- blankers (radio/blanker.py), both on the dongle's full stream ----
+    # SSB and CW have no carrier to measure a spike against, so the impulse blanker takes only
+    # pulses standing 24 dB over the band's median (static crashes, sparks); the noise blanker's
+    # LOW, MED and HIGH go down to 18, 15 and 12 dB. Speech and keying are far longer than a
+    # pulse (50 us at most), so they're never taken for one
+    NB_K             = {'low': 8.0, 'med': 5.6, 'high': 4.0}
+    IB_K             = 16.0
+    NB_PRE, NB_POST, NB_MAX = 3, 6, 48
+
     # ---- measurements ----
     NOISE_PCT        = 30.0         # the channel's noise floor: this percentile of its spectrum
     SEEK_MIN_DB      = 10.0         # search stops, and TUNED lights, this far over the noise
@@ -131,6 +144,11 @@ class HFReceiver(TunerGain, Receiver):
         self.src.set_iq_balance_mode(0, 0)
         self._gain_setup(rf_gain, agc, self.am_source == 'direct_q')
 
+        # ---------------- blankers: the full stream, ahead of every filter ----------------
+        self.nb = BlankerBlock(self.samp_rate, pre=self.NB_PRE, post=self.NB_POST,
+                               max_run=self.NB_MAX, backoff=True)
+        self.nb.set_output_multiple(self.samp_rate // 100)      # 10 ms a call: Python costs per call
+
         # ---------------- channel ----------------
         r1 = self.samp_rate / self.DECIM1
         self.xlate = filter.freq_xlating_fir_filter_ccf(
@@ -138,7 +156,7 @@ class HFReceiver(TunerGain, Receiver):
             self.samp_rate)
         self.dec2 = filter.fir_filter_ccf(self.DECIM2, [float(v) for v in _kaiser_lp(16e3, r1, 63)])
         self.rot = blocks.rotator_cc(0.0)               # sync AM's coarse carrier correction
-        c(self.src, self.xlate, self.dec2, self.rot)
+        c(self.src, self.nb, self.xlate, self.dec2, self.rot)
 
         # ---------------- detectors: straight (SSB, CW) or carrier-locked (sync AM), at 24 kHz ----------------
         rs = _kaiser_lp(self.RESAMPLE_HZ, self.ch_rate, self.RESAMPLE_TAPS)
@@ -264,6 +282,7 @@ class HFReceiver(TunerGain, Receiver):
         self._hann_wp = float(np.sum(self._hann ** 2))
         self._pct_mean = -math.log(1.0 - self.NOISE_PCT / 100.0)
         self.set_mode(mode if mode in self.MODES else 'USB', width)
+        self.set_blankers(impulse=True, noise='off')     # as the window starts them
         self._apply_gain()
 
     # ------------------------------------------------------------------ helpers
@@ -332,7 +351,22 @@ class HFReceiver(TunerGain, Receiver):
             self._psd, self._q_slow = None, None
             self._tune_cnr = []
             self.agc.core.reset()
+            self.nb.core.reset()
             self._blank_until = time.monotonic() + self.TUNE_SETTLE_S
+
+    def set_blankers(self, impulse, noise):
+        """impulse: True / False; noise: 'off', 'low', 'med' or 'high'. One blanker does both:
+        its line is the noise blanker's (backing off when it patches too much, but never past
+        the impulse blanker's), and pulses over the impulse line count as impulses."""
+        self.ib_on = bool(impulse)
+        self.nb_level = noise if noise in self.NB_K else 'off'
+        k = self.NB_K.get(self.nb_level) or (self.IB_K if self.ib_on else None)
+        self.nb.core.set_k(k, self.IB_K if self.ib_on else None)
+
+    def blanker_stats(self):
+        """(impulses patched a minute, share of the time patched in percent, 0: no stereo)."""
+        core = self.nb.core
+        return core.big.per_min, (100.0 * core.frac if self.nb_level != 'off' else 0.0), 0.0
 
     def set_output_gain(self, left, right):
         with self._lock:
@@ -392,7 +426,8 @@ class HFReceiver(TunerGain, Receiver):
         return (f"S/N      {self.cnr_db:5.1f} dB in the passband   level {self.channel_dbfs:6.1f} dBFS\n"
                 f"Filter   {self.mode} {self.width:g} Hz: {lo:+.0f} to {hi:+.0f} Hz from the carrier{sync}\n"
                 f"AGC      gain {self.agc_gain_db:+5.1f} dB   hang {self.agc.core.hang_s:g} s\n"
-                f"Clip     {self.clip_pct:6.3f} %   source: {src}")
+                f"Clip     {self.clip_pct:6.3f} %   source: {src}"
+                f"   blankers: {describe(self.ib_on, self.nb_level)}")
 
     def addon_tap(self):
         return None

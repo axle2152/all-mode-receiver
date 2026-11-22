@@ -13,7 +13,8 @@ Owner: Michael Foley, KK4EKN (GitHub axle2152).
   sound-card openers, lost-dongle watchdog, tone controls, add-on hook, the tuner AGC narrow FM
   and HF share); `am.py`, `fm/`, `nfm.py` (narrowband FM: squelch, CTCSS, tone squelch) and
   `hf.py` (SSB, CW, synchronous AM, switched without a restart; its AGC in `agc.py`) are the
-  receivers (GNU Radio top blocks); `ui/bandplan.py` the bands, modes and filters behind the
+  receivers (GNU Radio top blocks); `blanker.py` the impulse and noise blankers AM and HF share
+  (a numpy core, tested without GNU Radio, in a Python block); `ui/bandplan.py` the bands, modes and filters behind the
   Bands & Modes unit (a dot-matrix menu display, `vfd.MenuVfd`, with soft keys); `meters.py` the read-only metering taps; `addons.py` finds installed add-ons;
   `ui/` is the window (`app.py` with the Settings and Advanced windows as mixins in
   `settings.py` and `advanced.py`; displays, widgets, artwork, fonts, theme, constants in
@@ -75,10 +76,12 @@ Run before every commit:
     python3 tests/test_display.py
     python3 tests/test_bandplan.py
     python3 tests/test_agc.py
+    python3 tests/test_blanker.py
     python3 tests/test_window.py          # needs a screen; headless Linux: xvfb-run -a ...
     python3 tests/test_gnuradio.py        # needs GNU Radio (apt install gnuradio gr-osmosdr)
     python3 tests/test_nfm.py             # needs GNU Radio; narrow FM on a pretend repeater
     python3 tests/test_hf.py              # needs GNU Radio; SSB, CW, sync AM on pretend signals
+    python3 tests/test_blanker_rx.py      # needs GNU Radio; the blankers in the AM and HF receivers
     python3 addons/crosby/test_crosby.py  # needs GNU Radio; after changing radio/fm/ or add-ons
     python3 addons/btsc/test_btsc.py      # needs GNU Radio and scipy; the same
 
@@ -90,7 +93,8 @@ The owner has no usable IQ recordings, so a refactor is proven with
 `tests/trace_receivers.py`: record a trace of the old code (check it out with
 `git worktree add`) and of the new, and `--compare` them. Identical means every block,
 setting and connection is unchanged (against code from before a receiver was added, it
-compares the sessions both have). For the window, compare screenshots of the old and new
+compares the sessions both have). A change that inserts blocks into a path: `--compare old new
+--lift <block kinds>` takes them out and compares the rest. For the window, compare screenshots of the old and new
 (both windows, AM and FM) pixel for pixel. Say what was compared in the commit message.
 
 ## PMDS stays out of this repository

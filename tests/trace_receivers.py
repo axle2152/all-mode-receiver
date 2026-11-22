@@ -17,6 +17,14 @@ Record before and after a refactor and compare: identical means every block, set
 connection is the same. --compare lists any differences; when one trace has a receiver the
 other hasn't (one added since), it compares the sessions both have and names the others. For "before", check the old
 commit out into another folder (git worktree add ../before HEAD~1) and pass --code.
+
+When a change inserts blocks into a signal path, --lift names their kinds: they're taken out of
+the second trace (the wires through each joined from its first input to its output, its other
+inputs dropped) and the rest compared, block references renumbered within each session. That
+proves the insertion is all that changed; the step results and end attributes that differ are
+listed by name:
+
+    python3 tests/trace_receivers.py --compare before.json after.json --lift BlankerBlock
 """
 import argparse
 import json
@@ -244,15 +252,95 @@ def compare(a_path, b_path):
     return 1
 
 
+def _endpoint(x):
+    if isinstance(x, list) and x and x[0] == 'blk':
+        return (x[1], 0)
+    if isinstance(x, list) and len(x) == 2 and isinstance(x[0], list) and x[0] and x[0][0] == 'blk':
+        return (x[0][1], x[1])
+    return ('self', 0)
+
+
+def _lifted(ev, kinds):
+    """A session's blocks, connections and calls with the blocks of these kinds lifted out and
+    block numbers counted within the session; and its steps' results and end attributes."""
+    gone = {e[1] for e in ev if e[0] == 'new' and e[2] in kinds}
+    ids = {}
+    for e in ev:
+        if e[0] == 'new' and e[1] not in gone:
+            ids[e[1]] = len(ids)
+
+    def remap(x):
+        if isinstance(x, list):
+            if len(x) == 2 and x[0] == 'blk' and isinstance(x[1], int):
+                return ['blk', ids.get(x[1], -1 - x[1])]
+            return [remap(y) for y in x]
+        if isinstance(x, dict):
+            return {k: remap(v) for k, v in x.items()}
+        return x
+    news, calls, edges, rets, state, other = [], [], [], [], {}, []
+    for e in ev:
+        if e[0] == 'new' and e[1] not in gone:
+            news.append(json.dumps([e[2], remap(e[3]), remap(e[4])]))
+        elif e[0] == 'call' and e[1] not in gone:
+            calls.append(json.dumps([ids.get(e[1], e[1]), e[2], remap(e[3]), remap(e[4])]))
+        elif e[0] in ('connect', 'disconnect'):
+            chain = [_endpoint(x) for x in e[1]]
+            edges += [(e[0], a, b) for a, b in zip(chain, chain[1:])]
+        elif e[0] == 'ret':
+            rets.append((e[1], json.dumps(e[2:])))
+        elif e[0] == 'state':
+            state = e[1] if isinstance(e[1], dict) else {'': e[1]}
+        elif e[0] not in ('new', 'call'):
+            other.append(json.dumps(e))
+    for g in gone:                                   # join the wires through each lifted block
+        ins = [a for _, a, b in edges if b == (g, 0)]
+        outs = [b for _, a, b in edges if a[0] == g]
+        edges = [x for x in edges if x[1][0] != g and x[2][0] != g]
+        edges += [('connect', a, b) for a in ins for b in outs]
+    m = lambda p: (ids.get(p[0], p[0]), p[1])        # noqa: E731
+    edges = sorted(json.dumps([k, m(a), m(b)]) for k, a, b in edges)
+    return dict(blocks=news, connections=edges, calls=calls, other=other), rets, state, len(gone)
+
+
+def compare_lifted(a_path, b_path, kinds):
+    a, b = json.load(open(a_path)), json.load(open(b_path))
+    sa, sb = sessions(a), sessions(b)
+    bad = 0
+    for name in sa:
+        if name not in sb:
+            print(f"{name}: only in the first")
+            continue
+        (ga, ra, sta, _), (gb, rb, stb, n) = _lifted(sa[name], ()), _lifted(sb[name], set(kinds))
+        diff = [k for k in ga if ga[k] != gb[k]]
+        bad += bool(diff)
+        steps = sorted({x[0] for x, y in zip(ra, rb) if x != y} | ({'(count)'} if len(ra) != len(rb) else set()))
+        new = sorted(set(stb) - set(sta))
+        gone = sorted(set(sta) - set(stb))
+        changed = sorted(k for k in sta if k in stb and sta[k] != stb[k])
+        print(f"{name}: {n} block{'s' if n != 1 else ''} lifted out; "
+              + ('blocks, connections and calls identical' if not diff else 'DIFFERENT: ' + ', '.join(diff))
+              + f" ({len(ga['blocks'])} blocks, {len(ga['connections'])} connections, {len(ga['calls'])} calls)")
+        for label, names in (('step results differ', steps), ('new attributes', new),
+                             ('attributes gone', gone), ('attributes changed', changed)):
+            if names:
+                print(f"    {label}: {', '.join(names)}")
+    for name in sb:
+        if name not in sa:
+            print(f"{name}: only in the second")
+    return 1 if bad else 0
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     ap.add_argument('out', nargs='?', help='JSON file to write')
     ap.add_argument('--code', default=os.path.dirname(HERE), help='checkout to trace (default: this one)')
     ap.add_argument('--compare', nargs=2, metavar=('A', 'B'), help='compare two traces')
+    ap.add_argument('--lift', nargs='+', metavar='KIND', help='with --compare: block kinds inserted in the '
+                    'second, lifted out before comparing')
     ap.add_argument('--child', action='store_true', help=argparse.SUPPRESS)
     a = ap.parse_args()
     if a.compare:
-        return compare(*a.compare)
+        return compare_lifted(*a.compare, a.lift) if a.lift else compare(*a.compare)
     if not a.out:
         ap.error('give a file to write, or --compare A B')
     if a.child:

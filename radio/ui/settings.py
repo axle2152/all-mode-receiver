@@ -5,7 +5,7 @@ import time
 import tkinter as tk
 
 from . import fonts
-from .backend import band_has
+from .backend import RECEIVERS, band_has
 from .constants import AM_WIDTHS, OUTPUT_DB_CHOICES, UI_SIZES
 from .theme import BUTTON_SMALL, COLOR_DEFAULTS, COLOR_ITEMS, COLOR_PANEL, FACE_FG
 from .tips import TIPS
@@ -104,8 +104,8 @@ class SettingsWindow:
                                command=self._am_stereo_changed, **rb)
             w.pack(side=tk.LEFT, padx=1)
             tips.bind(w, TIPS['amstereo'])
-        if band_has('AM', 'blankers'):                   # only once a receiver has them
-            r = row(t, 'AM BLANKERS')
+        if any(band_has(b, 'blankers') for b in RECEIVERS):     # AM, shortwave, SSB, CW
+            r = row(t, 'BLANKERS')
             self._ib_var = tk.BooleanVar(value=self.am_ib)
             w = tk.Checkbutton(r, text='IMPULSE', variable=self._ib_var, command=self._blankers_changed,
                                **cb)

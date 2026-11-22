@@ -417,9 +417,6 @@ class AdvancedWindow:
             if data:
                 self._lamps.show('data', tb.rds_synced)
                 self._lamps.show('alert', bool(tb.station.get('alert', 0)))
-            if blank:
-                ibr, nbp, sgr = tb.blanker_stats()
-                self._lamps.show('blank', ibr + sgr > 1.0 or nbp > 0.05)
             self._lamps.show('lock', getattr(tb, 'locked', False))
             self._lamps.show('amst', tb.stereo_indicator)
             self._lamps.show('pilot', tb.pilot_on)
@@ -434,8 +431,7 @@ class AdvancedWindow:
                 ('st', 'Stereo', 'help', TIPS['am_stereo'], None)]
                 + ([('data', meter[0], 'help', TIPS['am_data'], None)] if meter else [])
                 + ([('blk', 'Blocks lost', 'low', TIPS['am_blocks'], None)] if data else [])
-                + ([('ib', 'Impulse blanker', 'low', TIPS['am_ib'], None),
-                    ('nb', 'Noise blanker', 'low', TIPS['am_nb'], None)] if blank else []))
+                + (self._blanker_rows('am') if blank else []))
             q = tb.cnr_db
             self._meters.show('q', q / 40, f"{q:4.1f} dB")
             self._meters.show('lvl', (tb.channel_dbfs + 60) / 60, f"{tb.channel_dbfs:5.1f}")
@@ -447,11 +443,7 @@ class AdvancedWindow:
             self._meters.show('st', tb.current_blend if tb.pilot_on else 0,
                               f"{100 * tb.current_blend:3.0f}%" if tb.pilot_on else 'mono')
             if blank:
-                on_ib, on_nb = getattr(tb, 'ib_on', False), getattr(tb, 'nb_level', 'off') != 'off'
-                self._meters.show('ib', min(1.0, (ibr + sgr) / 60) if on_ib else 0,
-                                  f"{ibr + sgr:4.0f}/min" if on_ib else 'off')
-                self._meters.show('nb', min(1.0, nbp / 1.0) if on_nb else 0,
-                                  f"{nbp:4.2f}%" if on_nb else 'off')
+                self._show_blankers(tb)
             if meter:
                 self._meters.show('data', meter[1], meter[2])
             if data:
@@ -558,12 +550,30 @@ class AdvancedWindow:
         self._hist_pts.append((pre, q, tb.eq_active))
         self._hist_draw(False)
 
+    def _blanker_rows(self, kind):
+        """The blankers' meter rows (AM and HF receivers have them: feature 'blankers')."""
+        return [('ib', 'Impulse blanker', 'low', TIPS[f'{kind}_ib'], None),
+                ('nb', 'Noise blanker', 'low', TIPS[f'{kind}_nb'], None)]
+
+    def _show_blankers(self, tb):
+        """The BLANKER lamp and the two meters: impulses (and AM stereo glitches) a minute, and
+        the share of the time the noise blanker patches."""
+        ibr, nbp, sgr = tb.blanker_stats()
+        self._lamps.show('blank', ibr + sgr > 1.0 or nbp > 0.05)
+        on_nb = tb.nb_level != 'off'
+        self._meters.show('ib', min(1.0, (ibr + sgr) / 60) if tb.ib_on else 0,
+                          f"{ibr + sgr:4.0f}/min" if tb.ib_on else 'off')
+        self._meters.show('nb', min(1.0, nbp / 1.0) if on_nb else 0,
+                          f"{nbp:4.2f}%" if on_nb else 'off')
+
     def _dash_hf(self, tb):
         """SSB, CW, sync AM: signal over the noise, the filter, the AGC, sync AM's lock."""
         sam = tb.mode.startswith('SAM')
+        blank = tb.has('blankers')
         self._lamps.set_lamps(([('sync', 'LOCKED', SEG_ON['good'], TIPS['lamp_sync'])] if sam else [])
-                              + [('agc', 'AGC', SEG_ON['good'], TIPS['lamp_agc']),
-                                 ('clip', 'CLIP', SEG_ON['poor'], TIPS['lamp_clip'])])
+                              + [('agc', 'AGC', SEG_ON['good'], TIPS['lamp_agc'])]
+                              + ([('blank', 'BLANKER', SEG_ON['fair'], TIPS['lamp_blank'])] if blank else [])
+                              + [('clip', 'CLIP', SEG_ON['poor'], TIPS['lamp_clip'])])
         if sam:
             self._lamps.show('sync', tb.locked)
         self._lamps.show('agc', tb.agc_enabled)
@@ -572,12 +582,14 @@ class AdvancedWindow:
             ('q', 'Signal over noise', 'high', TIPS['hf_quality'], None),
             ('lvl', 'Level', 'high', TIPS['hf_level'], None),
             ('bw', 'Filter', 'help', TIPS['hf_bw'], None),
-            ('agc', 'AGC gain', 'help', TIPS['hf_agc'], None)])
+            ('agc', 'AGC gain', 'help', TIPS['hf_agc'], None)] + (self._blanker_rows('hf') if blank else []))
         q = tb.cnr_db
         self._meters.show('q', q / 40, f"{q:4.1f} dB")
         self._meters.show('lvl', (tb.channel_dbfs + 80) / 80, f"{tb.channel_dbfs:5.1f}")
         self._meters.show('bw', tb.width / 8000, f"{tb.width / 1000:g} kHz" if tb.width >= 1000 else f"{tb.width} Hz")
         self._meters.show('agc', min(1.0, max(0.0, tb.agc_gain_db / 100)), f"{tb.agc_gain_db:+5.1f} dB")
+        if blank:
+            self._show_blankers(tb)
         self._signal_bars(q, None)
         kind = {'USB': 'Upper sideband', 'LSB': 'Lower sideband', 'CW': f'CW, {tb.CW_PITCH:.0f} Hz tone',
                 'SAM_U': 'Synchronous AM, upper sideband', 'SAM_L': 'Synchronous AM, lower sideband'}[tb.mode]

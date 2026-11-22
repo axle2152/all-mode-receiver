@@ -7,8 +7,12 @@ FMStereoReceiver, so the GUI can drive either one.
 Signal chain (960 ksps from the RTL -> 48 kHz complex channel)
   source        Q-branch direct sampling (RTL-SDR Blog V3 and similar),
                 native HF tuning (RTL-SDR Blog V4) or an external upconverter
+  noise blanker on the full 960 ksps, ahead of every filter (radio/blanker.py): short
+                pulses patched with a straight line across; off, LOW, MED or HIGH
   channel       two-stage decimating filter, station 20 kHz below the LO so
                 nothing sits on DC
+  impulse       spikes over +300% of the carrier patched before the IF filter can
+  blanker       stretch them or the carrier lock see them (radio/blanker.py)
   carrier       coarse frequency correction from the channel spectrum, then a
                 slow PLL (about 4 Hz, well below the 25 Hz stereo pilot)
   IF filter     the chosen width (2.5, 5, 8 or 10.2 kHz audio), narrowing by
@@ -21,7 +25,8 @@ Signal chain (960 ksps from the RTL -> 48 kHz complex channel)
   L-R           C-QUAM: the transmitter sends envelope 1+L+R and phase
                 atan((L-R)/(1+L+R)), so L-R = envelope x tan(phase)
   stereo        only while the 25 Hz pilot in L-R is present, blended in
-                with the carrier-to-noise
+                with the carrier-to-noise; L-R muted for a moment around a carrier
+                glitch (the impulse blanker's other half)
   audio         low-pass at the IF bandwidth, then the same bass / treble,
                 make-up gain, volume / balance and mute as the FM side
 
@@ -40,6 +45,7 @@ from gnuradio import gr, blocks, filter, analog
 from gnuradio.filter import firdes
 
 from . import meters as rx_meters
+from .blanker import BlankerBlock, GlitchGateBlock, describe
 from .receiver import Receiver
 
 W = filter.window.WIN_HAMMING
@@ -47,7 +53,7 @@ W = filter.window.WIN_HAMMING
 
 class AMReceiver(Receiver):
     BAND = 'AM'
-    FEATURES = frozenset({'mono', 'am_width', 'am_stereo', 'nrsc'})
+    FEATURES = frozenset({'mono', 'am_width', 'am_stereo', 'nrsc', 'blankers'})
 
     # ---- source ----
     AM_SOURCE        = 'direct_q'   # 'direct_q' | 'native' | 'upconverter'
@@ -89,6 +95,16 @@ class AMReceiver(Receiver):
                                     # 25 Hz (data, flutter) passes for one
     STEREO_MONO_DB   = 10.5         # C/N at or below: mono even with a pilot
     STEREO_FULL_DB   = 15.5         # C/N at or above: full stereo
+
+    # ---- blankers (radio/blanker.py) ----
+    # noise blanker, on the dongle's 960 ksps: a pulse is a few samples there; LOW, MED and HIGH
+    # are how far over the band's median it must stand (18, 15, 12 dB)
+    NB_K             = {'low': 8.0, 'med': 5.6, 'high': 4.0}
+    NB_PRE, NB_POST, NB_MAX = 3, 6, 48      # samples: 3 and 6 us either side, pulses to 50 us
+    # impulse blanker, on the 48 kHz channel ahead of the carrier lock: the envelope over +300%
+    # of the carrier (the median envelope); a spike rings there for a few hundred microseconds
+    IB_K             = 4.0
+    IB_PRE, IB_POST, IB_MAX = 4, 8, 96      # 83 and 167 us either side, crashes to 2 ms
 
     # ---- level / UI ----
     AM_AUDIO_GAIN    = 1.4          # 100% modulation -> about the FM side's level
@@ -142,6 +158,11 @@ class AMReceiver(Receiver):
             self.src.set_gain_mode(False, 0)
             self.src.set_gain(self.gain_db, 0)
 
+        # ---------------- noise blanker: the full stream, ahead of every filter ----------------
+        self.nb = BlankerBlock(self.samp_rate, pre=self.NB_PRE, post=self.NB_POST,
+                               max_run=self.NB_MAX, backoff=True)
+        self.nb.set_output_multiple(self.samp_rate // 100)      # 10 ms a call: Python costs per call
+
         # ---------------- channel ----------------
         # Blackman: about 74 dB of stopband, so nothing that folds back on decimating comes within
         # 75 dB of the audio band (the older 2.4 Msps chain managed 67 dB)
@@ -157,7 +178,11 @@ class AMReceiver(Receiver):
         self.pll = analog.pll_carriertracking_cc(2 * math.pi * 4.0 / self.ch_rate,
                                                   2 * math.pi * 60.0 / self.ch_rate,
                                                   -2 * math.pi * 60.0 / self.ch_rate)
-        c(self.src, self.xlate, self.dec2, self.rot, self.if_filter, self.pll)
+        # impulse blanker: spikes patched before the IF filter stretches them and the carrier
+        # lock sees them
+        self.ib = BlankerBlock(self.ch_rate, pre=self.IB_PRE, post=self.IB_POST, max_run=self.IB_MAX)
+        self.ib.set_output_multiple(self.ch_rate // 100)
+        c(self.src, self.nb, self.xlate, self.dec2, self.rot, self.ib, self.if_filter, self.pll)
 
         # ---------------- demod ----------------
         self.mag = blocks.complex_to_mag(1)
@@ -240,7 +265,14 @@ class AMReceiver(Receiver):
         self.blend_k = blocks.multiply_const_ff(0.0)
         c(self.d_hp2, self.cq_dly, self.cq_k, (self.dec_sum, 0))
         c(self.k_hilb, self.kahn_k, (self.dec_sum, 1))
-        c(self.dec_sum, self.blend_k)
+        # the impulse blanker's other half: L-R muted for a moment around a carrier glitch.
+        # L-R comes dly samples behind the envelope and phase, so it sees each glitch coming
+        self.glitch = GlitchGateBlock(self.ch_rate, dly)
+        self.glitch.set_output_multiple(self.ch_rate // 100)
+        c(self.dec_sum, (self.glitch, 0))
+        c(self.norm, (self.glitch, 1))
+        c(self.arg, (self.glitch, 2))
+        c(self.glitch, self.blend_k)
         # matrix
         self.mat_l, self.mat_r = blocks.add_ff(1), blocks.sub_ff(1)
         c(self.sum_hp, self.sum_dly)
@@ -353,6 +385,7 @@ class AMReceiver(Receiver):
         self._pct_mean = -math.log(1.0 - self.NOISE_PCT / 100.0)   # noise: percentile / mean
         self._set_notch(self.bw >= self.NOTCH_FROM_HZ)
         self._apply_gain()
+        self.set_blankers(impulse=True, noise='off')     # as the window starts them
         self._attach_addons()                    # any installed add-ons (radio/addons.py)
 
     # ------------------------------------------------------------------ helpers
@@ -448,6 +481,8 @@ class AMReceiver(Receiver):
             self._car_fast_until = (time.monotonic() + self.TUNE_SETTLE_S + self.CAR_FAST_FOR_S
                                     if self._got_samples else None)
             self.car.set_taps(self._car_alpha(self.CAR_FAST_S))
+            self.nb.core.reset()
+            self.ib.core.reset()
             self._reset_addons()
 
     def set_output_gain(self, left, right):
@@ -494,6 +529,20 @@ class AMReceiver(Receiver):
         self.cq_k.set_k(0.0 if kahn else 1.0)
         self.kahn_k.set_k(1.0 if kahn else 0.0)
         self.pilot_hz = 15 if kahn else 25
+
+    def set_blankers(self, impulse, noise):
+        """impulse: True / False; noise: 'off', 'low', 'med' or 'high'."""
+        self.ib_on = bool(impulse)
+        self.nb_level = noise if noise in self.NB_K else 'off'
+        self.ib.core.set_k(self.IB_K if self.ib_on else None)
+        self.glitch.core.on = self.ib_on
+        self.nb.core.set_k(self.NB_K.get(self.nb_level))
+
+    def blanker_stats(self):
+        """(spikes patched a minute, share of the time the noise blanker patches in percent,
+        stereo glitches muted a minute)."""
+        return (self.ib.core.pulses.per_min, 100.0 * self.nb.core.frac,
+                self.glitch.core.glitches.per_min)
 
     def set_force_mono(self, on):
         """Mono: ignore the C-QUAM stereo (the blend goes to mono, STEREO goes out)."""
@@ -597,7 +646,8 @@ class AMReceiver(Receiver):
                 f"Stereo   {'Kahn ISB' if self.stereo_system == 'kahn' else 'C-QUAM'} {st}   "
                 f"pilot {self.pilot_hz} Hz {100 * self.pilot_level:4.1f}% "
                 f"({self.pilot_ratio_db:+5.1f} dB)  blend {self.current_blend:4.2f}\n"
-                f"Clip     {self.clip_pct:6.3f} %   source: {src}" + self._addons_readout())
+                f"Clip     {self.clip_pct:6.3f} %   source: {src}"
+                f"   blankers: {describe(self.ib_on, self.nb_level)}" + self._addons_readout())
 
     def addon_tap(self):
         """Add-ons listen to the 48 kHz channel, frequency-corrected and filtered, before the
@@ -759,4 +809,5 @@ class AMReceiver(Receiver):
             tb = min(max(tb, 0.0), 1.0)
         self.current_blend += max(-0.04, min(0.04, tb - self.current_blend))
         self.blend_k.set_k(self.current_blend)
+        self.glitch.core.counting = self.current_blend > 0     # a glitch is news only in stereo
         self.stereo_indicator = self.pilot_on and self.current_blend >= 0.3

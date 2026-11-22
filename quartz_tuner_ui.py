@@ -18,8 +18,9 @@ Tuner (top unit)
     Bands           latching: shows or hides the Bands & Modes unit
     Monitor         latching: shows or hides the monitor unit
     Advanced        the Advanced window (diagnostics); down while it's open
-    Settings        reception, panel (nameplate, size, monitor) and display colours;
-                    down while it's open
+    Settings        reception (FM helpers, AM stereo, blankers, filters, squelch,
+                    gain, S-meter), panel (nameplate, size, monitor) and display
+                    colours; down while it's open
     Tuning down/up  tap: one channel (100 Hz on SSB and CW). Hold: search to the next
                     station. Either key stops a search that is running.
     0 to 9          presets 1 to 24, each band its own (3-9 recall at once; 1 or 2

@@ -11,7 +11,9 @@ dongle sending a steady signal, for 12 seconds on each band, and fails on any er
 'Dongle lost'. On FM it also clicks Static cut and Noise reduction in Settings and checks each
 one changes only its own setting. On AM and FM it presses the Monitor, Advanced, Direct and
 S units keys, changes Settings > Size (the panels must be rebuilt at the new scale, and the
-choice saved) and checks the scale 'fit' gives 1080p, 4K and 720p screens. A third run is AM
+choice saved) and checks the scale 'fit' gives 1080p, 4K and 720p screens. The AM run also
+goes to narrow FM and to SSB and CW: their keys, filters and presets, Settings > Squelch, and
+Settings > Blankers reaching the SSB receiver, whose Advanced window shows the blankers' meters. A third run is AM
 with a pretend add-on installed: its
 station data must reach the dot matrix and the Advanced window, an alert must blink, and key I
 must open its window. A fourth is FM with a pretend stereo add-on (a station with no pilot
@@ -655,7 +657,26 @@ def child(appdir, band, fonts, secs):
         def hf_3():
             if 'Synchronous AM' not in app._id_var.get() or 'Filter' not in app._rdsd_var.get():
                 hf.append(f'Advanced on sync AM: {app._id_var.get()!r} / {app._rdsd_var.get()[:40]!r}')
+            if not {'ib', 'nb'} <= set(app._meters._keys or ()):
+                hf.append(f'Advanced on sync AM: no blanker meters ({app._meters._keys})')
             app._toggle_advanced()
+            tb = app.tb                                # Settings > Blankers reaches this receiver
+            app._toggle_settings()
+            root.update()
+            imp, med = find(root, 'IMPULSE'), find(root, 'MED')
+            if imp is None or med is None:
+                hf.append('Settings: no BLANKERS row')
+            else:
+                was = tb.ib_on
+                imp.invoke()
+                med.invoke()
+                if (tb.ib_on, tb.nb_level, app.am_ib, app.am_nb) != (not was, 'med', not was, 'med'):
+                    hf.append(f'Settings > Blankers: receiver {tb.ib_on}, {tb.nb_level}; '
+                              f'window {app.am_ib}, {app.am_nb}')
+                imp.invoke()
+                app._amnb_var.set('off')
+                app._blankers_changed()
+            app._toggle_settings()
             press(kb['MW'])                            # the filter on AM: 8 kHz, 10.2, Wide (and no further)
             app.am_normal_hz, app.am_wide = 8000, False
             got = []

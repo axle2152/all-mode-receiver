@@ -106,6 +106,20 @@ so switching between them is instant.
   (no thump), holds between words, then recovers. An empty frequency plays its noise well
   below a station, not at full volume.
 
+### Noise blankers (AM, shortwave, SSB and CW)
+
+- **Impulse blanker**, on unless you turn it off: it catches static crashes and sparks far
+  louder than any station sends and patches them out before the radio's filters can stretch
+  them into loud cracks. In AM stereo it also mutes the stereo channel for a moment when the
+  station's carrier glitches, instead of letting it click.
+- **Noise blanker**, off until you need it (LOW, MED or HIGH in Settings): for the steady rattle
+  of car ignitions, electric fences, power lines and switching power supplies. It spots each
+  pulse across the dongle's whole bandwidth, where pulses stand out most, and patches over it
+  in a few millionths of a second. If it ever finds itself patching more than 1% of the time,
+  it backs off by itself, so it can't chew up the program.
+- The Advanced window shows how many crashes they caught a minute and how much of the time the
+  noise blanker is working.
+
 ### The tuner
 
 - FM, AM, LW and SW keys, as on a world-band tuner: SW goes back to the shortwave band you were
