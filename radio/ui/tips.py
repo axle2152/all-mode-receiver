@@ -81,8 +81,8 @@ TIPS = dict(
           "program reaches) plus carrier glitches it muted in the stereo difference while in stereo.",
     am_nb="Noise blanker: share of the time it's patching pulses. It raises its own threshold if this "
           "passes 1%, so it never eats the program.",
-    hf_ib="Impulse blanker: pulses per minute it patched that stood far over everything else on the "
-          "band: static crashes, sparks.",
+    hf_ib="Impulse blanker: pulses per minute it patched that stood far out of the band: static "
+          "crashes, sparks.",
     hf_nb="Noise blanker: share of the time it's patching pulses. It raises its own threshold if this "
           "passes 1%, so it never eats the signal.",
     lamp_blank="A blanker is catching noise pulses or glitches.",
@@ -133,13 +133,15 @@ TIPS = dict(
     ib="Catches the huge peaks: static crashes and sparks far beyond anything a station sends. On AM "
        "and shortwave broadcasts that's the envelope over +300%, which no legal program reaches, "
        "patched before the carrier lock sees it; with AM stereo it also mutes the stereo difference "
-       "for a moment when the carrier glitches. On SSB and CW it takes only pulses standing far over "
-       "everything else on the band. It never touches normal program, so it's on by default.",
+       "for a moment when the carrier glitches. On SSB and CW it takes only pulses standing far out "
+       "of the band's noise. It never touches normal program, so it's on by default.",
     nb="For frequent smaller pulses: ignition, electric fences, power-line and switching-supply buzz. "
        "It finds them at the dongle's full bandwidth, where they're tallest, and patches them before "
-       "the channel filter can stretch them into ticks. LOW, MED and HIGH set how small a pulse it "
-       "goes after. If it ever starts patching too much, it backs itself off. Off by default; turn "
-       "it up when there's noise to fight. Works on AM, shortwave, SSB and CW.",
+       "the channel filter can stretch them into ticks. It learns the stations there, so it finds "
+       "pulses even under a much stronger local, and its patches carry the stations through. LOW, "
+       "MED and HIGH set how small a pulse it goes after. If it ever starts patching too much, it "
+       "backs itself off. Off by default; turn it up when there's noise to fight. Works on AM, "
+       "shortwave, SSB and CW.",
     amwidth="How wide the AM filter opens when the Wide key is off. 2.5 kHz digs a weak station out "
             "of a crowded band; 5 kHz is what most AM radios do; 8 kHz is AMAX-class wideband; "
             "10.2 kHz is everything a US station may send (NRSC-1), with the 10 kHz whistle from "

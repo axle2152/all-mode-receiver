@@ -359,32 +359,49 @@ the monitor, and modes on the tuner.
   noise so an empty frequency plays 20 dB under a station. Still to come: a speed setting,
   passband shift, a notch.
 - [x] Impulse and noise blankers, written once (radio/blanker.py) for the AM receiver (medium
-  wave and shortwave broadcasts) and the HF receiver (SSB, CW, sync AM). A pulse is a sample
-  standing K times over the median magnitude of the last 10 ms; its stretch over half that line
-  (so a signal rising through the line, flicked back and forth by noise, isn't a string of
-  pulses) must be no longer than a pulse, and is patched with a straight line across, on the
-  complex signal, so the stations carry on through the gap. The line rises late with the signal,
-  so a stretch begun under it isn't cut short where the samples are chopped up.
-  - Noise blanker: on the dongle's 960 ksps ahead of every filter, LOW, MED and HIGH 18, 15 and
-    12 dB over the median, pulses up to 50 us, 64 us late; patching over 1% of the time raises
-    its line by itself (up to 12 dB). In pure noise HIGH crosses by chance about 10 times a
-    second (0.01% of the samples, inaudible); LOW and MED don't.
+  wave and shortwave broadcasts) and the HF receiver (SSB, CW, sync AM).
+  - First version: a pulse was a sample K times over the band's median magnitude, patched with
+    a straight line. On the bench (November 2026) it patched 0.25% of the time and made no
+    audible difference. Modelled on a medium-wave band with locals 30 dB over the station
+    listened to, it couldn't win: pulses loud in a weak station's channel are smaller than the
+    locals at full bandwidth, so it couldn't see them, and its straight lines chopped the locals,
+    whose splatter made clicks of its own (with locals 10 dB up, HIGH patched a band with no
+    pulses 450 times a second and damaged it). Its tests had used one station in plain noise.
+  - Now the noise blanker predicts the band (linear prediction, 24 samples back, fitted every
+    40 ms by Levinson's recursion to what it gave out). A pulse is where the prediction misses
+    by K times its median miss: it starts where the forward miss (clean before a pulse) first
+    crosses and ends where the backward miss (clean after it) last does, no longer than 50 us
+    and not inside a long stretch over half the line (a signal arriving). The patch carries the
+    prediction across the gap from both sides, faded, so every station carries on; and only if
+    the pulse outweighs the error such a patch makes. LOW, MED and HIGH: 18, 15, 12 dB over the
+    median miss; patching over 1% of the time raises the line (up to 12 dB). 123 us late.
+    Modelled bands (noise-like program, 45 stations, locals 0 to 30 dB up, power-line bursts
+    120 a second): from 7 to 25 dB of crackle over the program down to 12 or 13.5 dB under
+    it, the same at MED and HIGH; small pulses on a crowded band neither helped nor harmed; a
+    band without pulses never touched. About 7% of a core while on, nothing while off.
   - Impulse blanker, on by default: AM, on the 48 kHz channel ahead of the carrier lock, the
-    envelope over +300% (2.4 ms late); HF, on the full stream, pulses 24 dB over the band. AM
-    stereo: the difference signal muted for about 3 ms around a carrier glitch (the envelope
-    under a tenth of the carrier, or the phase past 75 degrees, beyond anything C-QUAM sends),
-    counted while the stereo plays.
+    envelope over +300% (3.3 ms late), patched by prediction too (16 back, for the stations
+    10 kHz either side); HF, the same blanker as the noise blanker, pulses 24 dB over the
+    median miss. AM stereo: the difference signal muted for about 3 ms around a carrier glitch
+    (the envelope under a tenth of the carrier, or the phase past 75 degrees, beyond anything
+    C-QUAM sends), counted while the stereo plays.
   - Advanced: the BLANKER lamp, impulses (and stereo glitches) a minute, the share of the time
     the noise blanker patches; on SSB and CW too now. Settings > Blankers serves both receivers.
-  - Tests: tests/test_blanker.py (no GNU Radio: untouched when off or clean, pulses patched and
-    counted, the same output however the samples are chopped, bursts and keyed signals spared,
-    the back-off, the glitch gate) and tests/test_blanker_rx.py (the real receivers in GNU
-    Radio: on a weak AM station the noise blanker takes 100 pulses a second down to the
-    station's own noise, the impulse blanker 11 dB; on USB both take them to the noise; a clean
-    station, +125% peaks and a strong signal keyed on are untouched; over-modulation glitches in
-    AM stereo muted, the loudest click 11 dB down). The trace tool's new --lift shows the three
-    blocks are all that changed in the AM and HF receivers. Costs about 1% of a core with
-    nothing to catch, 5% under 1000 pulses a second. On the bench: still to be heard.
+  - blanker_check.py, the bench check: records 5 s of a noisy frequency, reports the stations,
+    the pulses (height, length, spacing, power-line rhythm) and the crackle each setting
+    leaves; `--replay` runs a recording here.
+  - Tests: tests/test_blanker.py (no GNU Radio: untouched when off or clean; pulses on one
+    station patched 30 dB down and counted; a crowded band with locals 30 dB up, pulses hidden
+    under them (11 dB over the band's median), the channel 40 dB cleaner at MED and HIGH and
+    the band without pulses untouched; chunking; bursts and keyed signals spared; the back-off;
+    the glitch gate) and tests/test_blanker_rx.py (the real receivers in GNU Radio: on a weak AM
+    station the noise blanker takes 100 pulses a second down to the station's own noise, the
+    impulse blanker 10 dB; the same with a local 30 dB stronger 200 kHz away; on USB the
+    impulse blanker takes big pulses to the noise and leaves smaller ones to the noise blanker;
+    a clean station, +125% peaks and a strong signal keyed on are untouched; over-modulation
+    glitches in AM stereo muted, the loudest click 11 dB down). The trace tool's --lift shows
+    the three blocks are all that changed in the AM and HF receivers. On the bench: to be heard
+    again.
 - [ ] Noise reduction for AM and SSB
 - [x] Narrowband FM as a mode of its own (not broadcast FM narrowed). Two channel plans cover
   most of what's on the air:

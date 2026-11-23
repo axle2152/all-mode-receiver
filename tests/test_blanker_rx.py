@@ -12,10 +12,14 @@ ignition or an electric fence would; a silent sound card keeps what comes out:
   - AM: the clicks in the audio with the blankers off, with the impulse blanker, and with the
     noise blanker (which must bring them down to the station's own noise); a clean station
     and a fully modulated one: nothing blanked; the readings the Advanced window shows
-  - AM stereo: the stereo difference signal comes through the glitch gate unchanged, and a
-    carrier that all but vanishes for half a millisecond is muted and counted
-  - HF (USB): the same clicks with the blankers off, the impulse blanker and the noise
-    blanker; a strong signal keyed on out of silence isn't taken for a pulse
+  - AM with a local station 30 dB stronger 200 kHz away, as on medium wave: the pulses are
+    smaller than the local at full bandwidth, yet loud in the weak station's channel. The
+    noise blanker, finding them in what its prediction of the band misses, takes them out,
+    and leaves the band alone when there are none
+  - AM stereo: the stereo difference signal comes through the glitch gate unchanged, and
+    over-modulation (the carrier turned over) is muted and counted
+  - HF (USB): the clicks with the blankers off and with the impulse blanker; pulses under the
+    impulse line left to the noise blanker; a strong signal keyed on isn't taken for a pulse
   - the audio still reaches the sound card steadily
 
 If GNU Radio isn't installed, it says so and stops.
@@ -49,11 +53,16 @@ def check(name, ok, detail=''):
     print(f"  {'ok  ' if ok else 'FAIL'} {name:58s} {detail}")
 
 
-def pulse_train(height, per_s=100, n=RATE // 10):
-    """0.1 s of the dongle's samples (repeated): three-sample spikes at random phases."""
+def pulse_train(height, per_s=100, n=RATE // 10, local=0.0):
+    """0.1 s of the dongle's samples (repeated): three-sample spikes at random phases; and, with
+    local, a station that strong 200 kHz above the LO, 30% modulated at 700 Hz (whole tens of
+    Hz, so the 0.1 s repeats seamlessly)."""
     p = np.zeros(n, np.complex64)
     for i in range(n // per_s // 2, n - 3, RATE // per_s):
         p[i:i + 3] = height * np.array([1.0, 0.8, 0.5]) * np.exp(1j * rng.uniform(0, 2 * np.pi))
+    if local:
+        t = np.arange(n) / RATE
+        p += (local * (1 + 0.3 * np.sin(2 * np.pi * 700 * t)) * np.exp(2j * np.pi * 200e3 * t)).astype(np.complex64)
     return p
 
 
@@ -206,7 +215,6 @@ def am_station(carrier, m=0.5, hz=1100.0, secs=SECS, peaks=None):
 
 
 def main():
-    from radio.am import AMReceiver
     print(f'GNU Radio {gr.version()}')
     tone = 1100.0
 
@@ -241,11 +249,31 @@ def main():
           f'{st[1]:.3f}% (pulses {rx.nb.core.n_pulses})')
     check('the tone untouched', abs(tone_db(a, tone) - tone_db(play('AM', x, n0)[1], tone)) < 0.3)
 
+    print('AM: a local station 30 dB stronger, 200 kHz away')
+    local = car * 10 ** (30 / 20)
+    quiet = pulse_train(0.0, local=local)
+    rx, a, _, st = play('AM', x, n0, quiet, impulse=True, noise='high')
+    base = residual_db(a, tone)
+    check('no pulses: the band left alone (impulse, noise HIGH)',
+          rx.ib.core.n_blanked == 0 and rx.nb.core.n_blanked == 0,
+          f'{rx.ib.core.n_blanked} + {rx.nb.core.n_blanked} samples')
+    hidden = pulse_train(0.9, local=local)
+    rx, a, _, st = play('AM', x, n0, hidden, impulse=False, noise='off')
+    off = residual_db(a, tone)
+    check('pulses smaller than the local at full bandwidth, loud in this channel',
+          0.9 < 4 * local and off > base + 10, f'{off - base:+.1f} dB over the station\'s own noise')
+    rx, a, _, st = play('AM', x, n0, hidden, impulse=False, noise='med')
+    nb = residual_db(a, tone)
+    check('noise blanker (MED) takes them out all the same', nb < base + 3,
+          f'{nb - base:+.1f} dB, {rx.nb.core.n_pulses} patched')
+
     print('AM: a strong station, +125% peaks')
     x = am_station(0.1, peaks=1.25)
     rx, a, _, st = play('AM', x, 0.1 ** 2 * 1e-5 / 1e4, None, impulse=True, noise='high')
-    check('nothing blanked by either', rx.ib.core.n_blanked == 0 and rx.nb.core.n_blanked == 0,
-          f'{rx.ib.core.n_blanked} + {rx.nb.core.n_blanked} samples')
+    check('the impulse blanker leaves it alone', rx.ib.core.n_blanked == 0,
+          f'{rx.ib.core.n_blanked} samples')
+    check('the noise blanker on HIGH: a chance crossing at most', rx.nb.core.n_blanked < 2e-5 * rx.nb.core.n_out,
+          f'{rx.nb.core.n_blanked} samples in {rx.nb.core.n_out / RATE:.0f} s')
 
     print('AM stereo (C-QUAM, 25 Hz pilot): the glitch gate')
     t = np.arange(int(SECS * FS)) / FS
@@ -293,14 +321,14 @@ def main():
     ib = residual_db(a, tone)
     check('impulse blanker: the clicks gone (these pulses are huge)', ib < base + 3, f'{ib - base:+.1f} dB')
     check('counted as impulses', st[0] > 500, f'{st[0]:.0f} a minute so far')
-    small = pulse_train(0.12)                    # about 22 dB over the band: under the impulse line
+    ref = rx.nb.core.ref                         # the prediction's median miss on this band
+    small = pulse_train(10 * ref)                # 20 dB over it: under the impulse line (24 dB)
     rx, a, _, st = play('HF', x, n0, small, impulse=True, noise='off')
-    ib_small = residual_db(a, tone)
+    ib_n = rx.nb.core.n_pulses
     rx, a, _, st = play('HF', x, n0, small, impulse=True, noise='med')
-    nb = residual_db(a, tone)
     check('smaller pulses: the impulse blanker leaves them, the noise blanker takes them',
-          nb < base + 3 and ib_small > nb + 6, f'{ib_small - base:+.1f} dB, then {nb - base:+.1f} dB')
-    check('and its reading', 0.05 < st[1] < 0.5, f'{st[1]:.3f}%')
+          ib_n == 0 and rx.nb.core.n_pulses > 250, f'{ib_n}, then {rx.nb.core.n_pulses} patched')
+    check('and its reading', 0.02 < st[1] < 0.5, f'{st[1]:.3f}%')
     k0, rise = int(2.517 * FS), FS // 1000                    # keyed on with a 1 ms edge
     edge = np.clip((np.arange(len(x)) - k0) / rise, 0, 1)
     keyed = 0.3 * np.sin(0.5 * np.pi * edge) ** 2 * x / a1

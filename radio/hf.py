@@ -11,9 +11,10 @@ Signal chain (960 ksps from the RTL -> 48 kHz complex channel)
                 tuner above it (6 m, 2 m and 70 cm SSB too), native HF on a V4, or an
                 upconverter; the LO LO_OFFSET above the dial. This receiver's own tuner AGC
                 (radio/receiver.py) when there's a tuner
-  blankers      on the full 960 ksps, ahead of every filter (radio/blanker.py): pulses patched
-                with a straight line across; the impulse blanker takes only those far over the
-                band, the noise blanker (LOW, MED, HIGH) smaller ones too
+  blankers      on the full 960 ksps, ahead of every filter (radio/blanker.py): pulses found
+                against a prediction of the band and patched by carrying it across them; the
+                impulse blanker takes only the biggest, the noise blanker (LOW, MED, HIGH)
+                smaller ones too
   channel       two decimating filters; a coarse frequency correction that only synchronous
                 AM uses (from the channel spectrum, as the AM receiver does)
   detector      SSB and CW straight from the channel: the dial frequency is the carrier's, so
@@ -105,13 +106,15 @@ class HFReceiver(TunerGain, Receiver):
     MPX_FULL         = AGC_REF      # the audio snapshot: the AGC's level
 
     # ---- blankers (radio/blanker.py), both on the dongle's full stream ----
-    # SSB and CW have no carrier to measure a spike against, so the impulse blanker takes only
-    # pulses standing 24 dB over the band's median (static crashes, sparks); the noise blanker's
-    # LOW, MED and HIGH go down to 18, 15 and 12 dB. Speech and keying are far longer than a
-    # pulse (50 us at most), so they're never taken for one
+    # One blanker predicts the band and looks for pulses in what the prediction misses. SSB and
+    # CW have no carrier to measure a spike against, so the impulse blanker takes only pulses
+    # standing 24 dB over the median miss (static crashes, sparks); the noise blanker's LOW, MED
+    # and HIGH go down to 18, 15 and 12 dB. Speech and keying are far longer than a pulse
+    # (50 us at most), so they're never taken for one
     NB_K             = {'low': 8.0, 'med': 5.6, 'high': 4.0}
     IB_K             = 16.0
-    NB_PRE, NB_POST, NB_MAX = 3, 6, 48
+    NB_PRE, NB_POST, NB_MAX = 2, 4, 48
+    NB_ORDER         = 24
 
     # ---- measurements ----
     NOISE_PCT        = 30.0         # the channel's noise floor: this percentile of its spectrum
@@ -146,7 +149,7 @@ class HFReceiver(TunerGain, Receiver):
 
         # ---------------- blankers: the full stream, ahead of every filter ----------------
         self.nb = BlankerBlock(self.samp_rate, pre=self.NB_PRE, post=self.NB_POST,
-                               max_run=self.NB_MAX, backoff=True)
+                               max_run=self.NB_MAX, order=self.NB_ORDER, backoff=True)
         self.nb.set_output_multiple(self.samp_rate // 100)      # 10 ms a call: Python costs per call
 
         # ---------------- channel ----------------

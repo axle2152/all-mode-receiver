@@ -113,10 +113,12 @@ so switching between them is instant.
   them into loud cracks. In AM stereo it also mutes the stereo channel for a moment when the
   station's carrier glitches, instead of letting it click.
 - **Noise blanker**, off until you need it (LOW, MED or HIGH in Settings): for the steady rattle
-  of car ignitions, electric fences, power lines and switching power supplies. It spots each
-  pulse across the dongle's whole bandwidth, where pulses stand out most, and patches over it
-  in a few millionths of a second. If it ever finds itself patching more than 1% of the time,
-  it backs off by itself, so it can't chew up the program.
+  of car ignitions, electric fences, power lines and switching power supplies. It works across
+  the dongle's whole bandwidth, where pulses stand out most. It learns what the stations there
+  sound like from moment to moment, so it can pick out a pulse even when a powerful local
+  station is much louder than the pulse, and it patches over each pulse in a few millionths of
+  a second by carrying every station on through the gap. If it ever finds itself patching more
+  than 1% of the time, it backs off by itself, so it can't chew up the program.
 - The Advanced window shows how many crashes they caught a minute and how much of the time the
   noise blanker is working.
 
@@ -228,6 +230,7 @@ so `git pull` won't touch your presets.
 |---|---|
 | `quartz_tuner_ui.py` | The tuner and monitor window. This is the one you run. |
 | `rx_check.py` | Checks a receiver's signal chain without the window, and says in plain words which part stops |
+| `blanker_check.py` | Records a few seconds of a noisy frequency and says what the noise is and what each blanker setting does to it |
 | `radio/` | The radio itself (below) |
 | `tests/` | Checks that run without GNU Radio or a dongle (see below) |
 | `docs/ROADMAP.md` | Where the project is going, phase by phase |
@@ -282,6 +285,16 @@ reason in the terminal. To see what's going on without the window, close the tun
 
 It runs the receiver for 10 seconds with sound and 10 seconds without, prints how many samples
 each stage moved every second, and says which part stopped. Paste what it prints into the chat.
+
+If the noise blanker doesn't seem to help on a noisy frequency, close the tuner and run
+
+    python3 blanker_check.py --freq 1230e3                # the frequency, in Hz
+    python3 blanker_check.py --freq 7.185e6 --band hf     # on the SSB and CW receiver
+
+It records 5 seconds from the dongle, then says how strong the stations around it are, what
+pulses it finds (and whether they come at the power line's rhythm), and how much crackle each
+blanker setting leaves. Paste what it prints into the chat; the recording it saves,
+`blanker_check.cs8`, shows the noise itself.
 
 On Linux, if the dongle won't open at all (`usb_claim_interface error -6`) even with nothing
 else running, the kernel's TV-tuner driver has it. Unplug the dongle, run

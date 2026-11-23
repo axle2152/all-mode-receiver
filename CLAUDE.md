@@ -14,13 +14,18 @@ Owner: Michael Foley, KK4EKN (GitHub axle2152).
   and HF share); `am.py`, `fm/`, `nfm.py` (narrowband FM: squelch, CTCSS, tone squelch) and
   `hf.py` (SSB, CW, synchronous AM, switched without a restart; its AGC in `agc.py`) are the
   receivers (GNU Radio top blocks); `blanker.py` the impulse and noise blankers AM and HF share
-  (a numpy core, tested without GNU Radio, in a Python block); `ui/bandplan.py` the bands, modes and filters behind the
+  (a numpy core, tested without GNU Radio, in a Python block; the noise blanker predicts the
+  band, so test it on a band with strong stations, not one station in noise); `ui/bandplan.py` the bands, modes and filters behind the
   Bands & Modes unit (a dot-matrix menu display, `vfd.MenuVfd`, with soft keys); `meters.py` the read-only metering taps; `addons.py` finds installed add-ons;
   `ui/` is the window (`app.py` with the Settings and Advanced windows as mixins in
   `settings.py` and `advanced.py`; displays, widgets, artwork, fonts, theme, constants in
   their own modules).
 - `rx_check.py`: runs a receiver without the window and reports per-stage sample counts and a
   verdict. First thing to ask for when a receiver misbehaves on a machine you can't see.
+- `blanker_check.py`: records a few seconds of a noisy frequency from the dongle and reports the
+  stations, the pulses (height, length, spacing: power-line rhythm) and the crackle each blanker
+  setting leaves; `--replay blanker_check.cs8` runs a recording here. Ask for it when the
+  blankers don't help on the bench.
 - `tests/`: tests that need neither GNU Radio nor a dongle. `tests/standin/` is a stand-in
   for GNU Radio and osmosdr that the tests put first on the path; it pretends a dongle is
   sending samples, and with `STANDIN_TRACE=1` it logs every block, connection and call.

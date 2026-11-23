@@ -8,7 +8,8 @@ Signal chain (960 ksps from the RTL -> 48 kHz complex channel)
   source        Q-branch direct sampling (RTL-SDR Blog V3 and similar),
                 native HF tuning (RTL-SDR Blog V4) or an external upconverter
   noise blanker on the full 960 ksps, ahead of every filter (radio/blanker.py): short
-                pulses patched with a straight line across; off, LOW, MED or HIGH
+                pulses found against a prediction of the band and patched by carrying
+                the prediction across them; off, LOW, MED or HIGH
   channel       two-stage decimating filter, station 20 kHz below the LO so
                 nothing sits on DC
   impulse       spikes over +300% of the carrier patched before the IF filter can
@@ -97,14 +98,18 @@ class AMReceiver(Receiver):
     STEREO_FULL_DB   = 15.5         # C/N at or above: full stereo
 
     # ---- blankers (radio/blanker.py) ----
-    # noise blanker, on the dongle's 960 ksps: a pulse is a few samples there; LOW, MED and HIGH
-    # are how far over the band's median it must stand (18, 15, 12 dB)
+    # noise blanker, on the dongle's 960 ksps: a pulse is a few samples there. It predicts the
+    # band (NB_ORDER samples back) and looks for pulses in what the prediction misses, so the
+    # strong stations sharing the dongle's bandwidth don't hide them; LOW, MED and HIGH are how
+    # far over the median miss a pulse must stand (18, 15, 12 dB)
     NB_K             = {'low': 8.0, 'med': 5.6, 'high': 4.0}
-    NB_PRE, NB_POST, NB_MAX = 3, 6, 48      # samples: 3 and 6 us either side, pulses to 50 us
+    NB_PRE, NB_POST, NB_MAX = 2, 4, 48      # samples: 2 and 4 us either side, pulses to 50 us
+    NB_ORDER         = 24
     # impulse blanker, on the 48 kHz channel ahead of the carrier lock: the envelope over +300%
     # of the carrier (the median envelope); a spike rings there for a few hundred microseconds
     IB_K             = 4.0
     IB_PRE, IB_POST, IB_MAX = 4, 8, 96      # 83 and 167 us either side, crashes to 2 ms
+    IB_ORDER         = 16                   # its patch carries the stations 10 kHz away through too
 
     # ---- level / UI ----
     AM_AUDIO_GAIN    = 1.4          # 100% modulation -> about the FM side's level
@@ -160,7 +165,7 @@ class AMReceiver(Receiver):
 
         # ---------------- noise blanker: the full stream, ahead of every filter ----------------
         self.nb = BlankerBlock(self.samp_rate, pre=self.NB_PRE, post=self.NB_POST,
-                               max_run=self.NB_MAX, backoff=True)
+                               max_run=self.NB_MAX, order=self.NB_ORDER, backoff=True)
         self.nb.set_output_multiple(self.samp_rate // 100)      # 10 ms a call: Python costs per call
 
         # ---------------- channel ----------------
@@ -180,7 +185,8 @@ class AMReceiver(Receiver):
                                                   -2 * math.pi * 60.0 / self.ch_rate)
         # impulse blanker: spikes patched before the IF filter stretches them and the carrier
         # lock sees them
-        self.ib = BlankerBlock(self.ch_rate, pre=self.IB_PRE, post=self.IB_POST, max_run=self.IB_MAX)
+        self.ib = BlankerBlock(self.ch_rate, pre=self.IB_PRE, post=self.IB_POST, max_run=self.IB_MAX,
+                               detect='level', order=self.IB_ORDER)
         self.ib.set_output_multiple(self.ch_rate // 100)
         c(self.src, self.nb, self.xlate, self.dec2, self.rot, self.ib, self.if_filter, self.pll)
 
