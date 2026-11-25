@@ -20,8 +20,8 @@ from .advanced import AdvancedWindow
 from .art import _rrect, brushed_plate, num_chars
 from .backend import AMReceiver, FMStereoReceiver, HFReceiver, NFMReceiver, _AM_ERR
 from .constants import (
-    AM_MAX, AM_MIN, AM_MOD_MIN_CNR_DB, AM_WIDTHS, BADGE_DEFAULT, BANDS, DELCO_SETTINGS,
-    DIRECT_WAIT_S, ENTRY_WAIT_S, FM_DEVICE_ARGS, FM_MAX, FM_MIN, GLOW_DEFAULT,
+    AM_MAX, AM_MIN, AM_MOD_MAX_ADJ_DB, AM_MOD_MIN_CNR_DB, AM_WIDTHS, BADGE_DEFAULT, BANDS,
+    DELCO_SETTINGS, DIRECT_WAIT_S, ENTRY_WAIT_S, FM_DEVICE_ARGS, FM_MAX, FM_MIN, GLOW_DEFAULT,
     HOLD_TO_SEARCH_S, LAG_MAX_S, LAG_SELF_S, LAG_SMOOTH_S, LAMP_TEST_S, MEMORY_WAIT_S,
     MILES_PER_US, MOD_MIN_CNR_DB, MON_SETTLE_S, MPX_STATS_S, N_CHANNELS, OUTPUT_DB_DEFAULT,
     OVER_LAMP_S, PILOT_COMP, POWER_SLEEP_S, RDS_CAL_STEREO_TOOL, RDS_COMP, RDS_CREST,
@@ -2314,8 +2314,7 @@ class TunerApp(SettingsWindow, AdvancedWindow):
                 item['valid'] = tb.squelch_open and tb.cnr_db >= MOD_MIN_CNR_DB
                 item['full'] = tb.dev_khz          # 100% = 5 or 2.5 kHz
             else:                                  # AM, sync AM: locked, and clean enough to mean
-                item['valid'] = (bool(getattr(tb, 'locked', False)) and self.mode not in NO_MOD
-                                 and getattr(tb, 'cnr_db', 0.0) >= AM_MOD_MIN_CNR_DB)
+                item['valid'] = self._am_mod_gate(tb) is None
             pilot = None
             if fm and getattr(tb, 'pilot_level', 0.0) / 1.8 * 100 >= 1.0:
                 pilot = tb.pilot_level / 1.8 * 100 * PILOT_COMP
@@ -2360,6 +2359,18 @@ class TunerApp(SettingsWindow, AdvancedWindow):
             self._mvfd_img = ImageTk.PhotoImage(self.mvfd.render(st))
             self.mcanvas.itemconfig(self.mvfd_item, image=self._mvfd_img)
         self._crt_step(last, live)
+
+    def _am_mod_gate(self, tb):
+        """AM and sync AM: why the modulation can't be measured now, or None if it can."""
+        if self.mode in NO_MOD:
+            return 'no carrier'
+        if not getattr(tb, 'locked', False):
+            return 'no carrier lock'
+        if getattr(tb, 'cnr_db', 0.0) < AM_MOD_MIN_CNR_DB:
+            return f'C/N under {AM_MOD_MIN_CNR_DB:g} dB'
+        if self.band == 'AM' and tb.adj_db >= AM_MOD_MAX_ADJ_DB:
+            return f'a carrier 10 kHz away at {tb.adj_db:+.0f} dB'
+        return None
 
     def _monitor_state(self, now, play, live, pilot):
         """now: for the power-on lamp test; play: the time the audio has reached."""

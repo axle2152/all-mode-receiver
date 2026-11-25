@@ -70,11 +70,22 @@ the blanker row), and clicking Noise reduction switched static cut on.
 
 ## Smaller items, any time
 
-- [ ] The Monitor's PEAK MOD on AM comes and goes on a strong, clean station. Seen on the
-  bench (November 2026): a GNU Radio and HackRF test transmitter at 52 dB C/N, with dense
-  Stereo Tool program peaking at -95% and +125%, where a steady reading near 95% was expected.
-  The owner has a minute of that program audio (mono, 192 kHz), so it can be played through
-  the AM receiver here to see why the reading drops out.
+- [x] The Monitor's PEAK MOD on AM came and went on a strong, clean station, and when it
+  showed, read 75 to 80% on program whose troughs reached -64% (bench, November 2026: a GNU
+  Radio and HackRF test transmitter at 52 dB C/N, Stereo Tool program). Two causes, found by
+  playing the bench's recordings through the AM receiver with the dongle's own timing:
+  - The dongle delivers in 136 ms transfers against the window's 50 ms ticks, and a tick with
+    no new samples (4 in 10 in a real flowgraph) cleared the 10 s of peaks PEAK MOD counts, so
+    it rarely got through its first 2 s. It now holds through those, as the audio meters did.
+  - It read the envelope behind the listening filter. Below the full 10.2 kHz, the filter
+    strips the top of a processed station's limited troughs and they overshoot: -64% read 72
+    to 79% through any width from 9 kHz down to 4 kHz, and -95% read 100%. PEAK MOD now has
+    its own 10.2 kHz path, and shows NOISY while a carrier 10 kHz away is within 35 dB of the
+    station (its whistle would ripple the full-width envelope).
+
+  Now the bench program at -94.8% reads 94.6 to 94.9% at any filter width from the start, and
+  the off-air recording 63.9 to 64.1% (its troughs: -64.0%). Still open: sync AM on HF reads
+  behind its Width filter, so open the filter as wide as the station for a true reading.
 - [x] Crosby FM-FM compatible stereo (1958) as an optional add-on (`addons/crosby`). FM now
   takes add-ons too: they hear the composite, and one can bring a stereo system of its own,
   which plays only on a station with no 19 kHz pilot, and only when the add-on finds its

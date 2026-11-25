@@ -112,6 +112,7 @@ def main():
         check(name, play(seg).lra(big), want, 1.0)
 
     chunked_meters()
+    chunked_mod()
 
     print('\nAll passed.' if not failed else f'\n{failed} failed.')
     return 1 if failed else 0
@@ -154,6 +155,50 @@ def chunked_meters():
         drop = levels[-1] - ml.level(0)
         check(f'{mode.upper()}: a second after the audio stops, it has fallen (dB)', min(drop, 20.0), 20.0 if mode == 'vu' else 9.0,
               0.0 if mode == 'vu' else 1.5)
+
+
+def chunked_mod():
+    """The dongle delivers in transfers: 136 ms at AM's 960 ksps, against the window's 50 ms
+    ticks, so many ticks get no modulation samples (4 in 10 in a real flowgraph, more here).
+    PEAK MOD must hold through those (it cleared its history on them, so on AM it came and
+    went or never showed), and still go blank when the samples stop or the C/N gate fails."""
+    from radio.ui.monitor import MonitorLogic
+    print('PEAK MOD (AM) with the samples arriving in 136 ms transfers, ticks every 50 ms')
+    rate, chunk = 12000, 1632                 # 136 ms
+    core = rx_meters.ModMeterCore(scale=100.0)
+    tt = np.arange(60 * rate) / rate          # envelope - 1: troughs at -95% several times a second
+    env = -0.95 * np.abs(np.sin(2 * np.pi * 3.1 * tt)) ** 0.5 * np.sign(np.sin(2 * np.pi * 7.3 * tt + 1))
+    no_audio = {'n': 0, 'peak': [0.0, 0.0], 'ms': [0.0, 0.0], 'corr': None, 'gonio': None,
+                'true_peak': [0.0, 0.0], 'blocks': []}
+    ml = MonitorLogic()
+    due, sent, t, shown, ticks, empty = 0.0, 0, 0.0, [], 0, 0
+    while t < 8.0:
+        t += 0.05
+        while due <= t:
+            core.process(env[sent:sent + chunk])
+            sent += chunk
+            due += 0.136
+        md = core.read()
+        empty += md['n'] == 0
+        ml.feed({'audio': no_audio, 'mod': md}, t, 0.05, 'AM', True, True)
+        if t > 3.0:
+            ticks += 1
+            fp = ml.frequent_peak(t, 'neg')
+            if fp is not None:
+                shown.append(fp)
+    check('ticks with no new samples (%)', 100.0 * empty / max(1, int(8.0 / 0.05)), 63.0, 3.0)
+    check('after 3 s, PEAK MOD shown on every tick (%)', 100.0 * len(shown) / ticks, 100.0, 0.0)
+    check('PEAK MOD reads the troughs (%)', min(shown) if shown else 0.0, 95.0, 1.0)
+    for _ in range(10):                       # the samples stop for half a second
+        t += 0.05
+        ml.feed({'audio': no_audio, 'mod': core.read()}, t, 0.05, 'AM', True, True)
+    check('samples stopped for 0.5 s: PEAK MOD blank', 0.0 if ml.frequent_peak(t, 'neg') is None else 1.0, 0.0, 0.0)
+    ml2 = MonitorLogic()
+    for i in range(60):                       # 3 s of readings, then the gate fails
+        core.process(env[i * 600:(i + 1) * 600])
+        ml2.feed({'audio': no_audio, 'mod': core.read()}, 0.05 * (i + 1), 0.05, 'AM', True, True)
+    ml2.feed({'audio': no_audio, 'mod': core.read()}, 3.05, 0.05, 'AM', True, False)
+    check('C/N gate failed: history cleared', 0.0 if ml2.frequent_peak(3.05, 'neg') is None else 1.0, 0.0, 0.0)
 
 
 if __name__ == '__main__':

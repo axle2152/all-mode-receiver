@@ -149,8 +149,9 @@ so switching between them is instant.
 - **Loudness** to ITU BS.1770 / EBU R128: momentary, short-term, integrated, loudness range and
   true peak, the same numbers broadcasters work to.
 - **Modulation:** FM peak deviation, measured on its own wideband path so the receiver's
-  filters can't hide or inflate it, and AM peak modulation. Both include the FCC's "peaks of
-  frequent recurrence", with a chart of how often each level is reached.
+  filters can't hide or inflate it, and AM peak modulation, measured across the whole channel
+  whatever filter you listen through. Both include the FCC's "peaks of frequent recurrence",
+  with a chart of how often each level is reached.
 - **FM broadcast checks:** stereo pilot and RDS injection, subcarriers (SCA), and the carrier's
   frequency error.
 - **Scopes:**

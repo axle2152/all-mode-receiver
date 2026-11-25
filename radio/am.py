@@ -344,8 +344,18 @@ class AMReceiver(Receiver):
                 lp = getattr(self, f"notch_{ch}")             # after de-emphasis and notch: what you hear
                 c(lp, (self.audio_meter, idx))
                 c(lp, k1, k2, (self.audio_meter, idx + 2))
+            # PEAK MOD measures the whole channel, 10.2 kHz, whatever filter you listen through:
+            # a narrower one strips the top of a processed station's limited troughs and they
+            # overshoot (a -64% station read 72 to 79% through 9 kHz down to 4 kHz). Same length
+            # as the IF filter, so the same delay; divided by the same carrier estimate.
+            self.mod_if = filter.fir_filter_ccf(1, self._lp_taps(self.AM_WIDE_HZ))
+            self.mod_mag = blocks.complex_to_mag(1)
+            self.mod_norm = blocks.divide_ff(1)
+            self.mod_m1 = blocks.add_const_ff(-1.0)
             self.mod_meter = rx_meters.ModMeterBlock(scale=100.0, over_pos=125.0, over_neg=100.0)
-            c(self.sum0, self.mod_meter)
+            c(self.ib, self.mod_if, self.mod_mag, (self.mod_norm, 0))
+            c(self.car_floor, (self.mod_norm, 1))
+            c(self.mod_norm, self.mod_m1, self.mod_meter)
 
         # ---------------- state ----------------
         self.if_mode = 'auto'

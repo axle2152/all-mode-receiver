@@ -38,16 +38,17 @@ class FakeDongle(gr.hier_block2):
     """Stands in for osmosdr.source: a station on `station_hz`, AM or FM, plus noise, at the
     receiver's sample rate and in real time. Retuning moves the station in the band."""
 
-    def __init__(self, rate, mode, station_hz, cnr_db, phase_tone=None):
+    def __init__(self, rate, mode, station_hz, cnr_db, phase_tone=None, am_tones=((1000.0, 0.5),)):
         gr.hier_block2.__init__(self, 'fake_dongle', gr.io_signature(0, 0, 0),
                                 gr.io_signature(1, 1, gr.sizeof_gr_complex))
         self.station_hz = self.centre = station_hz
-        if mode == 'AM':                       # 1 + 0.5 sin(1 kHz)
-            tone = analog.sig_source_f(rate, analog.GR_SIN_WAVE, 1000.0, 0.5)
+        if mode == 'AM':                       # 1 + 0.5 sin(1 kHz), or the tones asked for
+            tones = [analog.sig_source_f(rate, analog.GR_SIN_WAVE, hz, a) for hz, a in am_tones]
             one = analog.sig_source_f(rate, analog.GR_CONST_WAVE, 0, 0, 1.0)
             env, base = blocks.add_ff(), blocks.float_to_complex()
-            self.connect(tone, (env, 0))
-            self.connect(one, (env, 1))
+            for i, t in enumerate(tones):
+                self.connect(t, (env, i))
+            self.connect(one, (env, len(tones)))
             self.connect(env, base)
             amp = 0.1
             if phase_tone:                     # [(Hz, radians)]: steady tones on the carrier's
@@ -110,7 +111,7 @@ class Speaker(gr.hier_block2):
         return self.left.nitems_read(0)
 
 
-def receiver(band, station_hz, cnr_db=40.0, phase_tone=None):
+def receiver(band, station_hz, cnr_db=40.0, phase_tone=None, am_tones=((1000.0, 0.5),)):
     """The real receiver class, with the pretend dongle and a silent sound card."""
     from radio.am import AMReceiver
     from radio.fm.receiver import FMStereoReceiver
@@ -119,7 +120,7 @@ def receiver(band, station_hz, cnr_db=40.0, phase_tone=None):
 
     class Rx({'AM': AMReceiver, 'NFM': NFMReceiver, 'HF': HFReceiver}.get(band, FMStereoReceiver)):
         def _make_source(self, args):
-            return FakeDongle(self.samp_rate, band, station_hz, cnr_db, phase_tone)
+            return FakeDongle(self.samp_rate, band, station_hz, cnr_db, phase_tone, am_tones)
 
         def _make_audio_sink(self, rate, device):
             return Speaker()
@@ -187,6 +188,31 @@ def run(band, freq):
     tb.wait()
 
 
+def peak_mod():
+    """PEAK MOD measures the whole channel, 10.2 kHz, whatever filter you listen through. The
+    station sends 0.5 sin(1 kHz) + 0.3 sin(9 kHz), whose troughs reach -80%; through the 8 kHz
+    filter they look like about -52%, and the meter used to read them there. The 48 kHz samples
+    can miss the sharp 9 kHz trough by half a sample: 75 to 80%."""
+    tb = receiver('AM', 1080e3, cnr_db=60.0, am_tones=((1000.0, 0.5), (9000.0, 0.3)))(freq=1080e3, agc=False)
+    tb.set_auto_ceiling(8000)
+    tb.set_if_mode('auto')
+    tb.set_wide(False)
+    tb.start()
+    t0, cleared = time.monotonic(), False
+    while time.monotonic() - t0 < 6.0:
+        tb.update_blend()
+        if not cleared and time.monotonic() - t0 > 4.0:
+            tb.monitor()                           # start the count once it has settled
+            cleared = True
+        time.sleep(0.02)
+    md = tb.monitor()['mod']
+    tb.stop()
+    tb.wait()
+    neg, pos = -md['min'], md['max']
+    check('PEAK MOD: the whole channel (-80% sent)', 74 <= neg <= 81 and 74 <= pos <= 81,
+          f"-{neg:.1f}% / +{pos:.1f}%, listening filter {tb.bw / 1e3:.1f} kHz")
+
+
 def pilot(name, phase_tone, want, system=None, mono_hint=False):
     """An AM station with a steady tone on its carrier's phase: is it taken for a stereo pilot?"""
     tb = receiver('AM', 1080e3, phase_tone=phase_tone)(freq=1080e3, agc=False)
@@ -241,6 +267,7 @@ def race(band):
 def main():
     print('GNU Radio', gr.version())
     run('AM', 1080e3)
+    peak_mod()
     run('FM', 90.5e6)
     print('Starting while the window asks for the audio lag')
     race('AM')

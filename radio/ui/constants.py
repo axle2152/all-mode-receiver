@@ -67,7 +67,8 @@ PPM_FALL_DB_S  = 13.3                     # IEC 60268-10 type I: 20 dB in 1.5 s
 PEAK_HOLD_S    = 1.5
 VU_TAU_S       = 0.045                    # two poles: 99% in about 300 ms
 AUDIO_GAP_S    = 0.3                      # no audio samples this long: silence, the meters fall
-                                          # (AM's arrive in 64 ms chunks, so some 50 ms ticks get none)
+                                          # (AM's arrive in 64 ms chunks, so some 50 ms ticks get none;
+                                          # the modulation meter's, 136 ms transfers: held the same way)
 MOD_HOLD_S     = 2.0
 # PEAK MOD on the face (FM): "peaks of frequent recurrence", the FCC's wording in
 # 47 CFR 73.1570. Read here as the highest deviation the station reaches at least
@@ -82,6 +83,8 @@ MOD_MIN_CNR_DB = 20.0                     # FM: the deviation path sits ahead of
                                           # read high (15 dB read 9% high in testing): NOISY instead
 AM_MOD_MIN_CNR_DB = 35.5                  # AM below this (C/N in 10 kHz): noise pushes peaks >5% high: NOISY
                                           # (40 before the AM C/N was corrected, 4.5 dB lower now)
+AM_MOD_MAX_ADJ_DB = -35.0                 # AM: a carrier 10 kHz away this strong (dB re ours) or more
+                                          # ripples the full-width envelope PEAK MOD reads by 2%: NOISY
 OVER_LAMP_S    = 1.0
 CORR_TAU_S     = 0.3
 LOUD_RECALC_S  = 0.5

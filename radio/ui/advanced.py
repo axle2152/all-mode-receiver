@@ -906,8 +906,9 @@ class AdvancedWindow:
             carrier = '--'
         else:
             neg = mon.frequent_peak(now, 'neg') if mon.mod_valid else None
+            why = self._am_mod_gate(tb) if not mon.mod_valid else None
             dev = (f"highest +{pk[2]:.0f}% / -{pk[3]:.0f}%  frequent negative {fmt(neg, '.0f', '%')}" if pk else
-                   'not measurable (C/N under 40 dB)' if not mon.mod_valid else '--')
+                   f'not measurable ({why})' if why else '--')
             self._mon1_var.set(f"Modulation {dev}   over +125/-100% {fmt(over, '.2f', '%')}   "
                                f"C-QUAM pilot {fmt(tb.pilot_level * 100 if tb.pilot_on else None, '.1f', '%')}")
             carrier = f"{tb.carrier_hz:+.0f} Hz"

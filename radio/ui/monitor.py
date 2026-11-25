@@ -54,6 +54,7 @@ class MonitorLogic:
         self.vu = [[0.0, 0.0], [0.0, 0.0]]
         self.hold = [(-120.0, 0.0), (-120.0, 0.0)]
         self._audio_t = None                  # when the last audio samples came in
+        self._mod_t = None                    # ... and the last modulation samples
         self.mod_bar, self.mod_bar_hold = 0.0, (0.0, 0.0)
         self.mod_valid = False
         self.corr, self.gonio = None, None
@@ -120,6 +121,12 @@ class MonitorLogic:
             off = self.offset_khz()
             if off is None:
                 off = md['mean'] or 0.0
+        if md['n']:
+            self._mod_t = now
+        # The dongle delivers in transfers (136 ms at AM's 960 ksps) against 50 ms ticks, so
+        # some ticks get no samples. Hold through those: clearing the history on them kept
+        # PEAK MOD from ever counting its first 2 s on AM.
+        waiting = not md['n'] and self._mod_t is not None and now - self._mod_t < AUDIO_GAP_S
         if md['n'] and mod_valid:
             pos, neg = md['max'] - off, off - md['min']
             if not fm:                         # AM, sync AM: the negative side (clicks only go up)
@@ -146,7 +153,9 @@ class MonitorLogic:
                     self.last_over = now
                 self.mod_maxpos = pos if self.mod_maxpos is None else max(self.mod_maxpos, pos)
                 self.mod_maxneg = neg if self.mod_maxneg is None else max(self.mod_maxneg, neg)
-        else:
+        elif waiting and mod_valid:
+            pass                               # nothing new yet, the next transfer is on its way
+        else:                                  # the gate failed, or the samples stopped
             self.mod_bar = max(0.0, self.mod_bar - 60.0 * dt)
             self.mod_bar_hold = (self.mod_bar, now)
             self.mod_hist.clear()
