@@ -70,6 +70,11 @@ the blanker row), and clicking Noise reduction switched static cut on.
 
 ## Smaller items, any time
 
+- [ ] The Monitor's PEAK MOD on AM comes and goes on a strong, clean station. Seen on the
+  bench (November 2026): a GNU Radio and HackRF test transmitter at 52 dB C/N, with dense
+  Stereo Tool program peaking at -95% and +125%, where a steady reading near 95% was expected.
+  The owner has a minute of that program audio (mono, 192 kHz), so it can be played through
+  the AM receiver here to see why the reading drops out.
 - [x] Crosby FM-FM compatible stereo (1958) as an optional add-on (`addons/crosby`). FM now
   takes add-ons too: they hear the composite, and one can bring a stereo system of its own,
   which plays only on a station with no 19 kHz pilot, and only when the add-on finds its
@@ -146,8 +151,8 @@ the blanker row), and clicking Noise reduction switched static cut on.
 
 ## Phase 3: PMDS as an optional add-on
 
-PMDS is the owner's own work and stays private for now, in its own repository. None of its
-code, and nothing about how it works, goes in this repository.
+PMDS is the owner's own work, in its own repository (public since November 2026:
+github.com/axle2152/pmds). None of its code goes in this repository.
 
 - [x] When the AM receiver starts, it looks for installed add-ons. If there are none, this is
   a regular AM radio: no message, no empty controls.
@@ -158,9 +163,9 @@ code, and nothing about how it works, goes in this repository.
   alert blinking over the station name, and the add-on's own window on key I
 - [x] An add-on can say the station is mono, and the AM receiver then ignores anything that
   looks like a stereo pilot
-- [x] The add-on itself, in the private repository, registered through the
+- [x] The add-on itself, in the PMDS repository, registered through the
   `all_mode_receiver.addons` entry point; installing that folder is all it takes
-- [x] The private repository keeps only PMDS and its add-on. Its copies of this repository's
+- [x] The PMDS repository keeps only PMDS and its add-on. Its copies of this repository's
   tuner and receivers are retired, which ends the drift between the copies.
 
 Checked end to end in GNU Radio: a simulated station through this repository's real AM

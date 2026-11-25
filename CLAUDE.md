@@ -102,18 +102,18 @@ compares the sessions both have). A change that inserts blocks into a path: `--c
 --lift <block kinds>` takes them out and compares the rest. For the window, compare screenshots of the old and new
 (both windows, AM and FM) pixel for pixel. Say what was compared in the commit message.
 
-## PMDS stays out of this repository
+## PMDS: a separate add-on
 
-- This repository is public. PMDS is the owner's own work, kept in a separate private
-  repository until the owner says otherwise. No PMDS code here, and nothing about how PMDS
-  works: not in code, comments, docs, tests, commit messages or pull requests. Refer to it
-  only as an optional add-on for the AM receiver.
+- PMDS is the owner's own work, in its own repository, public since November 2026
+  (github.com/axle2152/pmds). It stays a project of its own: no PMDS code here, and its design
+  is documented there; here it's an optional add-on for the AM receiver, described only as far
+  as the tuner needs.
 - The AM receiver uses the PMDS add-on if it's installed and stays a plain AM radio, silently,
   if it isn't. The add-on interface (`radio/addons.py`, `docs/ADDONS.md`) is generic and names
-  no add-on; the add-on lives in the private repository (`pmds_addon.py`, installed with
+  no add-on; the add-on lives in the PMDS repository (`pmds_addon.py`, installed with
   `pip install -e` of that folder) and registers itself through the `all_mode_receiver.addons`
-  entry point. The private repository keeps no copies of this one's tuner or receivers.
-- The private repository's `tests/test_addon.py` runs PMDS through this repository's real AM
+  entry point. The PMDS repository keeps no copies of this one's tuner or receivers.
+- The PMDS repository's `tests/test_addon.py` runs PMDS through this repository's real AM
   receiver in GNU Radio. Run it after changing `radio/am.py`, `radio/receiver.py`,
   `radio/addons.py` or the window's station display; keep the add-on interface stable.
 - Sample rates: AM, narrow FM and HF take 960 ksps from the dongle (the RTL-SDR silently
@@ -150,7 +150,7 @@ compares the sessions both have). A change that inserts blocks into a path: `--c
 ## Testing in a cloud session
 
 The cloud container is Ubuntu 24.04. What worked:
-- Real GNU Radio for `tests/test_gnuradio.py` and the private repository's
+- Real GNU Radio for `tests/test_gnuradio.py` and the PMDS repository's
   `tests/test_addon.py`: `apt-get install -y --no-install-recommends gnuradio gr-osmosdr`
   (GNU Radio 3.10.9, system Python 3.12). `python3` may be another Python: run GNU Radio
   things with `/usr/bin/python3.12`. Python blocks in a hier block must stay referenced
